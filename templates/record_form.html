@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit record' if rec else 'Add record' }}{% endblock %}
+{% block content %}
+<div class="card medium">
+  <h1>{{ 'Edit record' if rec else 'Add record' }}</h1>
+  <p class="hint" style="margin-bottom:18px">{% if rec %}Department: {{ rec['department_name'] }}. {% endif %}Fill only what you know. Empty fields stay blank. <span class="req">*</span> means required.</p>
+  {% if conflict %}
+  <div class="alert"><b>{{ conflict.by }}</b> saved this record at {{ conflict.at }}. The latest values are loaded below.
+    {% if conflict.mine %}<br>Your own entries were:
+    <ul style="margin:6px 0 0">{% for n, v in conflict.mine %}<li>{{ n }}: {{ v or '(blank)' }}</li>{% endfor %}</ul>{% endif %}
+  </div>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if rec %}<input type="hidden" name="version" value="{{ version }}">{% endif %}
+    <div class="fm">
+    {% for c in cols %}{% set v = values.get(c['id']) or '' %}
+      <div class="fd {{ 'full' if c['col_type'] == 'longtext' }}">
+        <label for="c{{ c['id'] }}">{{ c['name'] }}{% if c['required'] %} <span class="req">*</span>{% endif %}</label>
+        {% if c['col_type'] == 'longtext' %}<textarea id="c{{ c['id'] }}" name="c{{ c['id'] }}" maxlength="2000">{{ v }}</textarea>
+        {% elif c['col_type'] == 'dropdown' %}
+          {% set opts = options_of(c) %}
+          <select id="c{{ c['id'] }}" name="c{{ c['id'] }}"><option value="">(blank)</option>
+            {% for o in opts %}<option value="{{ o }}" {{ 'selected' if v == o }}>{{ o }}</option>{% endfor %}
+            {% if v and v not in opts %}<option value="{{ v }}" selected>{{ v }}</option>{% endif %}</select>
+        {% elif c['col_type'] == 'yesno' %}
+          <select id="c{{ c['id'] }}" name="c{{ c['id'] }}"><option value="">(blank)</option><option {{ 'selected' if v == 'Yes' }}>Yes</option><option {{ 'selected' if v == 'No' }}>No</option></select>
+        {% elif c['col_type'] == 'date' %}
+          {% if c['has_time'] %}<div style="display:flex;gap:8px"><input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="date" value="{{ v[:10] }}" style="flex:3"><input name="c{{ c['id'] }}_time" type="time" value="{{ v[11:16] }}" aria-label="{{ c['name'] }} time" style="flex:2"></div>
+          {% else %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="date" value="{{ v[:10] }}">{% endif %}
+        {% elif c['col_type'] == 'number' %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="text" inputmode="decimal" value="{{ v }}">
+        {% else %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="text" maxlength="200" value="{{ v }}">{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+    <div class="acts"><button class="b p" type="submit">Save</button>
+      <a class="b" href="{{ url_for('records.detail', rid=rec['id']) if rec else url_for('records.list_records') }}">Cancel</a></div>
+  </form>
+</div>
+{% endblock %}

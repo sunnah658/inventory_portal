@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New request{% endblock %}
+{% block content %}
+<div class="card medium"><h1>New request</h1>
+  <p class="hint" style="margin-bottom:18px">Your department admin and the admin get a notification and will answer you.</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fm"><div class="fd"><label for="kind">Type</label><select id="kind" name="kind"><option value="new_item" {{ 'selected' if form.get('kind') == 'new_item' }}>New item</option><option value="repair" {{ 'selected' if form.get('kind') == 'repair' }}>Repair</option><option value="other" {{ 'selected' if form.get('kind') == 'other' }}>Other</option></select></div>
+      <div class="fd"><label for="title">Short title</label><input id="title" name="title" type="text" maxlength="150" required value="{{ form.get('title', '') }}"></div></div>
+    <div class="fd"><label for="details">Details</label><textarea id="details" name="details" maxlength="2000">{{ form.get('details', '') }}</textarea></div>
+    <div class="acts"><button class="b p" type="submit">Send request</button><a class="b" href="{{ url_for('flow.requests_page') }}">Cancel</a></div>
+  </form></div>
+{% endblock %}

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+portal.db*
+secret.key
+uploads/
+branding/
+backups/
+backups-copy/
+*.zip
+.git/
+.env
+backup.conf
+certs/

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Dashboard</h1><p class="hint">Everything across all departments.</p></div>
+  <div class="acts"><a class="b" href="{{ url_for('bulk.reports') }}">Reports</a><a class="b" href="{{ url_for('bulk.export_admin', fmt='xlsx') }}">Export Excel</a><a class="b p" href="{{ url_for('records.new_record') }}">+ Add record</a></div></div>
+<div class="kp">
+  <div class="k1"><span>Total records</span><b>{{ stats.records }}</b><small>+{{ stats.new_week }} this week</small></div>
+  <div class="k1"><span>Active users</span><b>{{ stats.users }}</b><small>{{ stats.disabled }} account(s) disabled</small></div>
+  <div class="k1 d"><span>Open repairs</span><b>{{ stats.repairs }}</b><small>Items currently in repair</small></div>
+  <div class="k1 w"><span>Reminders (next 30 days)</span><b>{{ stats.soon }}</b><small><a href="{{ url_for('records.reminders') }}" style="color:inherit">See all</a></small></div>
+  <div class="k1 w"><span>Requests waiting</span><b>{{ stats.requests }}</b><small><a href="{{ url_for('flow.requests_page') }}" style="color:inherit">Review</a></small></div>
+  <div class="k1"><span>Handovers waiting</span><b>{{ stats.transfers }}</b><small>{{ stats.sessions }} people logged in now</small></div>
+</div>
+<div class="g2">
+  <div class="card"><h2>Records by department</h2>
+    {% for d in by_dept %}<div class="br"><span>{{ d['name'] }}</span><i style="width:{{ (100 * d['n'] / max_dept)|round(1) }}%;min-width:{{ 4 if d['n'] else 0 }}px"></i><b>{{ d['n'] }}</b></div>{% else %}<p class="hint">No departments yet.</p>{% endfor %}</div>
+  <div class="card"><h2>Records by status</h2>
+    {% if status %}<div class="dn" style="background:{{ donut_css }}" data-total="{{ total_status }}"></div>
+    <div class="lg2">{% for s in status %}<span><em style="background:{{ colors[loop.index0] }}"></em>{{ s['label'] }} {{ s['n'] }}</span>{% endfor %}</div>
+    {% else %}<p class="hint">No "Status" column has data yet. Add a column named Status to a department to see this chart.</p>{% endif %}</div>
+</div>
+<div class="g3">
+  <div class="card"><h2>Reminders coming up</h2>
+    {% if soon %}<div class="tb" style="box-shadow:none"><table><thead><tr><th>Record</th><th>Department</th><th>Date</th></tr></thead><tbody>
+    {% for r in soon %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></td><td>{{ r['department_name'] }}</td><td><span class="s a">{{ r['reminder_date']|showdt }}</span></td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<p class="hint">Nothing due soon.</p>{% endif %}</div>
+  <div class="card"><h2>Recent activity</h2>
+    <div class="tb" style="box-shadow:none"><table><tbody>{% for a in recent %}<tr class="r"><td><b>{{ a['username'] or 'system' }}</b></td><td>{{ a['action'] }}<div class="sub">{{ a['details'] or '' }}</div></td><td class="sub">{{ a['created_at'][5:16] }}</td></tr>{% else %}<tr><td class="empty">No activity yet.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endblock %}

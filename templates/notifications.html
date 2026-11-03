@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Notifications</h1><p class="hint">Shares, handovers, requests, comments and reminders.</p></div>
+  <div class="acts">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_clear') }}" onsubmit="return confirm('Clear all notifications?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg" type="submit">Clear all</button></form>{% endif %}</div></div>
+<div class="card" style="margin-bottom:16px"><form method="post" action="{{ url_for('flow.notification_settings') }}" class="acts" style="align-items:flex-end"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="fd" style="margin:0;min-width:220px"><label for="wd">Warn me before a reminder date</label>
+    <select id="wd" name="warn_days">{% for n in choices %}<option value="{{ n }}" {{ 'selected' if n == warn_days }}>{{ n }} day{{ '' if n == 1 else 's' }} ahead</option>{% endfor %}</select></div>
+  <button class="b p" type="submit">Save</button></form>
+  <div class="sub" style="margin-top:8px">For the records you own you always get a message 1 day before and on the day itself (from {{ '%02d' % hour }}:00 in the morning), plus one more at the number of days you choose here.</div></div>
+<div class="tb">{% if rows %}<table><thead><tr><th>Message</th><th>When</th></tr></thead><tbody>
+{% for n in rows %}<tr class="r"><td>{% if not n['read_at'] %}<span class="badge" style="margin-right:6px">New</span>{% endif %}{% if n['link'] %}<a href="{{ n['link'] }}">{{ n['text'] }}</a>{% else %}{{ n['text'] }}{% endif %}</td><td>{{ n['created_at'] }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">No notifications.</div>{% endif %}</div>
+{% endblock %}

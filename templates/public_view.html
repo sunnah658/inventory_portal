@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en" data-theme="{{ g.theme }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>{{ title or company_name }}</title><link rel="icon" href="{{ icon_url }}"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>(function(){var h=document.documentElement;if(h.getAttribute('data-theme')==='auto'){h.setAttribute('data-theme',window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}})();</script></head>
+<body><div class="pubwrap">
+  <div class="pubhead"><img src="{{ logo_url }}" alt="{{ company_name }}"><div><b>{{ company_name }}</b><div class="sub">Public view · read only</div></div></div>
+  {% if link['title'] and link['kind'] == 'group' %}<h1 style="margin-bottom:12px">{{ link['title'] }}</h1>{% endif %}
+  {% for it in items %}<div class="pubcard">
+    {% if items|length > 1 %}<div class="sub" style="margin:0 0 6px">{{ it.dept }}</div>{% endif %}
+    {% for label, value in it.rows %}<div class="row"><span>{{ label }}</span><b>{{ value }}</b></div>{% else %}<p class="hint">Nothing to show.</p>{% endfor %}
+  </div>{% else %}<div class="pubcard"><p class="hint">This record is not available.</p></div>{% endfor %}
+  <p class="sub" style="text-align:center">Only information chosen by the owner is shown.</p>
+</div></body></html>

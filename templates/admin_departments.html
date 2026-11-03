@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_macros.html" import reauth with context %}
+{% block title %}Departments{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Departments</h1><p class="hint">Each department has its own record columns. These names appear in the login list.</p></div></div>
+<div class="tw" style="grid-template-columns:1fr 1fr">
+  <div class="card"><h2>Create department</h2>
+    <form method="get" class="fd"><label for="tpl">Start from a template</label>
+      <select id="tpl" name="template" onchange="this.form.submit()"><option value="">Start blank (no columns)</option>{% for key in templates %}<option value="{{ key }}" {{ 'selected' if key == template }}>{{ key }}</option>{% endfor %}</select>
+      <noscript><button class="b sm" type="submit">Show columns</button></noscript></form>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="template" value="{{ template }}">
+      <div class="fd"><label for="name">Department name</label><input id="name" name="name" type="text" maxlength="100" required value="{{ template }}"></div>
+      {% if template %}<label>Suggested columns (untick what you do not need)</label>
+      {% for c in templates[template] %}<label class="ck"><input type="checkbox" name="cols" value="{{ loop.index0 }}" checked>{{ c[0] }} <span class="pill">{{ c[1] }}</span>{% if c[3] %}<span class="pill b2">reminder date</span>{% endif %}</label>{% endfor %}
+      <div class="sub">You can add, rename or remove columns later.</div>{% endif %}
+      <button class="b p" type="submit" style="margin-top:14px">Create department</button></form></div>
+  <div class="card"><h2>Existing departments</h2>
+    <div class="tb" style="box-shadow:none"><table><thead><tr><th>Department</th><th>Users</th><th>Records</th><th>Columns</th><th></th></tr></thead><tbody>
+    {% for d in rows %}<tr class="r"><td><b>{{ d['name'] }}</b></td><td>{{ d['user_count'] }}</td><td>{{ d['item_count'] }}</td><td>{{ d['col_count'] }}</td>
+    <td class="actcell"><a class="b sm" href="{{ url_for('admin.columns', did=d['id']) }}">Columns</a>
+    <details class="dt"><summary class="b sm dg">Remove</summary><form class="pop" method="post" action="{{ url_for('admin.department_delete', did=d['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sub" style="margin:0 0 8px">Removes {{ d['name'] }}. Only possible when it has no users and no records.</div>{{ reauth() }}<button class="b sm dg" type="submit" style="margin-top:8px">Remove department</button></form></details></td></tr>
+    {% else %}<tr><td colspan="5" class="empty">No departments yet.</td></tr>{% endfor %}</tbody></table>
+    <div class="nt">A department with users or records cannot be removed.</div></div></div>
+</div>
+{% endblock %}

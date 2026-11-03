@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Reports</h1><p class="hint">Ready reports as formatted Excel or PDF files. {% if g.user['role'] != 'admin' %}They cover your department.{% endif %}</p></div></div>
+{% set items = [('records', 'All records', 'Every record with all its columns, owner and department.'), ('reminders', 'Reminders', 'Reminder dates that passed and those in the next 90 days.'), ('repairs', 'Open repairs', 'Items that are in repair right now.'), ('summary', 'Summary', 'Number of records by department and by status.')] %}
+<div class="g3">
+{% for key, name, text in items %}<div class="card"><h2>{{ name }}</h2><p class="hint" style="margin-bottom:14px">{{ text }}</p>
+  <div class="acts"><a class="b p sm" href="{{ url_for('bulk.report', name=key, fmt='xlsx') }}">Excel</a><a class="b sm" href="{{ url_for('bulk.report', name=key, fmt='pdf') }}">PDF</a></div></div>{% endfor %}
+{% if g.user['role'] == 'admin' %}<div class="card"><h2>Activity log</h2><p class="hint" style="margin-bottom:14px">The last 2000 actions with the IP address of each.</p>
+  <div class="acts"><a class="b p sm" href="{{ url_for('bulk.report', name='activity', fmt='xlsx') }}">Excel</a><a class="b sm" href="{{ url_for('bulk.report', name='activity', fmt='pdf') }}">PDF</a></div></div>{% endif %}
+</div>
+{% endblock %}

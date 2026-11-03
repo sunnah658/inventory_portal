@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import reauth with context %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Users</h1><p class="hint">Create accounts, change departments, reset passwords or disable a user.</p></div>
+  <div class="acts"><a class="b" href="{{ url_for('admin.import_page') }}">Import from CSV</a><a class="b p" href="{{ url_for('admin.user_add') }}">+ Add user</a></div></div>
+<form class="tools" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search name, username or department" aria-label="Search"><button class="b" type="submit">Search</button>{% if q %}<a href="{{ url_for('admin.users') }}" style="align-self:center">Clear</a>{% endif %}</form>
+<div class="tb">{% if rows %}<table><thead><tr><th>Full name</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Records</th><th></th></tr></thead><tbody>
+{% for u in rows %}<tr class="r"><td>{{ u['full_name'] }}</td><td>{{ u['username'] }}</td><td><span class="dp">{{ u['department_name'] or '' }}</span></td>
+<td>{% if u['role'] == 'admin' %}<span class="pill b2">Admin</span>{% elif u['is_dept_admin'] %}<span class="pill b2">Department admin</span>{% else %}User{% endif %}</td>
+<td>{% if u['is_active'] %}Active{% else %}<span class="s r">Disabled</span>{% endif %} {% if u['must_change_password'] %}<span class="pill">Temporary password</span>{% endif %}</td><td>{{ u['item_count'] }}</td>
+<td class="actcell"><a class="b sm" href="{{ url_for('admin.user_edit', user_id=u['id']) }}">Edit</a>
+<details class="dt"><summary class="b sm dg">Reset password</summary><form class="pop" method="post" action="{{ url_for('admin.user_reset', user_id=u['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="sub" style="margin:0 0 8px">A new temporary password is created and {{ u['username'] }} is logged out.</div>{{ reauth() }}<button class="b sm dg" type="submit" style="margin-top:8px">Reset password</button></form></details></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">No users found.</div>{% endif %}</div>
+{% endblock %}

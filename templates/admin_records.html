@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import groups_table, pager, listbar, bulkbar with context %}
+{% block title %}All records{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>All records</h1><p class="hint">Everything saved by every user. Pick a department to see all of its columns.</p></div>
+  <div class="acts"><a class="b p" href="{{ url_for('records.new_record') }}">+ Add record</a>
+    <details class="dt"><summary class="b">Export</summary><div class="pop">
+      <a class="b sm wide" href="{{ url_for('bulk.export_admin', fmt='xlsx', **keep) }}">Excel (.xlsx)</a>
+      <a class="b sm wide" style="margin-top:8px" href="{{ url_for('bulk.export_admin', fmt='pdf', **keep) }}">PDF</a>
+      <a class="b sm wide" style="margin-top:8px" href="{{ url_for('admin.all_records_download', **keep) }}">CSV</a></div></details>
+    {% if dept %}<a class="b" href="{{ url_for('admin.labels', department=dept) }}">QR labels</a>{% endif %}
+    <button class="b" type="button" onclick="window.print()">Print</button></div></div>
+<form class="tools" method="get" action="{{ url_for('admin.all_records') }}">
+  <select name="department" aria-label="Department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d['id'] }}" {{ 'selected' if dept == d['id']|string }}>{{ d['name'] }}</option>{% endfor %}</select>
+  <select name="owner" aria-label="User"><option value="">All users</option>{% for p in people %}<option value="{{ p['id'] }}" {{ 'selected' if owner == p['id']|string }}>{{ p['full_name'] }} ({{ p['username'] }})</option>{% endfor %}</select>
+  <input type="search" name="q" value="{{ q }}" placeholder="Search records" aria-label="Search records">
+  <select name="fcol" aria-label="Filter column"><option value="">Filter by column</option>{% for n in names %}<option value="{{ n }}" {{ 'selected' if info.fcol|lower == n|lower }}>{{ n }}</option>{% endfor %}</select>
+  <input type="search" name="fval" value="{{ info.fval }}" placeholder="contains" aria-label="Filter value">
+  <select name="sort" aria-label="Sort by"><option value="updated" {{ 'selected' if info.sort == 'updated' }}>Sort: last changed</option><option value="created" {{ 'selected' if info.sort == 'created' }}>Sort: date created</option>
+    {% for n in names %}<option value="col:{{ n }}" {{ 'selected' if info.sort == 'col:' ~ n }}>Sort: {{ n }}</option>{% endfor %}</select>
+  <select name="dir" aria-label="Direction"><option value="desc" {{ 'selected' if info.dir == 'desc' }}>Descending</option><option value="asc" {{ 'selected' if info.dir == 'asc' }}>Ascending</option></select>
+  <button class="b" type="submit">Apply</button>{% if keep %}<a href="{{ url_for('admin.all_records') }}">Clear</a>{% endif %}
+</form>
+<div class="tools">
+  {% for v in saved %}<span style="display:inline-flex;align-items:center;gap:2px"><a class="tab" href="{{ url_for('admin.all_records') }}{{ '?' ~ v.query if v.query }}">{{ v.name }}</a>
+    <form method="post" action="{{ url_for('bulk.view_delete', vid=v.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="iconbtn" style="width:28px;height:28px" type="submit" title="Delete this saved view" aria-label="Delete saved view">&times;</button></form></span>{% endfor %}
+  <details class="dt"><summary class="b sm">Save this view</summary>
+    <form class="pop" method="post" action="{{ url_for('bulk.view_save') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="page" value="admin_records"><input type="hidden" name="query" value="{{ keep|urlencode }}"><input type="hidden" name="back" value="{{ request.full_path }}">
+      <label for="vname">Name of this view</label><input id="vname" type="text" name="name" maxlength="60" required><div class="sub">Saves the search, filter and sorting you see now.</div><button class="b p sm" type="submit" style="margin-top:10px">Save view</button></form></details>
+</div>
+<p class="hint" style="margin-bottom:10px">{{ total }} record{{ '' if total == 1 else 's' }}</p>
+{% if full and full.groups %}
+  {{ bulkbar(departments) }}
+  {{ groups_table(full, 'shared', True) }}
+{% elif rows %}
+  {{ bulkbar(departments) }}
+  <div class="tb"><table><thead><tr><th class="chk"><input type="checkbox" class="selall" aria-label="Select all"></th><th>Department</th><th>Record</th><th>Owner</th><th>Last changed</th><th class="noprint"></th></tr></thead><tbody>
+  {% for r in rows %}<tr class="r"><td class="chk"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" form="bulkform" aria-label="Select"></td><td><span class="dp">{{ r['department_name'] }}</span></td><td>{{ sums[r['id']] }}</td><td>{{ r['owner_name'] }}</td><td>{{ r['updated_at'] }}</td>
+  <td class="actcell noprint"><a class="b sm" href="{{ url_for('records.detail', rid=r['id']) }}">Open</a> <a class="b sm" href="{{ url_for('records.edit_record', rid=r['id']) }}">Edit</a></td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="tb"><div class="empty">No records found.</div></div>{% endif %}
+{{ pager(page, pages, 'admin.all_records', keep) }}
+{% endblock %}

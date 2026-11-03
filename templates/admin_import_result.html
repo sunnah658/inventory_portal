@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Import result{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Import finished</h1><p class="hint">{{ created|length }} user{{ '' if created|length == 1 else 's' }} created, {{ skipped|length }} skipped.</p></div>
+  <div class="acts">{% if created %}<a class="b p" download="new_users_passwords.csv" href="data:text/csv;charset=utf-8,{{ credentials_csv|urlencode }}">Download passwords (CSV)</a><button class="b" type="button" onclick="window.print()">Print</button>{% endif %}
+  <a class="b" href="{{ url_for('admin.users') }}">Go to users</a></div></div>
+{% if created %}<div class="msg secret">Temporary passwords are shown only on this page. Download or print them now.</div>
+<div class="tb" style="margin-bottom:18px"><table><thead><tr><th>Full name</th><th>Username</th><th>Department</th><th>Role</th><th>Temporary password</th></tr></thead><tbody>
+{% for c in created %}<tr class="r"><td>{{ c.full_name }}</td><td>{{ c.username }}</td><td>{{ c.department }}</td><td>{{ c.role }}</td><td><b>{{ c.password }}</b></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% if skipped %}<div class="card"><h2>Skipped</h2><ul>{% for s in skipped %}<li>{{ s }}</li>{% endfor %}</ul></div>{% endif %}
+{% endblock %}

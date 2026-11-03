@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Handovers{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Handovers</h1><p class="hint">Records handed over from one person to another. The new owner must accept.</p></div></div>
+<h2>Waiting for your answer ({{ incoming|length }})</h2>
+<div class="tb" style="margin-bottom:22px">{% if incoming %}<table><thead><tr><th>Record</th><th>From</th><th>Note</th><th>Sent</th><th></th></tr></thead><tbody>
+{% for t in incoming %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=t['record_id']) }}">Record #{{ t['record_id'] }}</a></td><td>{{ t['from_name'] }}</td><td>{{ t['note'] or '' }}</td><td>{{ t['created_at'] }}</td>
+<td class="actcell"><form method="post" action="{{ url_for('flow.transfer_action', tid=t['id'], action='accept') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Accept</button></form>
+<form method="post" action="{{ url_for('flow.transfer_action', tid=t['id'], action='decline') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Decline</button></form></td></tr>{% endfor %}</tbody></table>
+{% else %}<div class="empty">Nothing is waiting for you.</div>{% endif %}</div>
+<h2>Sent and waiting ({{ outgoing|length }})</h2>
+<div class="tb" style="margin-bottom:22px">{% if outgoing %}<table><thead><tr><th>Record</th><th>To</th><th>Note</th><th>Sent</th><th></th></tr></thead><tbody>
+{% for t in outgoing %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=t['record_id']) }}">Record #{{ t['record_id'] }}</a></td><td>{{ t['to_name'] }}</td><td>{{ t['note'] or '' }}</td><td>{{ t['created_at'] }}</td>
+<td class="actcell"><form method="post" action="{{ url_for('flow.transfer_action', tid=t['id'], action='cancel') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Cancel</button></form></td></tr>{% endfor %}</tbody></table>
+{% else %}<div class="empty">No handovers waiting.</div>{% endif %}</div>
+<h2>Recent</h2>
+<div class="tb">{% if recent %}<table><thead><tr><th>Record</th><th>From</th><th>To</th><th>Result</th><th>When</th></tr></thead><tbody>
+{% for t in recent %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=t['record_id']) }}">Record #{{ t['record_id'] }}</a></td><td>{{ t['from_name'] }}</td><td>{{ t['to_name'] }}</td>
+<td><span class="s {{ 'g' if t['status'] == 'accepted' else 'r' }}">{{ t['status']|capitalize }}</span></td><td>{{ t['resolved_at'] }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<div class="empty">No handovers yet.</div>{% endif %}</div>
+{% endblock %}

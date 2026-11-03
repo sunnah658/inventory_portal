@@ -1,0 +1,89 @@
+==============================================================================
+ UPDATE: MEETING REMINDERS   (added on top of the version described further below)
+==============================================================================
+ 1. BELL MESSAGE FOR EACH RECORD   e.g. "Meeting: Acme Ltd is tomorrow at 3:00 PM"
+    Sent to the owner 1 day before and again on the day, in the morning (REMINDER_HOUR).
+ 2. TIME FIELD next to the date   (Admin > Columns > "Also keep a time, for meetings").
+ 3. SEVERAL REMINDER COLUMNS per department (the one-per-department limit is gone).
+ 4. EACH PERSON CHOOSES 1, 3 OR 7 DAYS of early warning (Notifications page, default 3).
+    The 1-day-before and on-the-day messages are always sent as well.
+
+ UPGRADE: ./backup.sh, unzip over the old folder (keep your PORTAL_PORT and TZ in .env),
+          docker compose up -d --build.   The database upgrades itself.
+ SET YOUR TIME ZONE in .env (TZ=Asia/Dhaka): meeting times and the morning hour use it.
+ NEW .env LINE (optional): REMINDER_HOUR=7   Details: README.txt section 17.
+ Notifications are only in the bell for now (e-mail can be added later).
+ The old daily summary message ("N reminders are due in the next 7 days") was replaced
+ by the per-record messages above.
+
+==============================================================================
+ WHAT IS NEW IN THIS VERSION  -  overview
+==============================================================================
+ Your data is safe: the database upgrades itself on the first start. An upgrade from
+ the previous version was tested with real records, repairs, logins and activity log.
+
+ UPGRADE STEPS (server that already runs the portal)
+   1. cd inventory-portal      ./backup.sh        (always take a backup first)
+   2. Unzip the new version over the old folder (or into a new folder).
+      Keep your own PORTAL_PORT and TZ lines in .env (the new .env has new lines).
+   3. docker compose up -d --build
+   4. Log in as before. Never run  docker compose down -v
+
+ 1. PUBLIC QR CODE
+    * Switch per record: the owner chooses which fields anyone may see, creates the QR,
+      turns it off, or makes a new code (old printed QR stops working).
+    * One QR for many records: tick records in a list > Public QR.
+    * Safe by design: random unguessable link, only chosen fields, no history/files,
+      rate limit, not indexed by search engines, view counter, manage page for all links.
+ 2. MOBILE VIEW  Menu button, tables become cards, one-column forms, big buttons,
+    sticky bulk bar. Buttons and icons are now aligned the same everywhere.
+ 3. HAND OVER RECORDS  New owner must accept; history shows it; admin can hand over at once.
+ 4. BULK ACTIONS  Tick many records: share, public QR, labels, Excel, PDF, CSV, delete.
+ 5. NOTIFICATIONS  Bell with counter: shares, handovers, requests, comments, suggestions,
+    virus alerts, daily reminder summary.
+ 6. REQUESTS WITH APPROVAL  New item / repair / other. Department admin or admin decides.
+ 7. COMMENTS AND SUGGESTIONS on every record (separate from the edit history).
+ 8. EXCEL AND PDF  Formatted exports of lists, selected records, one record, and a
+    Reports page (records, reminders, open repairs, summary, activity log).
+ 9. SAVED FILTERS AND SORTING  Filter by any column, sort by any column (numbers sort
+    as numbers), save the view with a name.
+10. LOOK  Auto / Light / Dark mode, saved per user.
+11. HTTPS  Optional Caddy front door (built-in certificate or your own).
+12. DEPARTMENT ADMIN  Sees every record of the department, writes suggestions, decides
+    requests, runs department reports. Cannot edit others' records.
+13. VIEW OTHER DEPARTMENTS  The admin allows a user to view chosen departments and write
+    suggestions. No editing. Users still add and edit their own records.
+14. PASSWORD RE-ENTRY for dangerous admin actions (valid 5 minutes).
+15. BETTER LOGIN PROTECTION  Lock per username and per computer (IP), saved attempts,
+    strong password rule (letters + numbers), sessions list, admin can end a session.
+16. SHORTER IDLE TIMEOUT  Logout after 30 minutes without activity.
+17. VIRUS SCANNING of attachments with ClamAV (optional container, fail-safe).
+18. IP ADDRESS in the admin activity log (also for failed logins) and in reports.
+
+ NEW FILES
+   routes_workflow.py  routes_public.py  routes_bulk.py  security.py  scanner.py
+   exports.py  Caddyfile  certs/  WHATS_NEW.txt
+   templates: notifications, transfers, requests, request_form, public_view,
+   public_message, public_links, public_link_form, reports, admin_sessions
+   static/fonts: NotoSans (PDF)
+ CHANGED FILES
+   app.py  models.py  core.py  auth.py  routes_records.py  routes_admin.py
+   import_users.py  utils.py  static/style.css  base/login/list/detail/other templates
+   docker-compose.yml  .env  requirements.txt  README.txt  .dockerignore
+
+ SETTINGS in .env (all optional; the portal works with the old .env too)
+   COMPOSE_PROFILES  https | scan | https,scan      PORTAL_HTTPS  PORTAL_BEHIND_PROXY
+   PORTAL_BIND  PORTAL_HOST  HTTPS_PORT  TLS_ARGS  CLAMAV_HOST
+ Details: README.txt sections 13 (features), 14 (HTTPS), 15 (virus scan), 16 (security).
+
+ THINGS TO KNOW
+   * A public QR can be opened by anyone who can reach the server (the office network or
+     VPN), so tick only fields that are fine to show to everyone.
+   * PDF files print English and European letters; other letters print as ? (Excel keeps them).
+   * Tested here: all 200+ automated checks of every feature (the virus scanner with a
+     simulated ClamAV), the upgrade from the previous version, phone and dark-mode
+     screens. NOT tested here (no Docker available): the Caddy HTTPS container and the
+     real ClamAV container. If one does not start, send the output of
+     docker compose logs caddy   or   docker compose logs clamav
+   * The Android app needs the phone to trust the certificate if you turn on HTTPS
+     with the built-in certificate.

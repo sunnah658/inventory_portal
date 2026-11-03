@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block mainclass %}bare{% endblock %}
+{% block content %}
+<div class="lgx">
+  <section class="hero">
+    <div class="arc a1"></div><div class="arc a2"></div>
+    <h1>Every asset,<br>one clear place.</h1>
+    <p>Track records across departments, share them with the teams that need them, and see exactly who changed what.</p>
+    <div class="pts"><span class="pt">Department workspaces</span><span class="pt">Secure sharing</span><span class="pt">Full edit history</span></div>
+  </section>
+  <section class="side"><div class="lcard">
+    <img src="{{ logo_url }}" alt="{{ company_name }}">
+    <h2>Welcome back</h2><p class="hint">Sign in to the {{ company_name }} portal</p>
+    {% for category, message in get_flashed_messages(with_categories=true) %}<div class="msg {{ category }}">{{ message }}</div>{% endfor %}
+    <form method="post" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fd"><label for="username">Username</label><input id="username" name="username" type="text" value="{{ username }}" required autofocus autocomplete="username" autocapitalize="none"></div>
+      <div class="fd"><label for="password">Password</label><input id="password" name="password" type="password" required autocomplete="current-password"></div>
+      <div class="fd"><label for="department">Department</label>
+        <select id="department" name="department" required>
+          <option value="" disabled selected>Choose your department</option>
+          {% for d in departments %}<option value="{{ d['id'] }}">{{ d['name'] }}</option>{% endfor %}
+          <option value="all">All departments (admin only)</option>
+        </select></div>
+      <button class="b p wide" type="submit">Sign in</button>
+    </form>
+    <p class="hint" style="margin-top:16px;font-size:.8rem">Forgot your password? Ask your IT admin to reset it.</p>
+  </div>
+  <form class="prefs" method="post" action="{{ url_for('app_prefs') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="next" value="/login">
+    <select name="theme" aria-label="Appearance" onchange="this.form.submit()"><option value="auto" {{ 'selected' if g.theme == 'auto' }}>Auto</option><option value="light" {{ 'selected' if g.theme == 'light' }}>Light</option><option value="dark" {{ 'selected' if g.theme == 'dark' }}>Dark</option></select>
+  </form></section>
+</div>
+{% endblock %}

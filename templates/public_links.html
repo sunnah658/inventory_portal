@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Public QR links{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Public QR links</h1><p class="hint">QR codes anyone can scan without logging in. Create one for a single record on the record page, or tick many records in a list and choose "Public QR".</p></div></div>
+<div class="tb">{% if rows %}<table><thead><tr><th>Title</th><th>Type</th><th>Records</th><th>Fields shown</th><th>Status</th><th>Views</th><th></th></tr></thead><tbody>
+{% for l in rows %}<tr class="r"><td><b>{{ l['title'] or ('Record link #' ~ l['id']) }}</b>{% if g.user['role'] == 'admin' %}<div class="sub">{{ l['owner_name'] }}</div>{% endif %}</td>
+<td>{{ 'Group' if l['kind'] == 'group' else 'Single record' }}</td><td>{{ l['n'] }}</td><td>{{ l['fields'].replace('\n', ', ') }}</td>
+<td>{% if l['enabled'] %}<span class="s g">On</span>{% else %}<span class="s r">Off</span>{% endif %}</td><td>{{ l['views'] }}</td>
+<td class="actcell"><a class="b sm" href="{{ url_for('public.link_qr', lid=l['id']) }}">QR</a><a class="b sm" href="{{ url_for('public.link_edit', lid=l['id']) }}">Fields</a>
+<form method="post" action="{{ url_for('public.link_action', lid=l['id'], action='off' if l['enabled'] else 'on') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm" type="submit">{{ 'Turn off' if l['enabled'] else 'Turn on' }}</button></form>
+<form method="post" action="{{ url_for('public.link_action', lid=l['id'], action='regenerate') }}" onsubmit="return confirm('Old printed QR codes will stop working. Continue?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm" type="submit">New code</button></form>
+<form method="post" action="{{ url_for('public.link_action', lid=l['id'], action='delete') }}" onsubmit="return confirm('Delete this public QR?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Delete</button></form></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">No public QR links yet.</div>{% endif %}</div>
+{% endblock %}

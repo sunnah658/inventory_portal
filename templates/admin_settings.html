@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Settings</h1><p class="hint">Company name and logo. The logo shows on the login page, every page, the browser tab and printouts.</p></div></div>
+<div class="tw" style="grid-template-columns:1fr 1fr">
+  <div class="card"><h2>Company name</h2>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="name">
+      <div class="fd"><label for="company_name">Name</label><input id="company_name" name="company_name" type="text" maxlength="100" value="{{ name }}" required></div>
+      <button class="b p" type="submit">Save name</button></form></div>
+  <div class="card"><h2>Logo</h2>
+    <p><img src="{{ logo_url }}" alt="Current logo" style="max-height:90px;max-width:100%"></p>
+    <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="logo">
+      <div class="fd"><label for="logo">New logo (PNG, JPG or WEBP, max 2 MB)</label><input id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp" required>
+        <div class="sub">A wide picture with a transparent background (PNG) looks best. Reload the page with Ctrl+F5 if an old logo still shows.</div></div>
+      <button class="b p" type="submit">Upload logo</button></form>
+    <form method="post" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reset_logo"><button class="b sm" type="submit">Use the default logo</button></form></div>
+</div>
+{% endblock %}

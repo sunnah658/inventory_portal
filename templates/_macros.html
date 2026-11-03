@@ -1,0 +1,122 @@
+{# _macros.html - reusable pieces. Import with:  {% from "_macros.html" import x with context %} #}
+{% macro cell(col, v) -%}
+{%- if v is none or v == '' -%}
+{%- elif col.col_type == 'dropdown' and (v|status_class) -%}<span class="s {{ v|status_class }}">{{ v }}</span>
+{%- elif col.col_type == 'longtext' -%}<div class="clamp">{{ v }}</div>
+{%- elif col.col_type == 'number' -%}<span class="num">{{ v }}</span>
+{%- elif col.col_type == 'date' -%}{{ v|showdt }}
+{%- else -%}{{ v }}{%- endif -%}
+{%- endmacro %}
+
+{% macro pager(page, pages, endpoint, args) %}
+{% if pages > 1 %}<div class="pager">
+  {% if page > 1 %}<a class="b sm" href="{{ url_for(endpoint, page=page-1, **args) }}">Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a class="b sm" href="{{ url_for(endpoint, page=page+1, **args) }}">Next</a>{% endif %}
+</div>{% endif %}
+{% endmacro %}
+
+{# Record tables grouped by department. mode: 'mine' (shows Shared with) or 'shared' (shows Owner). bulk adds tick boxes #}
+{% macro groups_table(ctx, mode, bulk=False) %}
+{% for grp in ctx.groups %}
+  {% if ctx.multi %}<h2 class="grp">{{ grp.dept_name }}</h2>{% endif %}
+  <div class="tb"><table>
+    <thead><tr>
+      {% if bulk %}<th class="chk"><input type="checkbox" class="selall" aria-label="Select all"></th>{% endif %}
+      {% for c in grp.columns[:7] %}<th>{{ c.name }}</th>{% endfor %}
+      <th>{{ 'Owner' if mode == 'shared' else 'Shared with' }}</th><th class="noprint"></th>
+    </tr></thead>
+    <tbody>
+    {% for r in grp.rows %}{% set vals = ctx.vmap[r.id] %}{% set lvl = ctx.levels.get(r.id) %}
+    <tr class="r">
+      {% if bulk %}<td class="chk"><input type="checkbox" class="rowck" name="ids" value="{{ r.id }}" form="bulkform" aria-label="Select"></td>{% endif %}
+      {% for c in grp.columns[:7] %}<td>{{ cell(c, vals.get(c.id)) }}</td>{% endfor %}
+      <td>{% if mode == 'shared' %}{{ r.owner_name }}{% else %}{% for n in ctx.shares[r.id] %}<span class="dp">{{ n }}</span>{% endfor %}{% endif %}</td>
+      <td class="actcell noprint">
+        <a class="b sm" href="{{ url_for('records.detail', rid=r.id) }}">Open</a>
+        {% if lvl in ('admin', 'owner', 'shared') %}<a class="b sm" href="{{ url_for('records.edit_record', rid=r.id) }}">Edit</a>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if grp.columns|length > 7 %}<div class="nt">The first 7 columns are shown. Open a record to see all fields.</div>{% endif %}
+  </div>
+{% endfor %}
+{% endmacro %}
+
+{# Search, filter and sort bar with saved views #}
+{% macro listbar(endpoint, hidden, q, info, names, saved, view_page, keep) %}
+<form class="tools" method="get" action="{{ url_for(endpoint) }}">
+  {% for k, v in hidden.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <input type="search" name="q" value="{{ q }}" placeholder="Search records" aria-label="Search records">
+  <select name="fcol" aria-label="Filter column"><option value="">Filter by column</option>
+    {% for n in names %}<option value="{{ n }}" {{ 'selected' if info.fcol|lower == n|lower }}>{{ n }}</option>{% endfor %}</select>
+  <input type="search" name="fval" value="{{ info.fval }}" placeholder="contains" aria-label="Filter value">
+  <select name="sort" aria-label="Sort by"><option value="updated" {{ 'selected' if info.sort == 'updated' }}>Sort: last changed</option>
+    <option value="created" {{ 'selected' if info.sort == 'created' }}>Sort: date created</option>
+    {% for n in names %}<option value="col:{{ n }}" {{ 'selected' if info.sort == 'col:' ~ n }}>Sort: {{ n }}</option>{% endfor %}</select>
+  <select name="dir" aria-label="Direction"><option value="desc" {{ 'selected' if info.dir == 'desc' }}>Descending</option><option value="asc" {{ 'selected' if info.dir == 'asc' }}>Ascending</option></select>
+  <button class="b" type="submit">Apply</button>
+  {% if q or info.fcol or info.sort != 'updated' or info.dir != 'desc' %}<a href="{{ url_for(endpoint, **hidden) }}">Clear</a>{% endif %}
+</form>
+<div class="tools">
+  {% for v in saved %}
+    <span style="display:inline-flex;align-items:center;gap:2px"><a class="tab" href="{{ url_for(endpoint) }}{{ '?' ~ v.query if v.query }}">{{ v.name }}</a>
+    <form method="post" action="{{ url_for('bulk.view_delete', vid=v.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="iconbtn" style="width:28px;height:28px" type="submit" title="Delete this saved view" aria-label="Delete saved view">&times;</button></form></span>
+  {% endfor %}
+  <details class="dt"><summary class="b sm">Save this view</summary>
+    <form class="pop" method="post" action="{{ url_for('bulk.view_save') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="page" value="{{ view_page }}"><input type="hidden" name="query" value="{{ keep|urlencode }}"><input type="hidden" name="back" value="{{ request.full_path }}">
+      <label for="vname">Name of this view</label><input id="vname" type="text" name="name" maxlength="60" required>
+      <div class="sub">Saves the search, filter and sorting you see now.</div><button class="b p sm" type="submit" style="margin-top:10px">Save view</button></form></details>
+</div>
+{% endmacro %}
+
+{# The bar that appears when records are ticked #}
+{% macro bulkbar(departments) %}
+<form id="bulkform" method="post" action="{{ url_for('bulk.bulk') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ request.full_path }}">
+  <div class="bulkbar" id="bulkbar"><span class="count" id="bulkcount">0</span><span>selected</span>
+    <details class="dt"><summary class="b sm">Share with</summary><div class="pop">
+      {% for d in departments %}<label class="ck"><input type="checkbox" name="dept" value="{{ d.id }}">{{ d.name }}</label>{% endfor %}
+      <button class="b p sm" type="submit" name="action" value="share" style="margin-top:10px">Share selected</button></div></details>
+    <button class="b sm" type="submit" name="action" value="public">Public QR</button>
+    <button class="b sm" type="submit" name="action" value="labels">QR labels</button>
+    <button class="b sm" type="submit" name="action" value="xlsx">Excel</button>
+    <button class="b sm" type="submit" name="action" value="pdf">PDF</button>
+    <button class="b sm" type="submit" name="action" value="csv">CSV</button>
+    <button class="b sm dg" type="submit" name="action" value="delete" onclick="return confirm('Move the selected records to the recycle bin?');">Delete</button>
+  </div>
+</form>
+<script>
+(function(){var bar=document.getElementById('bulkbar'),cnt=document.getElementById('bulkcount');if(!bar)return;
+function upd(){var n=0;document.querySelectorAll('input.rowck').forEach(function(b){if(b.checked)n++;});cnt.textContent=n;bar.classList.toggle('show',n>0);}
+document.addEventListener('change',function(e){var t=e.target;if(t.classList.contains('rowck')){upd();}
+ if(t.classList.contains('selall')){t.closest('table').querySelectorAll('input.rowck').forEach(function(b){b.checked=t.checked;});upd();}});})();
+</script>
+{% endmacro %}
+
+{% macro history_line(h) %}
+<div class="ev"><b>{{ h.full_name or 'System' }}</b>
+{% if h.action == 'created' %} created this record{% if h.new_value %} ({{ h.new_value }}){% endif %}
+{% elif h.action == 'edit' %} changed <b>{{ h.field }}</b><br><del>{{ h.old_value or '(blank)' }}</del> &rarr; <ins>{{ h.new_value or '(blank)' }}</ins>
+{% elif h.action == 'shared' %} shared this with <b>{{ h.new_value }}</b>
+{% elif h.action == 'unshared' %} stopped sharing with <b>{{ h.old_value }}</b>
+{% elif h.action == 'deleted' %} moved this record to the recycle bin
+{% elif h.action == 'restored' %} restored this record
+{% elif h.action == 'repair_added' %} added a repair entry: {{ h.new_value }}
+{% elif h.action == 'repair_returned' %} marked a repair as finished
+{% elif h.action == 'repair_removed' %} removed a repair entry
+{% elif h.action == 'attachment_added' %} added the file <b>{{ h.new_value }}</b>
+{% elif h.action == 'attachment_removed' %} removed the file <b>{{ h.old_value }}</b>
+{% elif h.action == 'transfer_requested' %} asked to hand this record over to <b>{{ h.new_value }}</b>
+{% elif h.action == 'transferred' %} handed this record over from <b>{{ h.old_value }}</b> to <b>{{ h.new_value }}</b>
+{% elif h.action == 'transfer_declined' %} declined a handover
+{% elif h.action == 'transfer_cancelled' %} cancelled a handover
+{% else %} {{ h.action }}{% endif %}
+<small>{{ h.at }}</small></div>
+{% endmacro %}
+
+{# Asks for the admin's password unless it was typed a moment ago #}
+{% macro reauth() %}{% if not reauth_fresh %}<input class="pw" type="password" name="admin_password" placeholder="Your password to confirm" autocomplete="current-password" required aria-label="Your password">{% endif %}{% endmacro %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit user' if editing else 'Add user' }}{% endblock %}
+{% block content %}
+<div class="card medium"><h1>{{ 'Edit user' if editing else 'Add user' }}</h1>
+  <p class="hint" style="margin-bottom:18px">{% if editing %}The username cannot be changed. Records stay in the department they were created in. Use "Reset password" on the Users page for a new password.{% else %}The user must change the temporary password at first login.{% endif %}</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fm">
+      <div class="fd"><label for="full_name">Full name</label><input id="full_name" name="full_name" type="text" maxlength="150" required value="{{ item.get('full_name') or '' }}"></div>
+      <div class="fd"><label for="username">Username</label>{% if editing %}<input id="username" type="text" value="{{ item.get('username') }}" disabled>{% else %}<input id="username" name="username" type="text" maxlength="60" required value="{{ item.get('username') or '' }}">{% endif %}</div>
+      <div class="fd"><label for="department_id">Department</label><select id="department_id" name="department_id" required><option value="" disabled {{ 'selected' if not item.get('department_id') }}>Choose a department</option>
+        {% for d in departments %}<option value="{{ d['id'] }}" {{ 'selected' if item.get('department_id')|string == d['id']|string }}>{{ d['name'] }}</option>{% endfor %}</select></div>
+      <div class="fd"><label for="role">Role</label><select id="role" name="role"><option value="user" {{ 'selected' if item.get('role') != 'admin' }}>User</option><option value="admin" {{ 'selected' if item.get('role') == 'admin' }}>Admin (sees everything)</option></select></div>
+    </div>
+    <label class="ck"><input type="checkbox" name="is_dept_admin" value="1" {{ 'checked' if item.get('is_dept_admin') }}>Department admin: sees every record of the department, can write suggestions, cannot edit others' records</label>
+    <div class="fd" style="margin-top:14px"><label>Can also view these departments (view and suggest only, no editing)</label>
+      {% for d in departments %}<label class="ck"><input type="checkbox" name="view_dept" value="{{ d['id'] }}" {{ 'checked' if d['id'] in view_ids }}>{{ d['name'] }}</label>{% endfor %}</div>
+    {% if not editing %}<div class="fd"><label for="password">Temporary password</label><input id="password" name="password" type="text" minlength="8" autocomplete="off"><div class="sub">Leave empty and the portal creates a random one.</div></div>
+    {% else %}<label class="ck"><input type="checkbox" name="is_active" value="1" {{ 'checked' if item.get('is_active') }}> Account is active (untick to block login)</label>
+    {% if not reauth_fresh %}<div class="fd" style="margin-top:14px"><label for="admin_password">Your password (needed to change the role or disable the account)</label><input id="admin_password" type="password" name="admin_password" autocomplete="current-password"></div>{% endif %}{% endif %}
+    <div class="acts" style="margin-top:14px"><button class="b p" type="submit">{{ 'Save changes' if editing else 'Create user' }}</button><a class="b" href="{{ url_for('admin.users') }}">Cancel</a></div>
+  </form></div>
+{% endblock %}

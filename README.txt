@@ -1,0 +1,826 @@
+==============================================================================
+ OFFICE RECORD PORTAL  -  PROJECT GUIDE
+ Flask + SQLite, running in Docker on an Ubuntu server
+==============================================================================
+
+ CONTENTS
+   1.  What this portal does
+   2.  Quick start on Ubuntu with Docker
+   3.  Which file does what (file map)
+   4.  How the files are connected
+   5.  The most important files
+   6.  How to change the logo and the company name
+   7.  Where the data is stored
+   8.  Daily administration (users, departments, columns, sharing)
+   9.  Backup, export to another machine, restore, and cron
+  10.  Changing code and updating the portal
+  11.  Common errors and how to troubleshoot them
+  12.  Security notes and limits
+  13.  New in this version: features guide (roles, public QR, language ...)
+  14.  HTTPS (secure connection)
+  15.  Virus scanning of attachments
+  16.  Idle timeout, sessions and login protection
+
+
+==============================================================================
+ 1. WHAT THIS PORTAL DOES
+==============================================================================
+ Employees open  http://SERVER-IP:PORT  in a browser, log in with username,
+ password and department, and keep their records in one central database.
+
+   - Login with department. The admin creates all accounts (or imports a CSV).
+   - Roles: Admin (sees and manages everything) and User.
+   - Departments, each with its own record columns defined by the admin.
+     Suggested starter columns exist for IT, HR & Admin, Billing & Revenue,
+     Sales & Marketing, Technical, Accounts and Management.
+   - Column types: text, long text, number, date, dropdown list, yes/no.
+   - "Protect from accidental delete" on each column. A protected column cannot
+     be removed until the admin clicks "Remove protection".
+   - Removing a column hides it and keeps its data. It can be restored, or
+     erased for good (an automatic backup is made first).
+   - Sharing: the owner shares a record with whole departments. Their members
+     can view and edit every field. Only the owner and the admin can delete or
+     change sharing.
+   - Edit history on every record: who changed what, when, old and new value.
+   - Two people editing at once: the second save is refused with a clear
+     message, so nothing is silently overwritten.
+   - Recycle bin: deleted records can be restored for 30 days.
+   - Reminders: any number of date columns per department (for example Warranty end
+     date, Meeting) drive the reminder list, the dashboard and the bell messages
+     (see section 17).
+   - Repair log per record. QR code labels per record (print and stick on item).
+   - Optional file attachments, switched on per department with a size limit.
+   - CSV download (users: their own records; admin: everything, filterable).
+   - Admin dashboard, activity log (with IP addresses), settings (company name, logo).
+   - NEW in this version (see section 13): public QR codes, hand over records,
+     requests with approval, comments and suggestions, notifications, bulk actions,
+     Excel and PDF exports and reports, saved filters and sorting,
+     light/dark mode, department admins, view-only access to other departments,
+     HTTPS, password re-entry, login protection, idle timeout, virus scanning,
+     and a mobile-friendly layout.
+
+
+==============================================================================
+ 2. QUICK START ON UBUNTU WITH DOCKER
+==============================================================================
+ Step 1  Install Docker (once)
+         curl -fsSL https://get.docker.com | sudo sh
+         sudo systemctl enable --now docker
+         sudo usermod -aG docker $USER      (log out and log in again)
+         docker compose version             (must print a version)
+
+ Step 2  Copy the project to the server and open the folder
+         unzip inventory-portal-docker.zip
+         cd inventory-portal
+
+ Step 3  Set the port and time zone
+         nano .env
+            PORTAL_PORT=8000          port employees type in the browser
+            TZ=Asia/Dhaka             your time zone
+
+ Step 4  Start the portal
+         docker compose up -d --build
+         docker compose ps             (STATUS should become "healthy")
+
+ Step 5  Open the port in the firewall (use your port number)
+         sudo ufw allow 8000/tcp
+         sudo ufw status
+
+ Step 6  First login (from any PC on the network)
+         http://SERVER-IP:8000
+            Username:   admin
+            Password:   ChangeMe@123
+            Department: All departments (admin only)
+         The portal forces a new password immediately.
+
+ Step 7  Set up (as admin)
+         Departments  -> create each department (pick its starter template)
+         Users        -> add users, or "Import users" with a CSV (200 at once)
+         Settings     -> company name and logo
+
+ The data survives restarts: Docker starts at boot and the container has
+ "restart: unless-stopped". Test it once with:  sudo reboot
+
+
+==============================================================================
+ 3. WHICH FILE DOES WHAT  (file map)
+==============================================================================
+ Format:  FILE - purpose.  [Uses: files it needs]  [Used by: files that need it]
+
+ --- Python program files (project folder) -----------------------------------
+
+ app.py            Starts the portal. Creates the Flask app, upgrades/creates the
+                   database, registers all page files, checks the login and the
+                   security token on every request, adds the logo and company
+                   name to every page, hourly clean-up of the recycle bin.
+                   [Uses: every .py file below]  [Used by: Dockerfile (waitress)]
+
+ config.py         All settings: data folders, default admin, session time,
+                   login lock, recycle bin days, attachment limits.
+                   [Used by: almost every .py file]
+
+ models.py         The database: table definitions (schema), connection with safe
+                   settings (WAL), automatic upgrade of older databases, import
+                   of old "equipment" data, activity log helper.
+                   [Uses: config.py, core.py]  [Used by: app.py, core.py, routes]
+
+ core.py           The business rules: columns, permission checks (owner / shared
+                   / admin), reading and saving record values, edit history,
+                   conflict check for simultaneous edits, recycle bin, department
+                   creation, reminders, CSV building.
+                   [Uses: models.py, templates_data.py, utils.py, config.py]
+                   [Used by: routes_records.py, routes_admin.py, import_users.py]
+
+ auth.py           Login with department, logout, change password, wrong-password
+                   lock, and the login_required / admin_required guards.
+                   [Uses: models.py, config.py]  [Used by: app.py, route files]
+
+ routes_records.py Pages every user sees: record list, add/edit, detail page,
+                   sharing, repair log, attachments, recycle bin, reminders,
+                   QR labels, own CSV download.
+                   [Uses: core.py, auth.py, models.py, utils.py]
+                   [Templates: records_list, record_form, record_detail, bin,
+                    reminders, qr_label]
+
+ routes_admin.py   Admin-only pages: dashboard, all records, users, departments,
+                   record columns (add, edit, order, protect, remove, restore,
+                   erase), attachment settings, user import, activity log,
+                   settings (company name, logo).
+                   [Uses: core.py, auth.py, backup.py, branding.py,
+                    import_users.py, routes_records.py (QR labels)]
+                   [Templates: all admin_*.html]
+
+ branding.py       Serves the logo and the browser-tab icon. Picks the logo that
+                   was uploaded in Settings, otherwise static/logo.png.
+                   [Used by: app.py, routes_admin.py, base.html]
+
+ templates_data.py The suggested starter columns of the 7 departments.
+                   [Used by: core.py, import_users.py, routes_admin.py]
+                   Edit this file to change the suggested columns.
+
+ utils.py          Small helpers: CSV download (safe for Excel), random password,
+                   search escaping, paging.
+                   [Used by: core.py, routes, import_users.py]
+
+ import_users.py   Creates many users from a CSV file (also usable from the
+                   command line).
+                   [Uses: core.py, templates_data.py]  [Used by: routes_admin.py]
+
+ backup.py         Makes a safe database backup (works while the portal runs,
+                   keeps the newest 30). Also used for the automatic backup
+                   before a column is erased for good.
+                   [Used by: backup.sh, routes_admin.py]
+
+ reset_admin.py    Emergency tool: new temporary password for the admin.
+                   docker compose exec portal python reset_admin.py
+
+ --- NEW program files in this version ---------------------------------------
+
+ routes_workflow.py  Notifications, comments/suggestions, handovers (transfers),
+                   requests that need approval.
+                   [Uses: core.py, routes_records.py]  [Templates: notifications,
+                    transfers, requests, request_form]
+ routes_public.py  Public QR links: the public page /p/<code>, the switch on a
+                   record, group QR for many records, the QR print page.
+                   [Uses: core.py, routes_records.py]  [Templates: public_view,
+                    public_message, public_links, public_link_form]
+ routes_bulk.py    Bulk actions on ticked records, Excel/PDF exports, reports,
+                   saved views (filters and sorting).
+                   [Uses: core.py, exports.py, routes_records.py, routes_admin.py]
+ security.py       Login attempt locks (username and IP address), sessions with the
+                   30-minute idle timeout, password rules, password re-entry.
+                   [Used by: auth.py, app.py, routes_admin.py, import_users.py]
+ scanner.py        Talks to the ClamAV container to scan uploaded files.
+                   [Used by: routes_records.py]
+ exports.py        Builds the formatted Excel (.xlsx) and PDF files.
+                   [Uses: openpyxl, reportlab, static/fonts]  [Used by: routes_bulk.py]
+ Caddyfile         Settings of the HTTPS front door.   certs/  your own certificate.
+
+ CHANGED program files: app.py (sessions, idle timeout, language/theme, HTTPS proxy
+ headers), models.py (new tables), core.py (department admin and view-only access,
+ notifications, handovers, sorting, public links), auth.py (login protection),
+ routes_records.py (new access levels, comments, public QR panel, virus scan),
+ routes_admin.py (roles, password re-entry, sessions page, IP in the log),
+ import_users.py and utils.py (password rules), style.css (mobile, dark mode).
+
+ --- Scripts and Docker files -------------------------------------------------
+
+ backup.sh         Backup of database and attachments to ./backups-copy and,
+                   if configured, to another machine. Run by hand or by cron.
+                   [Uses: backup.py (inside the container), backup.conf]
+
+ backup.conf       Optional settings for backup.sh (remote machine address).
+
+ Dockerfile        How the container image is built (Python, packages, waitress).
+ docker-compose.yml How the container runs: port, time zone, the data volume
+                   "portal_data", automatic restart.  [Reads: .env]
+ .env              Port, time zone, HTTPS flag - the settings you change most.
+ .dockerignore     Files that must not be copied into the image.
+ requirements.txt  Python packages: Flask, waitress, segno (QR codes).
+ README.txt        This guide.
+
+ --- Pages (folder templates/) -----------------------------------------------
+ base.html            Frame of every page: logo, menu, messages, print header.
+ _macros.html         Reusable pieces: record tables, paging, history lines.
+ login.html           Login page.            change_password.html  Password page.
+ error.html           Error page (403, 404 ...).
+ records_list.html    My records / shared tabs.   record_form.html  Add / edit.
+ record_detail.html   One record: details, repairs, files, sharing, history, QR.
+ bin.html             Recycle bin.           reminders.html   Reminder lists.
+ qr_label.html        Printable QR labels.
+ admin_dashboard.html, admin_records.html, admin_users.html,
+ admin_user_form.html, admin_departments.html, admin_columns.html,
+ admin_column_edit.html, admin_removed_columns.html, admin_import.html,
+ admin_import_result.html, admin_activity.html, admin_settings.html
+
+ --- Look and files (folder static/) -----------------------------------------
+ style.css            All colours, fonts, layout, animations and print styles.
+ logo.png             DEFAULT logo (login page, menu, printouts, QR labels).
+ favicon.png          DEFAULT browser-tab icon.
+ users_template.csv   Sample file for "Import users".
+ fonts/               The bundled font (works without internet).
+
+ --- Data (NOT in the project folder: inside the Docker volume "portal_data") --
+ portal.db            The database (users, departments, columns, records ...).
+ portal.db-wal / -shm Recent saves not yet merged into portal.db. Normal.
+ secret.key           Keeps login sessions valid. Do not share it.
+ uploads/             Attachment files, one folder per record.
+ branding/            Logo uploaded in Settings.
+ backups/             Database backups made by backup.py.
+
+
+==============================================================================
+ 4. HOW THE FILES ARE CONNECTED
+==============================================================================
+
+   Employee browser
+         |  http://SERVER-IP:PORT
+         v
+   docker-compose.yml (port from .env)  -->  Dockerfile starts waitress
+         v
+   app.py  -------------------------------------------------------------+
+     |  registers                                                        |
+     +--> auth.py ............ login, logout, password                   |
+     +--> routes_records.py .. user pages                                |
+     +--> routes_admin.py .... admin pages                               |
+     +--> branding.py ........ logo, icon                                |
+     |                                                                   |
+     |   routes_*.py  --> core.py (rules) --> models.py --> portal.db    |
+     |   routes_*.py  --> templates/*.html --> static/style.css          |
+     |   core.py      --> templates_data.py (starter columns)            |
+     +--> config.py (settings used by all) <-----------------------------+
+
+ Example: an employee saves a record.
+   record_form.html -> routes_records.py (edit_record) -> core.parse_form
+   (checks values) -> core.update_record (version check, writes values and
+   history) -> models.py connection -> portal.db -> back to the detail page.
+
+
+==============================================================================
+ 5. THE MOST IMPORTANT FILES
+==============================================================================
+ 1. The data volume "portal_data" (especially portal.db). It holds all your
+    data. Back it up (section 9). Never run "docker compose down -v".
+ 2. app.py       - connects everything. If it has an error, nothing starts.
+ 3. core.py      - all rules about records, columns, sharing and permissions.
+ 4. models.py    - the database structure. Be careful when editing the tables.
+ 5. .env and docker-compose.yml - port, time zone, data volume, auto restart.
+ 6. backup.sh    - your protection against disk failure.
+ Everything else (templates, style.css, logo) is appearance and is safe to
+ change.
+
+
+==============================================================================
+ 6. HOW TO CHANGE THE LOGO AND THE COMPANY NAME
+==============================================================================
+ METHOD A - from the portal (no restart, no rebuild)   <- recommended
+   1. Log in as admin, open  Settings.
+   2. Under "Logo" choose a PNG, JPG or WEBP file (max 2 MB) and click
+      "Upload logo".  A wide picture with a transparent background works best.
+   3. Press Ctrl+F5 in the browser if the old logo still shows.
+   The new logo appears on the login page, every page, the browser tab, QR
+   labels and printouts. "Use the default logo" brings the original back.
+   The company name is changed on the same page.
+
+ METHOD B - replace the default logo files (needs a rebuild)
+   1. Replace static/logo.png (the main logo, about 900 px wide) and
+      static/favicon.png (small square icon, 128 x 128 px). Keep the names.
+   2. Rebuild:  docker compose up -d --build
+   A logo uploaded in Settings (Method A) overrides these files.
+
+ CHANGE THE COLOURS: open static/style.css; the colours are at the top
+   (--accent, --cyan, --ink). Then rebuild (section 10).
+
+
+==============================================================================
+ 7. WHERE THE DATA IS STORED
+==============================================================================
+ All data is in the Docker volume "portal_data", mounted at /data inside the
+ container. On Ubuntu it normally lives here (needs sudo to open):
+      /var/lib/docker/volumes/inventory-portal_portal_data/_data
+ Find the exact path:
+      docker volume inspect inventory-portal_portal_data
+ Look inside:
+      docker compose exec portal ls -lh /data
+
+ Do not copy or edit portal.db by hand while the portal runs. Use backup.sh.
+ Read a database safely: take a backup (section 9) and open the copy in
+ "DB Browser for SQLite" on your own PC.
+
+ Space needed (200 users): database about 100-150 MB after 1 year. Attachments
+ are the only thing that can grow large (about 2-10 GB per year depending on
+ use). Keep 100 GB free to be comfortable.
+
+
+==============================================================================
+ 8. DAILY ADMINISTRATION
+==============================================================================
+ ADD A DEPARTMENT   Admin > Departments > pick a template (or "Start blank"),
+                    untick the suggested columns you do not need, create.
+ RECORD COLUMNS     Admin > Departments > Columns.
+                    Add: name, type, dropdown options, required, protect,
+                    reminder date. Use the arrows to change the order.
+                    Remove: click Remove, type the column name to confirm. Data
+                    is kept in "Removed columns" (restore, or erase for good).
+                    Protected column: no Remove button. Click "Remove
+                    protection" first, then remove it.
+ ATTACHMENTS        Admin > Departments > Columns > "File attachments": switch
+                    on for that department and set the max size per file.
+ USERS              Admin > Users: add, edit department/role, disable, reset
+                    password. Import 200 users: Admin > Import users.
+ MOVING A USER      Changing a user's department does not move old records;
+                    they stay in the department where they were created.
+ REMINDERS          Mark any number of date columns per department as "Reminder date"
+                    (section 17 explains the bell messages and the time field).
+ RECYCLE BIN        Owner or admin can restore, or "Delete forever". Items are
+                    erased automatically after 30 days (config.py: BIN_DAYS).
+ ACTIVITY LOG       Admin > Activity (last 300 actions; kept for 2 years).
+
+
+==============================================================================
+ 9. BACKUP, EXPORT TO ANOTHER MACHINE, RESTORE, AND CRON
+==============================================================================
+ A Docker volume protects you from crashes and restarts, NOT from a failed
+ disk or a deleted volume. Keep backups, and keep a copy on another machine.
+
+ 9.1  TAKE A BACKUP BY HAND
+      cd inventory-portal
+      chmod +x backup.sh                (first time only)
+      ./backup.sh
+      Result:  ./backups-copy/db/portal_YYYYMMDD_HHMMSS.db   (database)
+               ./backups-copy/uploads/                        (attachments)
+      The database backup is safe while employees are working and contains
+      every entry saved up to that moment. Check:  ls -lh backups-copy/db
+
+ 9.2  AUTOMATIC BACKUP WITH CRON
+      Use the root crontab so cron can use Docker.
+        sudo crontab -e
+      Add these lines at the end (replace the path with the output of "pwd"
+      inside the project folder):
+
+        PATH=/usr/local/bin:/usr/bin:/bin
+        # every night at 02:00
+        0 2 * * * /home/ubuntu/inventory-portal/backup.sh >> /var/log/portal-backup.log 2>&1
+
+      More often (every hour, on the hour):
+        0 * * * * /home/ubuntu/inventory-portal/backup.sh >> /var/log/portal-backup.log 2>&1
+
+      Check that cron has it:   sudo crontab -l
+      Check the result:         tail -n 20 /var/log/portal-backup.log
+      (The .log file only holds the messages of the job. The real backups are
+       the .db files in backups-copy/db.)
+
+ 9.3  EXPORT BACKUPS TO ANOTHER MACHINE AUTOMATICALLY
+      Needs an SSH login to the other machine ("backup server").
+      On BOTH machines:   sudo apt install -y rsync
+      On the backup server, create the folder:
+        mkdir -p /srv/backups/inventory-portal
+      On the portal server (as root, because cron runs as root):
+        sudo ssh-keygen -t ed25519 -f /root/.ssh/portal_backup_key -N ""
+        sudo ssh-copy-id -i /root/.ssh/portal_backup_key.pub backupuser@192.168.1.50
+        sudo ssh -i /root/.ssh/portal_backup_key backupuser@192.168.1.50 exit
+            (the last command accepts the host key once; it must not ask for a
+             password)
+      Edit backup.conf in the project folder:
+        REMOTE_TARGET=backupuser@192.168.1.50:/srv/backups/inventory-portal
+        SSH_OPTIONS="-i /root/.ssh/portal_backup_key"
+      Test:  sudo ./backup.sh     (last line must say "backup finished")
+      From now on every run of backup.sh (and the cron job) also copies
+      everything to the other machine. Old files are never deleted there.
+
+      One-time manual copy instead (from the portal server):
+        scp -r backups-copy backupuser@192.168.1.50:/srv/backups/inventory-portal/
+      Or pull it to your own PC:
+        scp -r user@SERVER-IP:/home/ubuntu/inventory-portal/backups-copy .
+
+ 9.4  RESTORE A BACKUP (same server, or a new server)
+      On a new server first do section 2 (steps 1-4) so the container exists.
+      Then, in the project folder (replace the file name):
+
+        docker compose stop portal
+        docker compose cp backups-copy/db/portal_20261027_020000.db portal:/data/portal.db
+        docker compose cp backups-copy/uploads/. portal:/data/uploads/
+        docker compose run --rm -u root --entrypoint sh portal -c \
+          "chown -R portal /data/portal.db /data/uploads; rm -f /data/portal.db-wal /data/portal.db-shm"
+        docker compose up -d
+
+      The chown line matters: without it you get "attempt to write a readonly
+      database". Restoring REPLACES all current data with the backup.
+
+ 9.5  MOVE THE PORTAL TO ANOTHER SERVER
+      1. On the old server:  ./backup.sh
+      2. Copy the project folder (with .env) and backups-copy to the new server.
+      3. On the new server follow section 2 steps 1-4, then section 9.4.
+      4. Employees use the new IP (or move the old IP to the new server).
+
+
+==============================================================================
+ 10. CHANGING CODE AND UPDATING THE PORTAL
+==============================================================================
+ The code and templates are copied INTO the image when it is built. So:
+
+   Changed .py, .html, .css, logo files, requirements.txt, Dockerfile:
+        docker compose up -d --build
+   Changed only .env:
+        docker compose up -d
+   Plain "docker compose up -d" after a code change keeps running the OLD code.
+
+ Your data is not touched by a rebuild (it lives in the volume). Before any
+ update run ./backup.sh. The database upgrades itself on start: missing tables
+ and columns are added and old data is kept. Press Ctrl+F5 in the browser to
+ load a new style.css.
+
+ Read what the portal is saying:   docker compose logs --tail 100
+ Follow live:                      docker compose logs -f
+ Start / stop / restart:           docker compose up -d | down | restart
+ Status:                           docker compose ps
+ NEVER:                            docker compose down -v   (deletes the data)
+
+ Run without Docker (testing only):
+     pip install -r requirements.txt  &&  python app.py   (http://127.0.0.1:8000)
+
+
+==============================================================================
+ 11. COMMON ERRORS AND HOW TO TROUBLESHOOT THEM
+==============================================================================
+ First look at:  docker compose ps   and   docker compose logs --tail 100
+
+ PROBLEM : Other PCs cannot open http://SERVER-IP:8000
+ CAUSE   : Firewall, wrong IP/port, or container not running.
+ FIX     : docker compose ps (running and healthy?). sudo ufw allow 8000/tcp.
+           Use the port from .env. Test on the server: curl -I http://localhost:8000/login
+           Check the PC is in the same network (ping SERVER-IP).
+
+ PROBLEM : "permission denied while trying to connect to the Docker daemon"
+ CAUSE   : Your user is not allowed to use Docker.
+ FIX     : sudo usermod -aG docker $USER, log out and in again (or use sudo).
+
+ PROBLEM : "port is already allocated" / "address already in use"
+ CAUSE   : Another program uses that port.
+ FIX     : Change PORTAL_PORT in .env, then docker compose up -d.
+           Who uses it:  sudo ss -ltnp | grep 8000
+
+ PROBLEM : Container keeps restarting or shows "unhealthy"
+ CAUSE   : An error at start (often a typo after a code change).
+ FIX     : docker compose logs --tail 100 and read the last lines. Fix the file,
+           then docker compose up -d --build. If it started working before, restore
+           the previous file.
+
+ PROBLEM : I changed a file but nothing changed
+ CAUSE   : The image was not rebuilt, or the browser cached the page.
+ FIX     : docker compose up -d --build, then Ctrl+F5.
+
+ PROBLEM : "This page has expired" (error 400) after pressing Save or Login
+ CAUSE   : The page stayed open too long, cookies are blocked, or PORTAL_HTTPS=1
+           while the portal is opened over plain http.
+ FIX     : Refresh the page and try again. Set PORTAL_HTTPS=0 in .env (unless you
+           really use HTTPS) and run docker compose up -d.
+
+ PROBLEM : "Too many wrong attempts"
+ CAUSE   : 5 wrong passwords for that username (lock for 5 minutes). The lock is saved
+           in the database, so restarting the container does not remove it.
+ FIX     : Wait 5 minutes.
+
+ PROBLEM : The admin forgot the password
+ FIX     : docker compose exec portal python reset_admin.py
+           (prints a temporary password; to reset another user add the username)
+
+ PROBLEM : A user cannot log in although the password is right
+ CAUSE   : Wrong department chosen (normal users must pick their own), or the
+           account is disabled.
+ FIX     : Admin > Users: check the department and that the account is active.
+
+ PROBLEM : A user cannot see a colleague's record
+ CAUSE   : Records are private to their owner. Others see them only when the
+           owner shares them with their department.
+ FIX     : The owner opens the record and ticks the department under "Shared with".
+
+ PROBLEM : "Your changes were NOT saved" while editing
+ CAUSE   : Someone else saved the same record first (protection against
+           overwriting).
+ FIX     : The page shows the latest values and your own entries. Apply your
+           change again and save.
+
+ PROBLEM : A column has no Remove button
+ CAUSE   : It is protected against accidental delete.
+ FIX     : Click "Remove protection" on that column, then Remove.
+
+ PROBLEM : Times are wrong (hours off)
+ FIX     : Set TZ in .env (for example Asia/Dhaka), docker compose up -d.
+
+ PROBLEM : Upload fails or "file type is not allowed"
+ CAUSE   : Attachments are off for the department, the file is bigger than the
+           department limit (server maximum 25 MB), or the type is blocked
+           (programs and scripts are always blocked).
+ FIX     : Admin > Departments > Columns > File attachments.
+           Allowed: pdf, jpg, png, gif, webp, txt, csv, doc(x), xls(x), ppt(x).
+
+ PROBLEM : The new logo does not show
+ FIX     : Ctrl+F5. The file must be PNG, JPG or WEBP and under 2 MB.
+
+ PROBLEM : "attempt to write a readonly database"
+ CAUSE   : Restored file belongs to root instead of the portal user.
+ FIX     : Run the chown command of section 9.4, then docker compose up -d.
+
+ PROBLEM : "database is locked"
+ CAUSE   : Rare. Another program has the database open, or the disk is full/slow.
+ FIX     : Do not open portal.db by hand. df -h to check space. docker compose restart.
+
+ PROBLEM : Disk is full
+ FIX     : df -h and docker system df. Remove old copies in backups-copy, run
+           docker image prune, check the size of attachments. Add disk space.
+
+ PROBLEM : Cron backup does not run
+ FIX     : sudo crontab -l (is the line there?). Use the FULL path to backup.sh.
+           chmod +x backup.sh. Put "PATH=/usr/local/bin:/usr/bin:/bin" above the
+           line (cron has a short PATH and may not find docker). Read
+           /var/log/portal-backup.log. Test by hand with: sudo ./backup.sh
+
+ PROBLEM : Copy to the other machine fails
+ CAUSE/FIX: "rsync: command not found"  -> sudo apt install rsync on both machines.
+           "Permission denied (publickey)" -> repeat ssh-copy-id (section 9.3).
+           "Host key verification failed" -> run the ssh test command once by hand.
+           "No such file or directory" -> create the folder on the backup server.
+
+ PROBLEM : docker compose up --build fails while downloading packages
+ CAUSE   : The server has no internet access during the build.
+ FIX     : Allow internet for the build, or build the image on another machine
+           (docker save / docker load).
+
+ PROBLEM : "container name /inventory-portal is already in use"
+ FIX     : docker compose down (keeps the data), then docker compose up -d.
+
+
+==============================================================================
+ 12. SECURITY NOTES AND LIMITS
+==============================================================================
+ - Passwords are stored hashed. Admin-created temporary passwords must be
+   changed at first login. Five wrong attempts lock a user for five minutes.
+ - Every form has a security token (CSRF). Uploaded files get random names, only
+   safe types are accepted, and files are always downloaded, never executed.
+ - By default the portal uses plain HTTP (fine inside a trusted office network).
+   Turn on HTTPS as described in section 14. Never open the port to the internet.
+ - SQLite is enough for about 200 users (WAL mode, 8 server threads). If
+   the company grows to many hundreds of users saving constantly, move to
+   MySQL or PostgreSQL later (the data can be migrated).
+ - Keep the volume on a local SSD, not on a network share.
+ - Keep backups on another machine. A backup you never tested is not a backup:
+   try a restore on a spare machine once.
+
+
+==============================================================================
+ 13. NEW IN THIS VERSION: FEATURES GUIDE
+==============================================================================
+ PUBLIC QR (anyone can scan, no login)
+   One record: open the record > "Public QR" box > tick the fields to show >
+   "Create public QR". Print the QR from the same box.
+   Many records, one QR: in the list tick the records > "Public QR" > give a title,
+   tick the fields > create.
+   Safety: the link contains a long random code that cannot be guessed; only the
+   ticked fields are shown (never history, files, costs unless ticked, or owner
+   names); "Turn off" stops it at once; "New code" makes old printed QR codes useless;
+   one computer may open at most 60 public pages per minute; search engines are
+   told not to index it. Manage all links: More > Public QR links.
+   A logged-in person who may open the record is taken to the full record instead.
+   Labels printed with the normal "QR label" still ask for a login.
+
+ ROLES AND PERMISSIONS
+   Admin               everything.
+   User                own records, records shared with their department.
+   Department admin    (set per user: Admin > Users > Edit) sees EVERY record of
+                       their department in the tab "My department", can write
+                       suggestions, decides requests of the department, can run
+                       reports of the department. Cannot edit others' records.
+   View other          (set per user: "Can also view these departments") sees the
+   departments         records of those departments in the tab "Other departments"
+                       and can write suggestions. Cannot edit.
+   Every user can always add and edit their OWN records.
+   Suggestions appear on the record with a "Suggestion" label; the owner gets a
+   notification. They are separate from the edit history.
+
+ HAND OVER A RECORD   Record page > "Hand over" > choose the new owner. The new
+   owner accepts or declines (menu: More > Handovers). Ownership changes only after
+   accepting and the edit history shows it. The admin can hand over immediately.
+
+ REQUESTS WITH APPROVAL   Menu: Requests > New request (new item, repair, other).
+   The department admin and the admin are notified and approve or reject with a note.
+
+ NOTIFICATIONS   The bell in the top bar: shares, handovers, requests, comments,
+   suggestions, blocked viruses (admin) and a daily message about reminders due in the
+   next 7 days.
+
+ BULK ACTIONS   Tick records in a list. A bar appears: Share with, Public QR, QR labels,
+   Excel, PDF, CSV, Delete (recycle bin). Actions that change records work only on
+   records you own (or all, as admin).
+
+ EXCEL AND PDF   Lists: "Export" button. One record: "PDF" button (details, repairs,
+   history). Reports page (admin and department admins): all records, reminders,
+   open repairs, summary, and activity log (admin). Excel files have a styled header,
+   filters, frozen header, real numbers; PDF files have the logo and page numbers.
+   PDF prints English and European letters; other letters print as ? in PDF, Excel keeps them.
+
+ SAVED VIEWS, SORTING, FILTERS   In a list: search, "Filter by column", "Sort" and
+   direction, then "Save this view" to keep it. Saved views appear as buttons.
+
+ LOOK   Click your name (top right) > Appearance: Auto / Light / Dark. Saved per
+   user. The login page has the same switch.
+
+ PHONES   On a phone the menu becomes a button, tables become cards, forms use one
+   column. The Windows and Android apps show the same pages.
+
+ DANGEROUS ACTIONS NEED YOUR PASSWORD   Reset a user's password, change a role or
+   disable an account, remove/erase a column, remove protection, remove a department.
+   The admin types the own password once; for the next 5 minutes it is not asked again.
+
+ PASSWORD RULES   At least 8 characters with letters and numbers, not equal to the
+   username. Temporary passwords made by the portal follow the same rule.
+
+ ACTIVITY LOG WITH IP ADDRESS   Admin > Activity shows the IP address of each action,
+   including failed logins. Search by IP is possible.
+
+
+==============================================================================
+ 14. HTTPS (SECURE CONNECTION)
+==============================================================================
+ Why: with plain http, passwords can be read by someone on the network.
+ How it works: a "caddy" container accepts https and passes the request to the portal.
+
+ STEP 1  Choose how the certificate is made (edit .env):
+   A) Built-in (easy):          TLS_ARGS=internal
+      Browsers will show a warning until the PCs trust Caddy's own certificate
+      authority. Install it once on each PC (or by Group Policy: Trusted Root
+      Certification Authorities):
+         docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./portal-root.crt
+   B) Your own certificate (best, for example from your Windows CA):
+         copy portal.crt and portal.key into the folder  certs/
+         TLS_ARGS=/certs/portal.crt /certs/portal.key
+      The certificate must be issued for the name in PORTAL_HOST.
+ STEP 2  Edit .env:
+         COMPOSE_PROFILES=https
+         PORTAL_HTTPS=1
+         PORTAL_BEHIND_PROXY=1
+         PORTAL_BIND=127.0.0.1
+         PORTAL_HOST=portal.hrctech.net       (the name people type)
+         HTTPS_PORT=443
+ STEP 3  Start:   docker compose up -d --build
+ STEP 4  Open the firewall for the https port and CLOSE the old http port:
+         sudo ufw allow 443/tcp
+         sudo ufw delete allow 8000/tcp
+ STEP 5  Employees open  https://portal.hrctech.net   (the old http address stops working).
+ The portal then also sends the HSTS header and marks the login cookie Secure, and it
+ sees each computer's real IP address in the activity log.
+ Going back to http: set COMPOSE_PROFILES= and the 3 values to 0 / 0 / 0.0.0.0.
+ Windows app: works with a certificate trusted by Windows. Android app: phones must
+ trust the certificate (install the CA on the phone, or use a public certificate).
+
+
+==============================================================================
+ 15. VIRUS SCANNING OF ATTACHMENTS
+==============================================================================
+ Every uploaded file can be checked by ClamAV before it is stored. A file with a virus
+ is refused, the admin gets a notification and the activity log shows "virus_blocked".
+ If the scanner is switched on but not reachable, uploads are refused (safe default).
+ Needs about 2 GB of RAM for the scanner. The first start downloads the virus database
+ (a few minutes, internet needed). The database updates itself every day.
+   Edit .env:   COMPOSE_PROFILES=scan          (or  https,scan  for both)
+                CLAMAV_HOST=clamav
+   Start:       docker compose up -d --build
+   Check:       docker compose ps      (clamav must say "healthy")
+                docker compose logs clamav --tail 20
+   Test (harmless test file): save the 68-character EICAR test string from
+   eicar.org as a .txt file and upload it; it must be refused.
+ Turn it off: leave CLAMAV_HOST empty and remove "scan" from COMPOSE_PROFILES.
+
+
+==============================================================================
+ 16. IDLE TIMEOUT, SESSIONS AND LOGIN PROTECTION
+==============================================================================
+ - A login ends after 30 minutes without activity (config.py: IDLE_MINUTES) and
+   after 8 hours at most (SESSION_HOURS). The person sees a message at the next login.
+ - Admin > More > Sessions lists everybody logged in with IP address and browser. The
+   admin can end a session. Disabling a user or resetting a password ends their sessions.
+   Changing your own password ends your other sessions.
+ - 5 wrong passwords for one username lock that username for 5 minutes. 20 wrong
+   passwords from one computer block that computer for 10 minutes. Every attempt is
+   saved with its IP address (Admin > Activity, actions login_failed / login_blocked).
+ - The numbers can be changed in config.py (MAX_FAILED, LOCK_MINUTES, IP_MAX_FAILED ...).
+   After a change run: docker compose up -d --build
+
+
+==============================================================================
+ MORE COMMON ERRORS (new features)
+==============================================================================
+ PROBLEM : "You were logged out because of inactivity"
+ FIX     : Normal after 30 minutes without clicking. Log in again.
+
+ PROBLEM : Everybody gets logged out after an update
+ CAUSE   : Normal if secret.key was lost, or sessions were ended on purpose.
+ FIX     : Log in again. Keep the data volume so secret.key stays.
+
+ PROBLEM : "Too many failed logins from this computer"
+ CAUSE   : 20 wrong passwords from one IP address. Behind HTTPS all users look like
+           one computer if PORTAL_BEHIND_PROXY is 0.
+ FIX     : Wait 10 minutes, or docker compose restart portal is NOT enough (the lock is
+           saved). Admin can wait or delete rows: docker compose exec portal python -c
+           "import models;c=models.connect();c.execute('DELETE FROM login_attempts');c.commit()"
+           For HTTPS make sure PORTAL_BEHIND_PROXY=1.
+
+ PROBLEM : Public QR shows "no longer active" or "not valid"
+ CAUSE   : The owner turned it off or made a new code.
+ FIX     : Record page > Public QR > turn on / print the new QR.
+
+ PROBLEM : Attachment refused: "could not be scanned"
+ CAUSE   : The virus scanner is switched on but not running yet (the first start
+           takes minutes) or is out of memory.
+ FIX     : docker compose ps and docker compose logs clamav --tail 30. Wait until healthy.
+           Give the server more RAM, or switch scanning off (section 15).
+
+ PROBLEM : HTTPS page shows a certificate warning
+ FIX     : Install the certificate authority on the PC (section 14, option A) or use
+           your own certificate (option B).
+
+ PROBLEM : HTTPS opens but login says "This page has expired"
+ CAUSE   : PORTAL_HTTPS=1 but the page is opened over http.
+ FIX     : Always use the https address, or set PORTAL_HTTPS=0.
+
+ PROBLEM : PDF shows ? instead of some letters
+ CAUSE   : The PDF font only has English and European letters.
+ FIX     : Use the Excel export for other alphabets.
+
+ PROBLEM : "Type your password to confirm this action"
+ CAUSE   : Dangerous actions need the admin's own password (once per 5 minutes).
+ FIX     : Type your own password in the box that appears in the form.
+
+==============================================================================
+ END OF GUIDE
+==============================================================================
+
+
+==============================================================================
+ 17. MEETING REMINDERS (TIME FIELD, SEVERAL REMINDER COLUMNS, BELL MESSAGES)
+==============================================================================
+ WHAT IT DOES
+   The portal now warns the OWNER of a record before a date or meeting. Example message
+   in the bell:   Meeting: Acme Ltd is tomorrow at 3:00 PM
+
+ 1. SEVERAL REMINDER COLUMNS PER DEPARTMENT
+    Admin > Departments > Columns. Tick "Send reminders for this date" on every Date
+    column that should warn people (Warranty end, Contract end, Meeting ...). There is
+    no longer a limit of one per department. Existing settings are kept.
+
+ 2. TIME NEXT TO THE DATE
+    Tick "Also keep a time, for meetings" on a Date column (when adding it, or later with
+    Edit). The record form then shows a date box and a time box side by side. The time is
+    optional: a meeting without a time is announced without "at ...".
+    Old records and normal date columns are not changed.
+    The "Sales & Marketing" starter list now has a "Meeting" column (reminder + time) for
+    NEW departments. For a department that already exists, add the column by hand.
+
+ 3. WHEN THE BELL MESSAGE IS SENT (owner only)
+    For every reminder date the owner gets:
+      - one message 1 day before,
+      - one message on the day itself,
+      - one message at the number of days he/she chose (1, 3 or 7, default 3).
+    Messages are sent in the MORNING: not before REMINDER_HOUR in .env (default 7 = 07:00).
+    A record created later in the day is announced at the next check (every 5 minutes).
+    If the time of today's meeting has already passed, it is not announced.
+    Each message is sent once. If the date or time is changed, new messages are sent.
+    Messages are only in the bell for now (no e-mail).
+
+ 4. EACH PERSON CHOOSES HOW MANY DAYS AHEAD
+    Bell > Notifications > "Warn me before a reminder date": 1, 3 or 7 days.
+
+ TIME ZONE IS IMPORTANT
+    Set TZ in .env (for example TZ=Asia/Dhaka), then:  docker compose up -d
+    Meeting times and the morning hour follow this time zone.
+
+ UPGRADE
+    ./backup.sh  ->  unzip over the old folder (keep your own PORTAL_PORT and TZ in .env)
+    ->  docker compose up -d --build.   The database upgrades itself; nothing is lost.
+    Old reminder columns keep working. Never run  docker compose down -v.
+
+ FILES CHANGED:  core.py (reminder engine, time values), models.py (new columns/table),
+    app.py (checks every 5 minutes), config.py, routes_admin.py, routes_records.py,
+    routes_bulk.py, routes_workflow.py, templates_data.py, style.css, docker-compose.yml,
+    .env, and the templates: admin_columns, admin_column_edit, record_form, _macros,
+    reminders, admin_dashboard, notifications.

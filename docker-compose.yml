@@ -1,0 +1,51 @@
+# docker-compose.yml - how the portal runs. Settings come from the .env file next to this file.
+#   portal  : the web application (always)
+#   caddy   : HTTPS front door   (only when COMPOSE_PROFILES contains "https")
+#   clamav  : virus scanner      (only when COMPOSE_PROFILES contains "scan")
+services:
+  portal:
+    build: .
+    image: office-inventory-portal
+    container_name: inventory-portal
+    restart: unless-stopped          # starts again after a crash or a server reboot
+    ports:
+      # With HTTPS set PORTAL_BIND=127.0.0.1 so the plain-HTTP port is closed to the network.
+      - "${PORTAL_BIND:-0.0.0.0}:${PORTAL_PORT:-8000}:8000"
+    environment:
+      TZ: ${TZ:-UTC}
+      PORTAL_HTTPS: ${PORTAL_HTTPS:-0}
+      PORTAL_BEHIND_PROXY: ${PORTAL_BEHIND_PROXY:-0}
+      CLAMAV_HOST: ${CLAMAV_HOST:-}
+      REMINDER_HOUR: ${REMINDER_HOUR:-7}
+    volumes:
+      - portal_data:/data            # database, attachments, logo, backups live here
+
+  caddy:
+    image: caddy:2
+    container_name: inventory-caddy
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - portal
+    ports:
+      - "${HTTPS_PORT:-443}:8443"
+    environment:
+      PORTAL_HOST: ${PORTAL_HOST:-localhost}
+      TLS_ARGS: ${TLS_ARGS:-internal}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy_data:/data             # keeps the certificate between restarts
+
+  clamav:
+    image: clamav/clamav:stable
+    container_name: inventory-clamav
+    profiles: ["scan"]
+    restart: unless-stopped          # needs about 2 GB of RAM; the first start downloads the virus database
+    volumes:
+      - clamav_db:/var/lib/clamav
+
+volumes:
+  portal_data:                       # NEVER run "docker compose down -v": it deletes this volume
+  caddy_data:
+  clamav_db:

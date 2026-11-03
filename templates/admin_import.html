@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Import users{% endblock %}
+{% block content %}
+<div class="card medium"><h1>Import users from a CSV file</h1>
+  <p class="hint" style="margin-bottom:14px">Make the file in Excel and save it as "CSV UTF-8". The first row must be: <code>full_name,username,department,role,password</code></p>
+  <p class="hint" style="margin-bottom:14px">Only full_name, username and department are required. Leave role empty for a normal user. Leave password empty and the portal creates a temporary password for each person. A department that does not exist yet is created (with starter columns if its name matches a template). Existing usernames are skipped.</p>
+  <p style="margin-bottom:16px"><a href="{{ url_for('static', filename='users_template.csv') }}" download>Download a sample file</a></p>
+  <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fd"><label for="file">CSV file (max 1 MB)</label><input id="file" name="file" type="file" accept=".csv,text/csv" required></div>
+    <button class="b p" type="submit">Import users</button></form></div>
+{% endblock %}

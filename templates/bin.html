@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Recycle bin{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records stay here for {{ days }} days, then are erased for good.</p></div></div>
+<div class="tb">
+{% if items %}<table><thead><tr><th>Record</th><th>Department</th><th>Owner</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
+{% for r in items %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></td><td>{{ r['department_name'] }}</td><td>{{ r['owner_name'] }}</td>
+  <td>{{ r['deleted_at'] }}<div class="sub">by {{ r['deleted_by_name'] or '' }}</div></td>
+  <td>{{ r['erase_on'] }} {% if r['days_left'] <= 3 %}<span class="s r">{{ r['days_left'] if r['days_left'] > 0 else 0 }} days left</span>{% endif %}</td>
+  <td class="actcell">
+    <form method="post" action="{{ url_for('records.bin_restore', rid=r['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Restore</button></form>
+    <form method="post" action="{{ url_for('records.bin_purge', rid=r['id']) }}" onsubmit="return confirm('Erase this record for good? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg sm" type="submit">Delete forever</button></form></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">The recycle bin is empty.</div>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="en" data-theme="{{ g.theme }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>{{ company_name }}</title><link rel="icon" href="{{ icon_url }}"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>(function(){var h=document.documentElement;if(h.getAttribute('data-theme')==='auto'){h.setAttribute('data-theme',window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}})();</script></head>
+<body><div class="pubwrap"><div class="pubhead"><img src="{{ logo_url }}" alt="{{ company_name }}"></div>
+<div class="pubcard" style="text-align:center"><h1>{{ code }}</h1><p>{{ message }}</p></div></div></body></html>

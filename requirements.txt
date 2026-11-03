@@ -1,0 +1,5 @@
+Flask>=3.0
+waitress>=3.0
+segno>=1.6
+openpyxl>=3.1
+reportlab>=4.0

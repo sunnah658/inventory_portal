@@ -1,0 +1,14 @@
+# Caddyfile - the HTTPS front door (used only when COMPOSE_PROFILES contains "https").
+# Browsers talk HTTPS to Caddy; Caddy talks plain HTTP to the portal inside Docker.
+{
+	auto_https disable_redirects
+	default_sni {$PORTAL_HOST}
+}
+
+{$PORTAL_HOST}:8443 {
+	# TLS_ARGS is set in .env:  internal   (Caddy makes its own certificate)
+	#                      or:  /certs/portal.crt /certs/portal.key   (your own certificate files)
+	tls {$TLS_ARGS}
+	encode gzip
+	reverse_proxy portal:8000
+}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import groups_table, pager, listbar, bulkbar with context %}
+{% block title %}My records{% endblock %}
+{% block content %}
+<div class="hd">
+  <div><h1>My records</h1><p class="hint">Records you created and records shared with you. Empty fields stay blank.</p></div>
+  <div class="acts">
+    <a class="b p" href="{{ url_for('records.new_record') }}">+ Add record</a>
+    <details class="dt"><summary class="b">Export</summary><div class="pop">
+      <a class="b sm wide" href="{{ url_for('bulk.export_list', fmt='xlsx', **keep) }}">Excel (.xlsx)</a>
+      <a class="b sm wide" style="margin-top:8px" href="{{ url_for('bulk.export_list', fmt='pdf', **keep) }}">PDF</a>
+      <a class="b sm wide" style="margin-top:8px" href="{{ url_for('records.download', **keep) }}">CSV</a></div></details>
+    <a class="b" href="{{ url_for('records.labels') }}">QR labels</a>
+    <button class="b" type="button" onclick="window.print()">Print</button>
+  </div>
+</div>
+{% if soon %}<div class="alert">{{ soon }} record(s) have a reminder date in the next {{ reminder_days }} days. <a href="{{ url_for('records.reminders') }}">See reminders</a></div>{% endif %}
+<div class="tabs">
+  {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for('records.list_records', tab=t) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
+</div>
+{{ listbar('records.list_records', {'tab': tab}, q, info, names, saved, view_page, keep) }}
+{% if ctx.groups %}
+  {{ bulkbar(departments) }}
+  {{ groups_table(ctx, 'mine' if tab in ('mine', 'shared_by_me') else 'shared', True) }}
+  {{ pager(page, pages, 'records.list_records', keep) }}
+{% else %}
+  <div class="tb"><div class="empty">{% if q or info.fval %}Nothing matches your search.{% elif tab == 'mine' %}You have no records yet. Click "Add record" to start.{% else %}Nothing here yet.{% endif %}</div></div>
+{% endif %}
+{% endblock %}

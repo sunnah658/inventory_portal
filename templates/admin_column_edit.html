@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Edit column{% endblock %}
+{% block content %}
+<div class="card medium"><h1>Edit column</h1>
+  <p class="hint" style="margin-bottom:18px">{{ dept['name'] }} · type: {{ type_label[col['col_type']] }} (the type cannot be changed; add a new column instead).</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fd"><label for="name">Column name</label><input id="name" name="name" type="text" maxlength="60" required value="{{ col['name'] }}"></div>
+    {% if col['col_type'] == 'dropdown' %}<div class="fd"><label for="options">Dropdown options (one per line)</label><textarea id="options" name="options">{{ col['options'] or '' }}</textarea><div class="sub">Records that already use a removed option keep their value.</div></div>{% endif %}
+    <label class="ck"><input type="checkbox" name="required" value="1" {{ 'checked' if col['required'] }}> Required</label>
+    <label class="ck"><input type="checkbox" name="shown" value="1" {{ 'checked' if col['shown'] }}> Shown in forms, lists and CSV</label>
+    {% if col['col_type'] == 'date' %}<label class="ck"><input type="checkbox" name="is_reminder" value="1" {{ 'checked' if col['is_reminder'] }}> Send reminders for this date (you can have several in a department)</label>
+    <label class="ck"><input type="checkbox" name="has_time" value="1" {{ 'checked' if col['has_time'] }}> Also keep a time (for meetings)</label>
+    <div class="sub" style="margin:-4px 0 10px 28px">Turning the time off hides it in forms; old records keep it until they are saved again.</div>{% endif %}
+    <label class="ck"><input type="checkbox" name="protected" value="1" {{ 'checked' if col['protected'] }} {{ 'disabled' if col['protected'] }}> Protect from accidental delete{% if col['protected'] %} (use "Remove protection" on the columns page to switch off){% endif %}</label>
+    <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save column</button><a class="b" href="{{ url_for('admin.columns', did=col['department_id']) }}">Cancel</a></div>
+  </form></div>
+{% endblock %}

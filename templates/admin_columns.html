@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import reauth with context %}
+{% block title %}{{ dept['name'] }} columns{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ dept['name'] }}: record columns</h1><p class="hint">Choose what this department stores. Changes apply to its forms at once. <a href="{{ url_for('admin.departments') }}">Back to departments</a></p></div>
+  <div class="acts"><a class="b" href="{{ url_for('admin.removed_columns', did=dept['id']) }}">Removed columns · {{ removed }}</a></div></div>
+<div class="tw" style="grid-template-columns:1fr 330px">
+  <div class="tb"><table><thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Shown</th><th>Filled in</th><th></th></tr></thead><tbody>
+  {% for c in cols %}<tr class="r">
+    <td>{% if c['protected'] %}<svg class="lock" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0b6e99" stroke-width="2.2" aria-label="Protected"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>{% endif %}<b>{{ c['name'] }}</b>
+      {% if c['is_reminder'] %}<span class="pill b2">Reminder date</span>{% endif %}{% if c['has_time'] %}<span class="pill">with time</span>{% endif %}{% if c['col_type'] == 'dropdown' %}<div class="sub">{{ (c['options'] or '').replace('\n', ', ') }}</div>{% endif %}</td>
+    <td>{{ type_label[c['col_type']] }}</td><td>{{ 'Yes' if c['required'] else 'No' }}</td><td>{{ 'Yes' if c['shown'] else 'Hidden' }}</td><td>{{ c['used'] }}</td>
+    <td class="actcell">
+      <form method="post" action="{{ url_for('admin.column_move', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="up"><button class="b sm" type="submit" title="Move up" aria-label="Move up">&uarr;</button></form>
+      <form method="post" action="{{ url_for('admin.column_move', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="down"><button class="b sm" type="submit" title="Move down" aria-label="Move down">&darr;</button></form>
+      <a class="b sm" href="{{ url_for('admin.column_edit', cid=c['id']) }}">Edit</a>
+      {% if c['protected'] %}
+      <details class="dt"><summary class="b sm">Remove protection</summary><form class="pop" method="post" action="{{ url_for('admin.column_unprotect', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="sub" style="margin:0 0 8px">After this, '{{ c['name'] }}' can be removed.</div>{{ reauth() }}<button class="b sm" type="submit" style="margin-top:8px">Remove protection</button></form></details>
+      {% else %}
+      <details class="dt"><summary class="b sm dg">Remove</summary>
+        <form class="pop" method="post" action="{{ url_for('admin.column_remove', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="sub" style="margin:0 0 8px">{{ c['used'] }} record(s) have data here. The data is kept and can be restored. Type the column name to confirm.</div>
+          <input type="text" name="confirm_name" placeholder="{{ c['name'] }}" required style="margin-bottom:8px">{{ reauth() }}<button class="b sm dg" type="submit" style="margin-top:8px">Remove column</button></form></details>
+      {% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="empty">No columns yet. Add the first one on the right.</td></tr>{% endfor %}</tbody></table>
+  <div class="nt">The lock means accidental delete protection: a protected column has no Remove button until you click "Remove protection".</div></div>
+  <aside class="stack">
+    <div class="card"><h2>Add column</h2>
+      <form method="post" action="{{ url_for('admin.column_add', did=dept['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="fd"><label for="cname">Column name</label><input id="cname" name="name" type="text" maxlength="60" required></div>
+        <div class="fd"><label for="ctype">Type</label><select id="ctype" name="col_type">{% for k, label in types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="fd"><label for="copts">Dropdown options (one per line, only for Dropdown)</label><textarea id="copts" name="options" style="min-height:70px"></textarea></div>
+        <label class="ck"><input type="checkbox" name="required" value="1"> Required</label>
+        <label class="ck"><input type="checkbox" name="protected" value="1"> Protect from accidental delete</label>
+        <label class="ck"><input type="checkbox" name="is_reminder" value="1"> Send reminders for this date (Date columns only; you can have several)</label>
+        <label class="ck"><input type="checkbox" name="has_time" value="1"> Also keep a time, for meetings (Date columns only)</label>
+        <button class="b p" type="submit" style="margin-top:12px">Add column</button></form></div>
+    <div class="card"><h2>File attachments</h2>
+      <form method="post" action="{{ url_for('admin.department_attachments', did=dept['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="ck"><input type="checkbox" name="enabled" value="1" {{ 'checked' if dept['attachments_enabled'] }}> Allow attachments in this department</label>
+        <div class="fd" style="margin-top:12px"><label for="mx">Max size per file (MB)</label><input id="mx" name="max_mb" type="number" min="1" max="{{ server_max }}" value="{{ dept['attachment_max_mb'] }}"><div class="sub">Server-wide limit: {{ server_max }} MB. Programs and scripts are always blocked.</div></div>
+        <button class="b p sm" type="submit">Save</button></form></div>
+  </aside>
+</div>
+{% endblock %}

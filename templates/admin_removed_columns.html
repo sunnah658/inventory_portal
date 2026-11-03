@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "_macros.html" import reauth with context %}
+{% block title %}Removed columns{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ dept['name'] }}: removed columns</h1><p class="hint">Removed columns are hidden but their data is kept. Restore one, or erase it for good (an automatic backup is made first). <a href="{{ url_for('admin.columns', did=dept['id']) }}">Back to columns</a></p></div></div>
+<div class="tb">{% if cols %}<table><thead><tr><th>Column</th><th>Type</th><th>Removed on</th><th>Records with data</th><th></th></tr></thead><tbody>
+{% for c in cols %}<tr class="r"><td><b>{{ c['name'] }}</b></td><td>{{ type_label[c['col_type']] }}</td><td>{{ c['removed_at'] }}</td><td>{{ c['used'] }}</td>
+<td class="actcell"><form method="post" action="{{ url_for('admin.column_restore', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Restore with data</button></form>
+<details class="dt"><summary class="b sm dg">Erase for good</summary><form class="pop" method="post" action="{{ url_for('admin.column_erase', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="sub" style="margin:0 0 8px">This deletes the column and the data of {{ c['used'] }} record(s). It cannot be undone. Type the column name to confirm.</div>
+<input type="text" name="confirm_name" placeholder="{{ c['name'] }}" required style="margin-bottom:8px">{{ reauth() }}<button class="b sm dg" type="submit" style="margin-top:8px">Erase column</button></form></details></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">No removed columns.</div>{% endif %}</div>
+{% endblock %}

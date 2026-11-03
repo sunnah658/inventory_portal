@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Requests{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Requests</h1><p class="hint">Ask for a new item, a repair or something else. Your department admin or the admin decides.</p></div>
+  <div class="acts"><a class="b p" href="{{ url_for('flow.request_new') }}">+ New request</a></div></div>
+<div class="tabs"><a class="tab {{ 'on' if tab == 'mine' }}" href="{{ url_for('flow.requests_page', tab='mine') }}">My requests · {{ mine|length }}</a>
+  {% if reviewer %}<a class="tab {{ 'on' if tab == 'review' }}" href="{{ url_for('flow.requests_page', tab='review') }}">To review · {{ to_review|length }}</a>{% endif %}</div>
+{% set rows = to_review if (tab == 'review' and reviewer) else mine %}
+{% set kinds = {'new_item': 'New item', 'repair': 'Repair', 'other': 'Other'} %}
+<div class="tb">{% if rows %}<table><thead><tr><th>Request</th><th>Type</th><th>From</th><th>Status</th><th>Decision</th><th></th></tr></thead><tbody>
+{% for q in rows %}<tr class="r"><td><b>{{ q['title'] }}</b><div class="sub" style="white-space:pre-wrap">{{ q['details'] or '' }}</div><div class="sub">{{ q['created_at'] }}</div></td>
+<td>{{ kinds.get(q['kind'], q['kind']) }}</td><td>{{ q['requester_name'] }}<div class="sub">{{ q['department_name'] or '' }}</div></td>
+<td><span class="s {{ {'pending': 'a', 'approved': 'g', 'rejected': 'r'}.get(q['status'], '') }}">{{ q['status']|capitalize }}</span></td>
+<td>{% if q['decider_name'] %}{{ q['decider_name'] }}<div class="sub">{{ q['decision_note'] or '' }}</div>{% endif %}</td>
+<td class="actcell">
+{% if q['status'] == 'pending' and tab == 'review' and reviewer and q['requester_id'] != g.user['id'] %}
+  <details class="dt"><summary class="b p sm">Decide</summary><form class="pop" method="post" action="{{ url_for('flow.request_decide', qid=q['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="n{{ q['id'] }}">Note (optional)</label><input id="n{{ q['id'] }}" type="text" name="note" maxlength="300">
+    <div class="acts" style="margin-top:10px"><button class="b p sm" type="submit" name="decision" value="approve">Approve</button><button class="b dg sm" type="submit" name="decision" value="reject">Reject</button></div></form></details>
+{% elif q['status'] == 'pending' and q['requester_id'] == g.user['id'] %}
+  <form method="post" action="{{ url_for('flow.request_cancel', qid=q['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Cancel</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">No requests here.</div>{% endif %}</div>
+{% endblock %}
