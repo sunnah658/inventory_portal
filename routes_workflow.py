@@ -67,7 +67,7 @@ def add_comment(rid):
         return redirect(url_for("records.detail", rid=rid))
     db = get_db()
     # Supervisors and viewers cannot edit, so what they write is a suggestion.
-    kind = "suggestion" if level in ("supervisor", "viewer") else "comment"
+    kind = "suggestion" if level in ("supervisor", "viewer", "shared_view") else "comment"
     db.execute("INSERT INTO comments(record_id,user_id,kind,text) VALUES (?,?,?,?)", (rid, g.user["id"], kind, text))
     earlier = [r[0] for r in db.execute("SELECT DISTINCT user_id FROM comments WHERE record_id=?", (rid,))]
     label = "a suggestion" if kind == "suggestion" else "a comment"

@@ -4,7 +4,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ rec['department_name'] }} record #{{ rec['id'] }}</h1>
-    <p class="hint">Owner: {{ rec['owner_name'] }} · last changed {{ rec['updated_at'] }}{% if level == 'shared' %} · shared with your department{% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</p></div>
+    <p class="hint">Owner: {{ rec['owner_name'] }} · last changed {{ rec['updated_at'] }}{% if level == 'shared' %} · shared with you (you can edit){% elif level == 'shared_view' %} · shared with you (view only){% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</p></div>
   <div class="acts">
     {% if can_edit %}<a class="b p" href="{{ url_for('records.edit_record', rid=rec['id']) }}">Edit</a>{% endif %}
     <a class="b" href="{{ url_for('bulk.record_pdf', rid=rec['id']) }}">PDF</a>
@@ -15,7 +15,7 @@
   </div>
 </div>
 {% if rec['deleted_at'] %}<div class="alert">This record is in the recycle bin since {{ rec['deleted_at'] }}. <a href="{{ url_for('records.bin_page') }}">Open the recycle bin</a> to restore it.</div>{% endif %}
-{% if not can_edit and not rec['deleted_at'] %}<div class="alert">You can view this record and write suggestions. Only the owner or the people it is shared with can edit it.</div>{% endif %}
+{% if not can_edit and not rec['deleted_at'] %}<div class="alert">You can view this record and write suggestions. Only the owner and the people it is shared with for editing can change it.</div>{% endif %}
 <div class="tw">
   <div class="stack">
     <div class="card"><h2>Details</h2>
@@ -48,7 +48,9 @@
     <div class="card"><h2>Attachments</h2>
       {% for a in attachments %}<div class="ck"><span style="flex:1"><a href="{{ url_for('records.download_attachment', aid=a['id']) }}">{{ a['original_name'] }}</a>
         <span class="pill">{{ (a['size'] / 1024)|round(0)|int }} KB</span>{% if a['scan_status'] == 'clean' %} <span class="pill b2">Virus checked</span>{% endif %} <span class="sub">{{ a['by_name'] or '' }}, {{ a['uploaded_at'] }}</span></span>
-        {% if can_edit %}<form method="post" action="{{ url_for('records.delete_attachment', aid=a['id']) }}" onsubmit="return confirm('Remove this file?');" class="noprint"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>{% endif %}</div>
+        {% if can_edit %}<form method="post" enctype="multipart/form-data" action="{{ url_for('records.replace_attachment', aid=a['id']) }}" class="noprint"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="file" name="file" style="display:none" onchange="if(confirm('Replace this file with the file you chose? The old file will be deleted.')){this.form.submit();}else{this.value='';}"><button class="b sm" type="button" onclick="this.form.file.click()">Replace</button></form>
+        <form method="post" action="{{ url_for('records.delete_attachment', aid=a['id']) }}" onsubmit="return confirm('Remove this file?');" class="noprint"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>{% endif %}</div>
       {% else %}<p class="hint">No files attached.</p>{% endfor %}
       {% if can_edit %}
       <form method="post" enctype="multipart/form-data" action="{{ url_for('records.add_attachment', rid=rec['id']) }}" class="dz noprint" style="margin-top:14px">
@@ -64,7 +66,7 @@
         <p>{{ c['text'] }}</p></div>
       {% else %}<p class="hint">No comments yet.</p>{% endfor %}
       <form method="post" action="{{ url_for('flow.add_comment', rid=rec['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label for="ctext">{{ 'Write a suggestion for the owner' if level in ('supervisor', 'viewer') else 'Write a comment' }}</label>
+        <label for="ctext">{{ 'Write a suggestion for the owner' if level in ('supervisor', 'viewer', 'shared_view') else 'Write a comment' }}</label>
         <textarea id="ctext" name="text" maxlength="1000" required style="min-height:70px"></textarea>
         <button class="b p sm" type="submit" style="margin-top:8px">Send</button></form>
     </div>
@@ -90,11 +92,29 @@
     </div>
 
     <div class="card noprint"><h2>Shared with</h2>
+      <h3 style="margin-bottom:6px">Whole departments</h3>
+      <p class="hint" style="margin-bottom:8px">Every member of a ticked department gets the access you choose.</p>
       <form method="post" action="{{ url_for('records.share', rid=rec['id']) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {% for d in departments %}<label class="ck"><input type="checkbox" name="dept" value="{{ d['id'] }}" {{ 'checked' if d['id'] in shared_ids }}>{{ d['name'] }}</label>{% endfor %}
-        <div class="sub">Members of the ticked departments can view and edit every field.</div>
-        <button class="b p sm" type="submit" style="margin-top:10px">Save sharing</button></form>
+        {% for d in departments %}<div class="ck" style="gap:8px"><label style="flex:1;margin:0;display:flex;gap:8px;align-items:center"><input type="checkbox" name="dept" value="{{ d['id'] }}" {{ 'checked' if d['id'] in dept_perm }}>{{ d['name'] }}</label>
+          <select name="perm_{{ d['id'] }}" aria-label="Access for {{ d['name'] }}" style="width:auto;height:36px">{% for k, label in permissions %}<option value="{{ k }}" {{ 'selected' if dept_perm.get(d['id'], 'edit') == k }}>{{ label }}</option>{% endfor %}</select></div>{% endfor %}
+        <button class="b p sm" type="submit" style="margin-top:10px">Save department sharing</button></form>
+
+      <h3 style="margin:18px 0 6px">Specific people</h3>
+      {% for u in user_shares %}<div class="ck" style="gap:8px;flex-wrap:wrap"><span style="flex:1"><b>{{ u['full_name'] }}</b> <span class="sub">{{ u['username'] }}{% if u['dept_name'] %} · {{ u['dept_name'] }}{% endif %}</span></span>
+        <form method="post" action="{{ url_for('records.share_user', rid=rec['id']) }}" style="display:flex;gap:6px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="user_id" value="{{ u['user_id'] }}">
+          <select name="permission" aria-label="Access for {{ u['full_name'] }}" onchange="this.form.submit()" style="width:auto;height:36px">{% for k, label in permissions %}<option value="{{ k }}" {{ 'selected' if u['permission'] == k }}>{{ label }}</option>{% endfor %}</select></form>
+        <form method="post" action="{{ url_for('records.unshare_user', rid=rec['id'], uid=u['user_id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form></div>
+      {% else %}<p class="hint">Not shared with any single person.</p>{% endfor %}
+      <form method="post" action="{{ url_for('records.share_user', rid=rec['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="su">Add a person</label>
+        <select id="su" name="user_id" required><option value="">Choose a person</option>
+          {% for p in share_people %}<option value="{{ p['id'] }}">{{ p['full_name'] }} ({{ p['username'] }}{% if p['dept_name'] %}, {{ p['dept_name'] }}{% endif %})</option>{% endfor %}</select>
+        <label for="sp" style="margin-top:8px">Access</label>
+        <select id="sp" name="permission">{% for k, label in permissions %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
+        <div class="sub">Choosing a person who is already in the list changes his or her access.</div>
+        <button class="b p sm" type="submit" style="margin-top:10px">Share with this person</button></form>
+      <div class="sub" style="margin-top:10px"><b>Can edit</b>: change every field, upload, replace or remove files. <b>View only</b>: read the record, download files and write suggestions. Only you (and the admin) can change sharing or delete.</div>
     </div>
 
     <div class="card noprint"><h2>Hand over</h2>

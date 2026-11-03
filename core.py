@@ -76,20 +76,37 @@ def viewable_departments(db, user):
         "SELECT department_id FROM user_view_departments WHERE user_id=?", (user["id"],))]
 
 
+def share_permissions(db, user, rec):
+    """The permissions ('edit' / 'view') that sharing gives this user on this record:
+    through his department and through a share made to him personally."""
+    perms = {r[0] for r in db.execute(
+        "SELECT permission FROM record_shares WHERE record_id=? AND department_id=?",
+        (rec["id"], user["department_id"]))}
+    perms |= {r[0] for r in db.execute(
+        "SELECT permission FROM record_user_shares WHERE record_id=? AND user_id=?",
+        (rec["id"], user["id"]))}
+    return perms
+
+
 def access_level(db, user, rec):
     """What this user is to this record:
-    admin / owner / shared  - may edit
-    supervisor              - department admin of the record's department: view and suggest only
-    viewer                  - allowed to view that department: view and suggest only
-    None                    - no access
+    admin / owner  - may edit and manage (share, delete)
+    shared         - the record was shared with him (or his department) with EDIT
+    shared_view    - the record was shared with him (or his department) as VIEW ONLY
+    supervisor     - department admin of the record's department: view and suggest only
+    viewer         - allowed to view that department: view and suggest only
+    None           - no access
+    Edit rights win: one edit share is enough even if another share is view only.
     """
     if user["role"] == "admin":
         return "admin"
     if rec["owner_id"] == user["id"]:
         return "owner"
-    if db.execute("SELECT 1 FROM record_shares WHERE record_id=? AND department_id=?",
-                  (rec["id"], user["department_id"])).fetchone():
+    perms = share_permissions(db, user, rec)
+    if "edit" in perms:
         return "shared"
+    if perms:
+        return "shared_view"
     if user["is_dept_admin"] and rec["department_id"] == user["department_id"]:
         return "supervisor"
     if rec["department_id"] in viewable_departments(db, user):
@@ -99,6 +116,14 @@ def access_level(db, user, rec):
 
 EDIT_LEVELS = ("admin", "owner", "shared")
 MANAGE_LEVELS = ("admin", "owner")
+VIEW_ONLY_LEVELS = ("shared_view", "supervisor", "viewer")     # may read and write suggestions
+PERMISSIONS = (("edit", "Can edit"), ("view", "View only"))
+PERM_WORDS = {"edit": "can edit", "view": "view only"}
+
+
+def clean_permission(value):
+    """Only 'edit' or 'view' are valid; anything else becomes the safe choice 'view'."""
+    return value if value in ("edit", "view") else "view"
 
 
 def visible_clause(db, user):
@@ -106,8 +131,9 @@ def visible_clause(db, user):
     if user["role"] == "admin":
         return "1=1", []
     parts = ["r.owner_id=?",
-             "EXISTS (SELECT 1 FROM record_shares s WHERE s.record_id=r.id AND s.department_id=?)"]
-    params = [user["id"], user["department_id"]]
+             "EXISTS (SELECT 1 FROM record_shares s WHERE s.record_id=r.id AND s.department_id=?)",
+             "EXISTS (SELECT 1 FROM record_user_shares us WHERE us.record_id=r.id AND us.user_id=?)"]
+    params = [user["id"], user["department_id"], user["id"]]
     if user["is_dept_admin"]:
         parts.append("r.department_id=?")
         params.append(user["department_id"])
@@ -132,16 +158,21 @@ def values_for(db, record_ids):
 
 
 def shares_for(db, record_ids):
-    """{record_id: [department names]} for many records at once."""
+    """{record_id: [labels]} for many records at once: the departments and the people a record
+    is shared with, e.g. 'Sales' / 'Rahim (person, view only)'."""
     out = {rid: [] for rid in record_ids}
     ids = list(record_ids)
     for i in range(0, len(ids), 500):
         chunk = ids[i:i + 500]
         q = ",".join("?" * len(chunk))
-        for r in db.execute(f"SELECT s.record_id, d.name FROM record_shares s "
+        for r in db.execute(f"SELECT s.record_id, d.name, s.permission FROM record_shares s "
                             f"JOIN departments d ON d.id=s.department_id "
                             f"WHERE s.record_id IN ({q}) ORDER BY d.name", chunk):
-            out[r["record_id"]].append(r["name"])
+            out[r["record_id"]].append(r["name"] + (" (view only)" if r["permission"] == "view" else ""))
+        for r in db.execute(f"SELECT s.record_id, u.full_name, s.permission FROM record_user_shares s "
+                            f"JOIN users u ON u.id=s.user_id "
+                            f"WHERE s.record_id IN ({q}) ORDER BY u.full_name", chunk):
+            out[r["record_id"]].append(f"{r['full_name']} (person" + (", view only)" if r["permission"] == "view" else ")"))
     return out
 
 
@@ -480,6 +511,59 @@ def approver_ids(db, dept_id):
     return ids
 
 
+# ---------------------------------------------------------------- sharing
+def share_with_department(db, user, rec, dept_id, dept_name, permission, quiet=False):
+    """Share a record with a whole department, or change the permission. Returns 'new', 'changed' or None."""
+    permission = clean_permission(permission)
+    row = db.execute("SELECT permission FROM record_shares WHERE record_id=? AND department_id=?",
+                     (rec["id"], dept_id)).fetchone()
+    if row is None:
+        db.execute("INSERT INTO record_shares(record_id,department_id,shared_by,permission) VALUES (?,?,?,?)",
+                   (rec["id"], dept_id, user["id"], permission))
+        add_history(db, rec["id"], user, "shared", new=f"{dept_name} (whole department, {PERM_WORDS[permission]})")
+        if not quiet:
+            notify(db, dept_member_ids(db, dept_id),
+                   f"{user['full_name']} shared a record with your department ({PERM_WORDS[permission]}).",
+                   f"/records/{rec['id']}", skip=user["id"])
+        return "new"
+    if row["permission"] != permission:
+        db.execute("UPDATE record_shares SET permission=? WHERE record_id=? AND department_id=?",
+                   (permission, rec["id"], dept_id))
+        add_history(db, rec["id"], user, "share_changed", dept_name,
+                    PERM_WORDS[row["permission"]], PERM_WORDS[permission])
+        if not quiet:
+            notify(db, dept_member_ids(db, dept_id),
+                   f"A record shared with your department is now: {PERM_WORDS[permission]}.",
+                   f"/records/{rec['id']}", skip=user["id"])
+        return "changed"
+    return None
+
+
+def share_with_user(db, user, rec, target, permission, quiet=False):
+    """Share a record with one chosen person, or change the permission. Returns 'new', 'changed' or None."""
+    permission = clean_permission(permission)
+    row = db.execute("SELECT permission FROM record_user_shares WHERE record_id=? AND user_id=?",
+                     (rec["id"], target["id"])).fetchone()
+    if row is None:
+        db.execute("INSERT INTO record_user_shares(record_id,user_id,permission,shared_by) VALUES (?,?,?,?)",
+                   (rec["id"], target["id"], permission, user["id"]))
+        add_history(db, rec["id"], user, "shared_user", new=f"{target['full_name']} ({PERM_WORDS[permission]})")
+        if not quiet:
+            notify(db, [target["id"]], f"{user['full_name']} shared a record with you ({PERM_WORDS[permission]}).",
+                   f"/records/{rec['id']}", skip=user["id"])
+        return "new"
+    if row["permission"] != permission:
+        db.execute("UPDATE record_user_shares SET permission=? WHERE record_id=? AND user_id=?",
+                   (permission, rec["id"], target["id"]))
+        add_history(db, rec["id"], user, "share_changed", target["full_name"],
+                    PERM_WORDS[row["permission"]], PERM_WORDS[permission])
+        if not quiet:
+            notify(db, [target["id"]], f"A record shared with you is now: {PERM_WORDS[permission]}.",
+                   f"/records/{rec['id']}", skip=user["id"])
+        return "changed"
+    return None
+
+
 # ---------------------------------------------------------------- sorting and filtering lists
 def sort_clause(db, sort, direction):
     """(ORDER BY text, params). sort = updated | created | col:<column name>."""
@@ -589,6 +673,8 @@ def resolve_transfer(db, user, tr, action):
     if action == "accept":
         db.execute("UPDATE records SET owner_id=?, version=version+1, updated_at=datetime('now','localtime') WHERE id=?",
                    (tr["to_user"], tr["record_id"]))
+        db.execute("DELETE FROM record_user_shares WHERE record_id=? AND user_id=?",
+                   (tr["record_id"], tr["to_user"]))             # an owner needs no share
         add_history(db, tr["record_id"], user, "transferred", names.get(tr["from_user"]), names.get(tr["to_user"]))
     else:
         add_history(db, tr["record_id"], user, "transfer_" + status)

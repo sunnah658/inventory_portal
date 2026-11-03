@@ -23,7 +23,8 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
 import config
 from auth import login_required
 import scanner
-from core import (EDIT_LEVELS, MANAGE_LEVELS, access_level, add_history, admin_ids, build_csv,
+from core import (EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+                  share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, create_record, dept_member_ids, filter_clause, get_columns, get_record,
                   names_for_records, notify, parse_form, purge_record, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
@@ -48,11 +49,13 @@ def available_tabs(db, user):
 def tab_clause(db, tab, user):
     """SQL for the list tabs."""
     if tab == "shared_with_me":
-        return ("r.deleted_at IS NULL AND r.owner_id != ? AND EXISTS (SELECT 1 FROM record_shares s "
-                "WHERE s.record_id=r.id AND s.department_id=?)", [user["id"], user["department_id"]])
+        return ("r.deleted_at IS NULL AND r.owner_id != ? AND (EXISTS (SELECT 1 FROM record_shares s "
+                "WHERE s.record_id=r.id AND s.department_id=?) OR EXISTS (SELECT 1 FROM record_user_shares us "
+                "WHERE us.record_id=r.id AND us.user_id=?))", [user["id"], user["department_id"], user["id"]])
     if tab == "shared_by_me":
-        return ("r.deleted_at IS NULL AND r.owner_id=? AND EXISTS (SELECT 1 FROM record_shares s "
-                "WHERE s.record_id=r.id)", [user["id"]])
+        return ("r.deleted_at IS NULL AND r.owner_id=? AND (EXISTS (SELECT 1 FROM record_shares s "
+                "WHERE s.record_id=r.id) OR EXISTS (SELECT 1 FROM record_user_shares us "
+                "WHERE us.record_id=r.id))", [user["id"]])
     if tab == "department" and user["is_dept_admin"]:
         return "r.deleted_at IS NULL AND r.department_id=?", [user["department_id"]]
     if tab == "viewing":
@@ -274,8 +277,17 @@ def detail(rid):
         attachments=db.execute("SELECT a.*, u.full_name AS by_name FROM attachments a "
                                "LEFT JOIN users u ON u.id=a.uploaded_by WHERE record_id=? "
                                "ORDER BY a.id DESC", (rid,)).fetchall(),
-        shared_ids={r["department_id"] for r in db.execute(
-            "SELECT department_id FROM record_shares WHERE record_id=?", (rid,))},
+        dept_perm={r["department_id"]: r["permission"] for r in db.execute(
+            "SELECT department_id, permission FROM record_shares WHERE record_id=?", (rid,))},
+        user_shares=db.execute(
+            "SELECT s.user_id, s.permission, s.shared_at, u.full_name, u.username, d.name AS dept_name "
+            "FROM record_user_shares s JOIN users u ON u.id=s.user_id LEFT JOIN departments d ON d.id=u.department_id "
+            "WHERE s.record_id=? ORDER BY u.full_name", (rid,)).fetchall(),
+        share_people=db.execute(
+            "SELECT u.id, u.full_name, u.username, d.name AS dept_name FROM users u "
+            "LEFT JOIN departments d ON d.id=u.department_id WHERE u.is_active=1 AND u.id != ? "
+            "ORDER BY d.name, u.full_name", (rec["owner_id"],)).fetchall() if can_manage else [],
+        permissions=PERMISSIONS,
         departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall(),
         link=link, public_url=public_url, public_svg=public_svg,
         public_names=names_for_records(db, [rid]) if can_manage else [],
@@ -289,25 +301,64 @@ def detail(rid):
 @bp.route("/records/<int:rid>/share", methods=["POST"])
 @login_required
 def share(rid):
+    """Share with WHOLE departments. Each ticked department gets 'edit' or 'view only'."""
     rec, _level = _load(rid, "manage")
     db = get_db()
     names = {r["id"]: r["name"] for r in db.execute("SELECT id, name FROM departments")}
-    chosen = {int(x) for x in request.form.getlist("dept") if x.isdigit() and int(x) in names}
+    chosen = {int(x): clean_permission(request.form.get(f"perm_{x}"))
+              for x in request.form.getlist("dept") if x.isdigit() and int(x) in names}
     current = {r["department_id"] for r in db.execute(
         "SELECT department_id FROM record_shares WHERE record_id=?", (rid,))}
-    for d in chosen - current:
-        db.execute("INSERT INTO record_shares(record_id,department_id,shared_by) VALUES (?,?,?)",
-                   (rid, d, g.user["id"]))
-        add_history(db, rid, g.user, "shared", new=names[d])
-        notify(db, dept_member_ids(db, d), f"{g.user['full_name']} shared a record with your department.",
-               f"/records/{rid}", skip=g.user["id"])
-    for d in current - chosen:
+    changed = False
+    for d, perm in chosen.items():
+        changed = bool(share_with_department(db, g.user, rec, d, names[d], perm)) or changed
+    for d in current - set(chosen):
         db.execute("DELETE FROM record_shares WHERE record_id=? AND department_id=?", (rid, d))
         add_history(db, rid, g.user, "unshared", old=names[d])
-    if chosen != current:
+        changed = True
+    if changed:
         log(db, "record_share", f"record {rid}")
     db.commit()
     flash("Sharing updated.", "ok")
+    return redirect(url_for("records.detail", rid=rid))
+
+
+@bp.route("/records/<int:rid>/share-user", methods=["POST"])
+@login_required
+def share_user(rid):
+    """Share with ONE chosen person (edit or view only). Sending it again changes the permission."""
+    rec, _level = _load(rid, "manage")
+    db = get_db()
+    target = db.execute("SELECT * FROM users WHERE id=? AND is_active=1",
+                        (request.form.get("user_id", type=int) or 0,)).fetchone()
+    if target is None:
+        flash("Choose a person to share with.", "error")
+    elif target["id"] == rec["owner_id"]:
+        flash("That person already owns this record.", "error")
+    else:
+        result = share_with_user(db, g.user, rec, target, request.form.get("permission"))
+        if result:
+            log(db, "record_share_user", f"record {rid} -> {target['username']}")
+            db.commit()
+            flash(f"Shared with {target['full_name']}." if result == "new" else "Permission changed.", "ok")
+        else:
+            flash("Nothing changed.", "ok")
+    return redirect(url_for("records.detail", rid=rid))
+
+
+@bp.route("/records/<int:rid>/share-user/<int:uid>/remove", methods=["POST"])
+@login_required
+def unshare_user(rid, uid):
+    rec, _level = _load(rid, "manage")
+    db = get_db()
+    row = db.execute("SELECT u.full_name FROM record_user_shares s JOIN users u ON u.id=s.user_id "
+                     "WHERE s.record_id=? AND s.user_id=?", (rid, uid)).fetchone()
+    if row:
+        db.execute("DELETE FROM record_user_shares WHERE record_id=? AND user_id=?", (rid, uid))
+        add_history(db, rid, g.user, "unshared_user", old=row["full_name"])
+        log(db, "record_unshare_user", f"record {rid} -> user {uid}")
+        db.commit()
+        flash(f"Stopped sharing with {row['full_name']}.", "ok")
     return redirect(url_for("records.detail", rid=rid))
 
 
@@ -368,6 +419,44 @@ def delete_repair(rid, rep):
 
 
 # ---------------------------------------------------------------- attachments
+def _accept_upload(db, rec, f, say_empty=False):
+    """Check ONE uploaded file (type, size, virus scan). Returns {name, ext, size, scan} or None.
+    The reason for a refusal is shown to the person with flash()."""
+    rid = rec["id"]
+    limit = min(rec["attachment_max_mb"], config.MAX_UPLOAD_MB) * 1024 * 1024
+    shown = os.path.basename(f.filename.replace("\\", "/"))[:150]
+    ext = shown.rsplit(".", 1)[-1].lower() if "." in shown else ""
+    if ext not in config.ALLOWED_EXTENSIONS:
+        flash(f"'{shown}': this file type is not allowed.", "error")
+        return None
+    f.seek(0, os.SEEK_END)
+    size = f.tell()
+    f.seek(0)
+    if size == 0:
+        if say_empty:
+            flash(f"'{shown}' is empty.", "error")
+        return None
+    if size > limit:
+        flash(f"'{shown}' is larger than the {limit // 1048576} MB limit.", "error")
+        return None
+    scan_status = None
+    if scanner.enabled():                              # virus scan before anything is stored
+        verdict, detail_text = scanner.scan_stream(f.stream)
+        f.seek(0)
+        if verdict == "infected":
+            flash(f"'{shown}' was refused: a virus was found ({detail_text}).", "error")
+            log(db, "virus_blocked", f"{shown}: {detail_text} (record {rid})")
+            notify(db, admin_ids(db), f"A virus was blocked in an upload by {g.user['full_name']}: {shown}.",
+                   "/admin/activity")
+            return None
+        if verdict == "error":
+            flash(f"'{shown}' could not be scanned, so it was not uploaded. Tell the admin ({detail_text}).", "error")
+            log(db, "scan_error", f"{shown}: {detail_text}")
+            return None
+        scan_status = "clean"
+    return {"name": shown, "ext": ext, "size": size, "scan": scan_status}
+
+
 @bp.route("/records/<int:rid>/attachments", methods=["POST"])
 @login_required
 def add_attachment(rid):
@@ -375,51 +464,66 @@ def add_attachment(rid):
     if not rec["attachments_enabled"]:
         abort(403)
     db = get_db()
-    limit = min(rec["attachment_max_mb"], config.MAX_UPLOAD_MB) * 1024 * 1024
     folder = os.path.join(config.UPLOAD_DIR, str(rid))
     saved = 0
     for f in request.files.getlist("files"):
         if not f or not f.filename:
             continue
-        shown = os.path.basename(f.filename.replace("\\", "/"))[:150]
-        ext = shown.rsplit(".", 1)[-1].lower() if "." in shown else ""
-        if ext not in config.ALLOWED_EXTENSIONS:
-            flash(f"'{shown}': this file type is not allowed.", "error")
+        info = _accept_upload(db, rec, f)
+        if info is None:
             continue
-        f.seek(0, os.SEEK_END)
-        size = f.tell()
-        f.seek(0)
-        if size == 0:
-            continue
-        if size > limit:
-            flash(f"'{shown}' is larger than the {limit // 1048576} MB limit.", "error")
-            continue
-        scan_status = None
-        if scanner.enabled():                          # virus scan before anything is stored
-            verdict, detail_text = scanner.scan_stream(f.stream)
-            f.seek(0)
-            if verdict == "infected":
-                flash(f"'{shown}' was refused: a virus was found ({detail_text}).", "error")
-                log(db, "virus_blocked", f"{shown}: {detail_text} (record {rid})")
-                notify(db, admin_ids(db), f"A virus was blocked in an upload by {g.user['full_name']}: {shown}.",
-                       "/admin/activity")
-                continue
-            if verdict == "error":
-                flash(f"'{shown}' could not be scanned, so it was not uploaded. Tell the admin ({detail_text}).", "error")
-                log(db, "scan_error", f"{shown}: {detail_text}")
-                continue
-            scan_status = "clean"
         os.makedirs(folder, exist_ok=True)
-        stored = uuid.uuid4().hex + "." + ext          # random name on disk
+        stored = uuid.uuid4().hex + "." + info["ext"]          # random name on disk
         f.save(os.path.join(folder, stored))
         db.execute("INSERT INTO attachments(record_id,original_name,stored_name,size,uploaded_by,scan_status)"
-                   " VALUES (?,?,?,?,?,?)", (rid, shown, stored, size, g.user["id"], scan_status))
-        add_history(db, rid, g.user, "attachment_added", new=shown)
+                   " VALUES (?,?,?,?,?,?)", (rid, info["name"], stored, info["size"], g.user["id"], info["scan"]))
+        add_history(db, rid, g.user, "attachment_added", new=info["name"])
         saved += 1
     db.commit()
     if saved:
         flash(f"{saved} file(s) uploaded.", "ok")
     return redirect(url_for("records.detail", rid=rid))
+
+
+@bp.route("/attachments/<int:aid>/replace", methods=["POST"])
+@login_required
+def replace_attachment(aid):
+    """Swap an attached file for a new version. Allowed for everyone who may edit the record
+    (owner, admin, and people it is shared with for EDIT). It is written in the edit history."""
+    db = get_db()
+    att = db.execute("SELECT * FROM attachments WHERE id=?", (aid,)).fetchone()
+    if att is None:
+        abort(404)
+    rec, _level = _load(att["record_id"], "edit")
+    if not rec["attachments_enabled"]:
+        abort(403)
+    rid = rec["id"]
+    back = redirect(url_for("records.detail", rid=rid))
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("Choose the new file first.", "error")
+        return back
+    info = _accept_upload(db, rec, f, say_empty=True)
+    if info is None:
+        return back
+    folder = os.path.join(config.UPLOAD_DIR, str(rid))
+    os.makedirs(folder, exist_ok=True)
+    stored = uuid.uuid4().hex + "." + info["ext"]
+    f.save(os.path.join(folder, stored))
+    db.execute("UPDATE attachments SET original_name=?, stored_name=?, size=?, uploaded_by=?, scan_status=?, "
+               "uploaded_at=datetime('now','localtime') WHERE id=?",
+               (info["name"], stored, info["size"], g.user["id"], info["scan"], aid))
+    add_history(db, rid, g.user, "attachment_replaced", old=att["original_name"], new=info["name"])
+    log(db, "attachment_replace", f"record {rid}: {att['original_name']} -> {info['name']}")
+    notify(db, [rec["owner_id"]], f"{g.user['full_name']} replaced the file '{att['original_name']}' on a record.",
+           f"/records/{rid}", skip=g.user["id"])
+    db.commit()
+    try:                                                    # the old file is removed only after the new one is saved
+        os.remove(os.path.join(folder, att["stored_name"]))
+    except OSError:
+        pass
+    flash("File replaced.", "ok")
+    return back
 
 
 @bp.route("/attachments/<int:aid>")

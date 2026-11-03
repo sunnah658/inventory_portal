@@ -1,4 +1,18 @@
 ==============================================================================
+ UPDATE: SHARING WITH ONE PERSON, EDIT / VIEW ONLY, REPLACE ATTACHMENT
+==============================================================================
+ 1. The owner can share a record with a WHOLE DEPARTMENT or with ONE CHOSEN PERSON
+    (any department), and for each choose "Can edit" or "View only".
+ 2. View-only people can read the record, download files and write suggestions,
+    but cannot edit, upload, replace or remove files.
+ 3. REPLACE button next to every attachment (for everybody who can edit). The old
+    file is deleted, the new one is virus-checked, and the change is written in the
+    Edit history like every other change. The owner gets a bell message.
+ 4. Sharing changes are in the history too. Bulk share has the same choices.
+ Existing shares stay "Can edit". Details: README.txt section 18.
+ UPGRADE: ./backup.sh, unzip over the old folder, docker compose up -d --build.
+
+==============================================================================
  UPDATE: MEETING REMINDERS   (added on top of the version described further below)
 ==============================================================================
  1. BELL MESSAGE FOR EACH RECORD   e.g. "Meeting: Acme Ltd is tomorrow at 3:00 PM"

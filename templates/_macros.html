@@ -79,7 +79,11 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ request.full_path }}">
   <div class="bulkbar" id="bulkbar"><span class="count" id="bulkcount">0</span><span>selected</span>
     <details class="dt"><summary class="b sm">Share with</summary><div class="pop">
+      <label for="bkperm">Access</label><select id="bkperm" name="permission">{% for k, label in [('edit', 'Can edit'), ('view', 'View only')] %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
+      <label style="margin-top:8px">Whole departments</label>
       {% for d in departments %}<label class="ck"><input type="checkbox" name="dept" value="{{ d.id }}">{{ d.name }}</label>{% endfor %}
+      <label for="bkuser" style="margin-top:8px">or one person</label>
+      <select id="bkuser" name="user_id"><option value="">(nobody)</option>{% for p in share_people() %}<option value="{{ p.id }}">{{ p.full_name }} ({{ p.username }}{% if p.dept_name %}, {{ p.dept_name }}{% endif %})</option>{% endfor %}</select>
       <button class="b p sm" type="submit" name="action" value="share" style="margin-top:10px">Share selected</button></div></details>
     <button class="b sm" type="submit" name="action" value="public">Public QR</button>
     <button class="b sm" type="submit" name="action" value="labels">QR labels</button>
@@ -102,13 +106,17 @@ document.addEventListener('change',function(e){var t=e.target;if(t.classList.con
 {% if h.action == 'created' %} created this record{% if h.new_value %} ({{ h.new_value }}){% endif %}
 {% elif h.action == 'edit' %} changed <b>{{ h.field }}</b><br><del>{{ h.old_value or '(blank)' }}</del> &rarr; <ins>{{ h.new_value or '(blank)' }}</ins>
 {% elif h.action == 'shared' %} shared this with <b>{{ h.new_value }}</b>
+{% elif h.action == 'shared_user' %} shared this with <b>{{ h.new_value }}</b>
+{% elif h.action == 'share_changed' %} changed the access of <b>{{ h.field }}</b> from {{ h.old_value }} to <b>{{ h.new_value }}</b>
 {% elif h.action == 'unshared' %} stopped sharing with <b>{{ h.old_value }}</b>
+{% elif h.action == 'unshared_user' %} stopped sharing with <b>{{ h.old_value }}</b>
 {% elif h.action == 'deleted' %} moved this record to the recycle bin
 {% elif h.action == 'restored' %} restored this record
 {% elif h.action == 'repair_added' %} added a repair entry: {{ h.new_value }}
 {% elif h.action == 'repair_returned' %} marked a repair as finished
 {% elif h.action == 'repair_removed' %} removed a repair entry
 {% elif h.action == 'attachment_added' %} added the file <b>{{ h.new_value }}</b>
+{% elif h.action == 'attachment_replaced' %} replaced the file <b>{{ h.old_value }}</b> with <b>{{ h.new_value }}</b>
 {% elif h.action == 'attachment_removed' %} removed the file <b>{{ h.old_value }}</b>
 {% elif h.action == 'transfer_requested' %} asked to hand this record over to <b>{{ h.new_value }}</b>
 {% elif h.action == 'transferred' %} handed this record over from <b>{{ h.old_value }}</b> to <b>{{ h.new_value }}</b>

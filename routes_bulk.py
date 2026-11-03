@@ -13,7 +13,7 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 import config
 import exports
 from auth import admin_required, login_required
-from core import (MANAGE_LEVELS, access_level, add_history, build_table, dept_member_ids, get_columns,
+from core import (MANAGE_LEVELS, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, dept_member_ids, get_columns,
                   get_record, notify, rec_select, reminder_rows, search_clause, soft_delete,
                   summaries_for, values_for)
 from models import get_db, log, setting_get
@@ -51,21 +51,27 @@ def bulk():
     if action == "share":
         names = {r["id"]: r["name"] for r in db.execute("SELECT id, name FROM departments")}
         chosen = [int(x) for x in request.form.getlist("dept") if x.isdigit() and int(x) in names]
-        if not chosen:
-            flash("Choose the departments to share with.", "error")
+        perm = clean_permission(request.form.get("permission"))
+        person = db.execute("SELECT * FROM users WHERE id=? AND is_active=1",
+                            (request.form.get("user_id", type=int) or 0,)).fetchone()
+        if not chosen and person is None:
+            flash("Choose the departments or the person to share with.", "error")
             return redirect(back)
         for rec in mine:
             for d in chosen:
-                if not db.execute("SELECT 1 FROM record_shares WHERE record_id=? AND department_id=?", (rec["id"], d)).fetchone():
-                    db.execute("INSERT INTO record_shares(record_id,department_id,shared_by) VALUES (?,?,?)",
-                               (rec["id"], d, g.user["id"]))
-                    add_history(db, rec["id"], g.user, "shared", new=names[d])
-        for d in chosen:
-            notify(db, dept_member_ids(db, d), f"{g.user['full_name']} shared {len(mine)} record(s) with your department.",
-                   "/records?tab=shared_with_me", skip=g.user["id"])
-        log(db, "bulk_share", f"{len(mine)} records")
+                share_with_department(db, g.user, rec, d, names[d], perm, quiet=True)
+            if person is not None and person["id"] != rec["owner_id"]:
+                share_with_user(db, g.user, rec, person, perm, quiet=True)
+        if mine:                                       # one summary message instead of one per record
+            for d in chosen:
+                notify(db, dept_member_ids(db, d), f"{g.user['full_name']} shared {len(mine)} record(s) with your "
+                       f"department ({PERM_WORDS[perm]}).", "/records?tab=shared_with_me", skip=g.user["id"])
+            if person is not None:
+                notify(db, [person["id"]], f"{g.user['full_name']} shared {len(mine)} record(s) with you "
+                       f"({PERM_WORDS[perm]}).", "/records?tab=shared_with_me", skip=g.user["id"])
+        log(db, "bulk_share", f"{len(mine)} records ({perm})")
         db.commit()
-        flash(f"{len(mine)} record(s) shared. Records you do not own were skipped.", "ok")
+        flash(f"{len(mine)} record(s) shared ({PERM_WORDS[perm]}). Records you do not own were skipped.", "ok")
     elif action == "delete":
         for rec in mine:
             soft_delete(db, g.user, rec)

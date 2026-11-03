@@ -67,6 +67,15 @@ def create_app():
     models.init_db()                 # create tables / upgrade an older database
     models.init_app(app)
     app.jinja_env.globals["options_of"] = options_of      # dropdown choices in templates
+    def share_people():
+        """Active people for the 'share with a person' choice in the bulk bar (once per request)."""
+        if "share_people" not in g:
+            g.share_people = get_db().execute(
+                "SELECT u.id, u.full_name, u.username, d.name AS dept_name FROM users u "
+                "LEFT JOIN departments d ON d.id=u.department_id WHERE u.is_active=1 "
+                "ORDER BY d.name, u.full_name").fetchall()
+        return g.share_people
+    app.jinja_env.globals["share_people"] = share_people
     app.jinja_env.filters["showdt"] = show_when           # '2026-11-04 3:30 PM' in templates
     if os.environ.get("PORTAL_NO_SCHEDULER") != "1":      # tests switch the helper off
         threading.Thread(target=_reminder_loop, name="reminders", daemon=True).start()

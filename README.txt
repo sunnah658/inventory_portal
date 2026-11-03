@@ -38,9 +38,9 @@
      be removed until the admin clicks "Remove protection".
    - Removing a column hides it and keeps its data. It can be restored, or
      erased for good (an automatic backup is made first).
-   - Sharing: the owner shares a record with whole departments. Their members
-     can view and edit every field. Only the owner and the admin can delete or
-     change sharing.
+   - Sharing: the owner shares a record with a whole department OR with one chosen
+     person, and picks "Can edit" or "View only" for each (section 18). Only the
+     owner and the admin can delete or change sharing.
    - Edit history on every record: who changed what, when, old and new value.
    - Two people editing at once: the second save is refused with a clear
      message, so nothing is silently overwritten.
@@ -512,8 +512,9 @@
 
  PROBLEM : A user cannot see a colleague's record
  CAUSE   : Records are private to their owner. Others see them only when the
-           owner shares them with their department.
- FIX     : The owner opens the record and ticks the department under "Shared with".
+           owner shares them with their department or with that person.
+ FIX     : The owner opens the record and shares it under "Shared with" (a whole
+           department, or "Add a person").
 
  PROBLEM : "Your changes were NOT saved" while editing
  CAUSE   : Someone else saved the same record first (protection against
@@ -606,7 +607,7 @@
 
  ROLES AND PERMISSIONS
    Admin               everything.
-   User                own records, records shared with their department.
+   User                own records, records shared with them or with their department.
    Department admin    (set per user: Admin > Users > Edit) sees EVERY record of
                        their department in the tab "My department", can write
                        suggestions, decides requests of the department, can run
@@ -824,3 +825,41 @@
     routes_bulk.py, routes_workflow.py, templates_data.py, style.css, docker-compose.yml,
     .env, and the templates: admin_columns, admin_column_edit, record_form, _macros,
     reminders, admin_dashboard, notifications.
+
+
+==============================================================================
+ 18. SHARING WITH ONE PERSON, EDIT / VIEW ONLY, REPLACING ATTACHMENTS
+==============================================================================
+ SHARING (record page > "Shared with" - only the owner and the admin see it)
+   Whole departments : tick the departments. EVERY member gets the access you choose
+                       in the box next to the department name.
+   Specific people   : "Add a person", choose the access, "Share with this person".
+                       The person can be in ANY department. Choosing a person who is
+                       already in the list changes his/her access. "Remove" stops it.
+   Access            : CAN EDIT  = change every field, upload, REPLACE and remove files.
+                       VIEW ONLY = read the record, download files, write suggestions.
+   If somebody gets two shares (personal and through the department) the stronger
+   one counts: one "Can edit" is enough.
+   Only the owner and the admin can change sharing or delete the record.
+   Everything is written in the Edit history (who shared with whom, access changes,
+   stopped sharing) and the people concerned get a bell message.
+   Lists: "Shared with me" and "Shared by me" include personal shares; the
+   "Shared with" column shows e.g.  Sales (view only)  /  Rahim (person, view only).
+   Bulk bar (tick records > Share with): choose the access, then departments and/or
+   one person. They get ONE bell message for the whole batch.
+   Handover: if the new owner already had a personal share, it is removed.
+   Old shares from before this update stay "Can edit" exactly as they were.
+
+ REPLACING AN ATTACHMENT
+   Record page > Attachments > "Replace" next to a file > choose the new file.
+   Everybody with "can edit" access can do it (owner, admin, edit-shared people).
+   The new file goes through the same checks as an upload (type, size limit, virus
+   scan). The entry keeps its place in the list, shows the new name, uploader and
+   time, and the OLD FILE IS DELETED from the server. The Edit history shows:
+   "Bina replaced the file quote_v1.pdf with quote_v2.pdf" and the owner gets a
+   bell message. View-only people cannot replace, remove or upload files.
+
+ UPGRADE: ./backup.sh, unzip over the old folder (keep your own .env values),
+   docker compose up -d --build. The database upgrades itself; nothing is lost.
+ FILES CHANGED: core.py, models.py, routes_records.py, routes_bulk.py,
+   routes_workflow.py, app.py, and templates record_detail, _macros.

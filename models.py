@@ -89,7 +89,18 @@ CREATE TABLE IF NOT EXISTS record_shares (
     department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
     shared_by     INTEGER REFERENCES users(id),
     shared_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    permission    TEXT NOT NULL DEFAULT 'edit',   -- edit or view (view only)
     PRIMARY KEY (record_id, department_id)
+);
+
+-- A record shared with ONE chosen person (edit or view only), independent of departments.
+CREATE TABLE IF NOT EXISTS record_user_shares (
+    record_id  INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission TEXT NOT NULL DEFAULT 'edit',      -- edit or view (view only)
+    shared_by  INTEGER REFERENCES users(id),
+    shared_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (record_id, user_id)
 );
 
 -- Edit history: who changed what and when. Never edited or deleted by the portal.
@@ -251,6 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_records_dept    ON records(department_id);
 CREATE INDEX IF NOT EXISTS idx_values_column   ON record_values(column_id);
 CREATE INDEX IF NOT EXISTS idx_history_record  ON record_history(record_id);
 CREATE INDEX IF NOT EXISTS idx_shares_dept     ON record_shares(department_id);
+CREATE INDEX IF NOT EXISTS idx_user_shares     ON record_user_shares(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_dept      ON users(department_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_user   ON login_attempts(username, at);
 CREATE INDEX IF NOT EXISTS idx_attempts_ip     ON login_attempts(ip, at);
@@ -351,6 +363,7 @@ def init_db():
         _ensure_column(conn, "users", "theme", "TEXT NOT NULL DEFAULT 'auto'")
         _ensure_column(conn, "users", "warn_days", "INTEGER NOT NULL DEFAULT 3")
         _ensure_column(conn, "columns", "has_time", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "record_shares", "permission", "TEXT NOT NULL DEFAULT 'edit'")   # old shares stay 'edit'
         conn.execute("DROP INDEX IF EXISTS ux_column_reminder")   # several reminder columns are allowed now
         _ensure_column(conn, "activity_log", "ip", "TEXT")
         _ensure_column(conn, "attachments", "scan_status", "TEXT")
