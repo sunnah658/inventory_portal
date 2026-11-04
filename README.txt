@@ -1100,3 +1100,55 @@
 
  UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
    docker compose up -d --build. The database upgrades itself.
+
+==============================================================================
+ 23. INVOICES AS A DEFAULT TAB INSIDE THE DEPARTMENT DATABASE
+==============================================================================
+ The invoice page is no longer a separate top-menu page. It is a DEFAULT
+ tab inside "Department database", next to Client Info, Meetings and the
+ other tabs. It is always there — the dept admin does not create it, and
+ it cannot be deleted or customised like the other tabs. Old /invoices
+ links and bookmarks redirect to it.
+
+ INSIDE THE INVOICES TAB — SUB-TABS:
+   - All: every kind of invoice, from every user in the department.
+   - One sub-tab per invoice type: Billing Invoice, Admin Expense
+     Voucher, Conveyance Bill, Purchase Request, and every custom type.
+     A sub-tab shows only invoices of that type, from every user.
+   - When a dept admin creates a NEW invoice type (on the templates
+     page), its sub-tab appears here AUTOMATICALLY — no extra step, no
+     Department Database tab to create. The sub-tabs are built from the
+     department's templates and from templates that already have invoices,
+     so a type that already has invoices keeps its sub-tab even if its
+     template is later drafted.
+
+ FILTERS (on top of the Invoices tab, and they carry across sub-tabs):
+   Search (customer, number or HRC code), Filter by user (All users /
+   My invoices / one specific user), Filter by status (Draft / Issued /
+   Paid / Void), and Sort (newest, oldest, invoice date, amount).
+
+ SEE / EDIT (unchanged invoice rules, plus department-wide viewing):
+   - Every user in the department can SEE every invoice in the tab,
+     including its detail page and PDF. A same-department viewer sees no
+     Finalize / Mark Paid / Void / public-QR buttons.
+   - Editing is unchanged: only the owner can edit a Draft; only the
+     owner or a dept admin can mark an invoice Paid or Void; only the
+     owner or a dept admin can change its public QR settings.
+   - Creating an invoice still works from the format cards at the top of
+     the tab (Create on a template), and every other invoice feature is
+     unchanged: Draft → Issued (numbered, locked) → Paid / Void, PDF and
+     print, public QR with HRC code, code search (login required),
+     template sharing, department invoice sharing, watermark option and
+     currency beside every amount.
+   - Dept-admin invoice sharing still works: a dept admin who receives a
+     shared department's invoices sees those invoices in this tab too,
+     marked with their department name.
+
+ INVOICE TEMPLATES STAY OUTSIDE:
+   Invoice templates remain a separate, dept-admin-only page (Invoice
+   templates in the menu), exactly as before. They do not become a
+   Department Database tab or an Invoices sub-tab.
+
+ UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
+   docker compose up -d --build. No database change is needed for this
+   feature; the tab is built from the existing invoice tables.

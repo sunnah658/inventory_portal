@@ -1,4 +1,22 @@
 ==============================================================================
+ UPDATE: INVOICES AS A DEFAULT TAB INSIDE THE DEPARTMENT DATABASE
+==============================================================================
+ 1. The invoice page is now a DEFAULT tab inside Department database
+    (old /invoices links redirect to it). Invoice templates stay outside
+    as a dept-admin-only page, unchanged.
+ 2. Inside the Invoices tab: an All sub-tab (all types, all users in the
+    department) plus one sub-tab per invoice type. When a dept admin
+    creates a new invoice type, its sub-tab appears automatically.
+ 3. Filters on top of the tab: by user (All / My / one specific user),
+    by status, by search, and by sort — carried across sub-tabs.
+ 4. Every user in the department can now see every invoice in the tab
+    (detail + PDF, view only). Editing rules are unchanged: owner edits
+    a Draft, owner/dept admin marks Paid/Void and manages the public QR.
+    All other invoice features are unchanged.
+ UPGRADE: ./backup.sh, unzip over the old folder, docker compose up -d --build.
+ Details: README.txt section 23.
+
+==============================================================================
  UPDATE: DEPARTMENT DATABASE TABS (replaces the old single DeptDB table)
 ==============================================================================
  1. TABS under Department database: the dept admin creates tabs users

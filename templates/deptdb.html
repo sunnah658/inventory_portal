@@ -21,6 +21,7 @@
 {{ listbar('ddb.index', {'dept': dept['id'], 'tab': tab['id'], 'mine': 1 if mine else '', 'deleted': 1 if deleted else ''}, q, info, names) }}
 <div class="tabs">
   {% for tb in tabs %}<a class="tab {{ 'on' if tb['id'] == tab['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
+  <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
 </div>
 <div class="tabs" style="margin-top:8px">
   <a class="tab {{ 'on' if not mine and not deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id']) }}">All rows · {{ counts.all }}</a>
@@ -45,6 +46,7 @@
   <div class="tb"><div class="empty">{% if q or info.fval %}Nothing matches your search.{% elif deleted %}No deleted rows.{% elif mine %}You have not added any row yet.{% else %}No rows yet.{% endif %}</div></div>
 {% endif %}
 {% else %}
+  <div class="tabs"><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a></div>
   <div class="tb"><div class="empty">This department database has no tabs yet.{% if is_admin %} <a href="{{ url_for('ddb.tabs', dept=dept['id']) }}">Create the first tab</a>.{% else %} Ask the department admin to create one.{% endif %}</div></div>
 {% endif %}
 {% endblock %}

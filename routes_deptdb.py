@@ -303,6 +303,8 @@ def index():
     number = parse_code(request.args.get("q"))
     if number is not None:
         return redirect(url_for("public.code_page", code=format_code(number)))
+    if request.args.get("tab") == "invoices":
+        return _invoice_tab_view(db, dept, is_admin, request.args)
     tab, tabs = _get_tab(db, dept, request.args.get("tab", type=int))
     if tab is None:
         return render_template("deptdb.html", dept=dept, tab=None, tabs=[], level="manager" if is_admin else "own",
@@ -368,6 +370,90 @@ def export():
     return exports.table_file("pdf" if fmt == "pdf" else "xlsx", f"{dept['name']} database — {tab['name']}", header, out, kinds,
                               f"{len(rows)} rows", setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
                               "department_database_" + dept["name"] + "_" + tab["name"])
+
+
+
+# ---------------------------------------------------------------- Invoices tab (default tab inside Department Database)
+def _invoice_tab_view(db, dept, is_admin, args):
+    """The invoice page, as a default tab inside Department Database. Every
+    feature of invoices is unchanged — only where the list lives moved.
+    Sub-tabs: All, plus one per invoice type in this department. A new type
+    (template) created by the dept admin automatically gets its own sub-tab,
+    because the sub-tabs are built from the department's templates and the
+    templates that already have invoices. Everyone in the department can see
+    every invoice in the tab; editing rules are unchanged (owner edits a
+    draft, dept admin marks Paid/Void). Templates stay outside, on the
+    dept-admin Invoice templates page."""
+    from routes_invoices import _shared_dept_ids
+    scope = [dept["id"]]
+    if is_admin and g.user["role"] != "admin" and g.user["department_id"] == dept["id"]:
+        scope += [d for d in _shared_dept_ids(db, g.user) if d not in scope]
+    # sub-tabs: active templates of this department, plus templates that already have invoices in scope
+    sub = {}
+    for row in db.execute("SELECT id, name FROM invoice_templates WHERE department_id=? AND status='active' ORDER BY id",
+                          (dept["id"],)).fetchall():
+        sub[row["id"]] = row["name"]
+    qmarks = ",".join("?" * len(scope))
+    for row in db.execute(f"SELECT DISTINCT t.id, t.name FROM invoice_templates t JOIN invoices i ON i.template_id=t.id "
+                          f"WHERE i.department_id IN ({qmarks}) ORDER BY t.id", scope).fetchall():
+        sub[row["id"]] = row["name"]
+    invtype = args.get("invtype") or "all"
+    try:
+        invtype_id = int(invtype) if invtype != "all" else None
+    except ValueError:
+        invtype_id = None
+    if invtype_id is not None and invtype_id not in sub:
+        invtype, invtype_id = "all", None
+    # counts per sub-tab (scope only, before user/status filters)
+    counts = {"all": db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks})", scope).fetchone()[0]}
+    for tid in sub:
+        counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
+                                 scope + [tid]).fetchone()[0]
+    # filters: user, status, search, sort — on top of the tab
+    user_filter = args.get("user") or ""
+    status = args.get("status") or ""
+    q = (args.get("q") or "").strip()
+    sort = args.get("sort") or "newest"
+    where = [f"i.department_id IN ({qmarks})"]
+    params = list(scope)
+    if invtype_id is not None:
+        where.append("i.template_id=?"); params.append(invtype_id)
+    if user_filter == "mine":
+        where.append("i.owner_id=?"); params.append(g.user["id"])
+    elif user_filter.isdigit():
+        where.append("i.owner_id=?"); params.append(int(user_filter))
+    if status in ("draft", "issued", "paid", "void"):
+        where.append("i.status=?"); params.append(status)
+    if q:
+        where.append("(i.customer_name LIKE ? ESCAPE '\\' OR i.number LIKE ? ESCAPE '\\' OR i.public_code LIKE ? ESCAPE '\\')")
+        params += [like_pattern(q)] * 3
+    order = {"newest": "i.id DESC", "oldest": "i.id ASC", "amount_desc": "i.total DESC, i.id DESC",
+             "amount_asc": "i.total ASC, i.id ASC", "date_desc": "i.invoice_date DESC, i.id DESC"}.get(sort, "i.id DESC")
+    if sort not in ("newest", "oldest", "amount_desc", "amount_asc", "date_desc"):
+        sort = "newest"
+    sql_where = " WHERE " + " AND ".join(where)
+    total = db.execute("SELECT COUNT(*) FROM invoices i" + sql_where, params).fetchone()[0]
+    page, pages, offset = page_info(total, args.get("page", 1, type=int), config.PER_PAGE)
+    rows = db.execute("SELECT i.*, t.name AS template_name, u.full_name AS owner_name, d.name AS dept_name "
+                      "FROM invoices i LEFT JOIN invoice_templates t ON t.id=i.template_id "
+                      "LEFT JOIN users u ON u.id=i.owner_id LEFT JOIN departments d ON d.id=i.department_id "
+                      + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
+    keep = {k: v for k, v in args.items() if k not in ("page",)}
+    if g.user["role"] == "admin":
+        keep["dept"] = dept["id"]
+    keep["tab"] = "invoices"
+    users = db.execute("SELECT id, full_name FROM users WHERE department_id=? AND is_active=1 ORDER BY full_name",
+                       (dept["id"],)).fetchall()
+    create_templates = db.execute("SELECT * FROM invoice_templates WHERE department_id=? AND status='active' ORDER BY id",
+                                  (dept["id"],)).fetchall()
+    return render_template("deptdb_invoices.html", dept=dept, tabs=ddb_tabs(db, dept["id"]), is_admin=is_admin,
+                           sub_tabs=[{"id": tid, "name": name} for tid, name in sub.items()],
+                           invtype=invtype, invtype_id=invtype_id, counts=counts, rows=rows,
+                           users=users, user_filter=user_filter, status=status, q=q, sort=sort,
+                           total=total, page=page, pages=pages, keep=keep, create_templates=create_templates,
+                           depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
+                           if g.user["role"] == "admin" else [],
+                           can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] == "draft")
 
 
 # ---------------------------------------------------------------- tabs (admins / delegates)
@@ -716,6 +802,8 @@ def _clean_options(ctype, text):
 @login_required
 def columns():
     db, dept = _tab_admin()
+    if request.args.get("tab") == "invoices":
+        return _invoice_tab_view(db, dept, is_admin, request.args)
     tab, tabs = _get_tab(db, dept, request.args.get("tab", type=int))
     if tab is None:
         flash("Create a tab first.", "error")

@@ -121,6 +121,11 @@ def _can_view(db, user, inv):
         return True
     if inv["owner_id"] == user["id"]:
         return True
+    # Department Database Invoices tab: every user in the same department can
+    # SEE every invoice in that department (view only — editing, Paid/Void
+    # and public-QR management keep their old owner / dept-admin rules).
+    if user["department_id"] == inv["department_id"]:
+        return True
     if _is_dept_admin(user) and inv["department_id"] == user["department_id"]:
         return True
     if _is_dept_admin(user) and inv["department_id"] in _shared_dept_ids(db, user):
@@ -212,31 +217,12 @@ def _sigs(form, template=None):
 @bp.route("/invoices")
 @login_required
 def list_invoices():
-    db = get_db()
-    q = (request.args.get("q") or "").strip()
-    if q:
-        # login-only code search: HRC-##### -> invoice code page
-        cand = q.strip().upper().replace(" ", "")
-        if re.fullmatch(r"HRC-\d{5}", cand):
-            row = db.execute("SELECT * FROM invoices WHERE public_code=?", (cand,)).fetchone()
-            if row is not None:
-                return redirect(url_for("invoices.code_page", code=cand))
-    status = request.args.get("status") or ""
-    fmt = request.args.get("format") or ""
-    templates = db.execute("SELECT * FROM invoice_templates WHERE department_id=? AND status='active' ORDER BY id",
-                           (g.user["department_id"],)).fetchall()
-    where = "WHERE owner_id=?"; params = [g.user["id"]]
-    if status:
-        where += " AND status=?"; params.append(status)
-    if fmt:
-        where += " AND template_id IN (SELECT id FROM invoice_templates WHERE name=?)"; params.append(fmt)
-    rows = db.execute(f"SELECT i.*, t.name AS template_name FROM invoices i LEFT JOIN invoice_templates t ON t.id=i.template_id {where} ORDER BY i.id DESC", params).fetchall()
-    counts = {}
-    for s in ("draft", "issued", "paid", "void"):
-        counts[s] = db.execute("SELECT COUNT(*) FROM invoices WHERE owner_id=? AND status=?", (g.user["id"], s)).fetchone()[0]
-    return render_template("invoices_list.html", templates=templates, rows=rows, counts=counts, status=status, fmt=fmt, q=q,
-                           colours=KIND_COLOURS, is_dept_admin=_is_dept_admin(g.user))
-
+    # The invoice page now lives as a default tab inside Department Database.
+    # Old links and bookmarks keep working through this redirect.
+    args = {"tab": "invoices"}
+    if g.user["role"] == "admin":
+        args["dept"] = g.user["department_id"]
+    return redirect(url_for("ddb.index", **args))
 @bp.route("/invoices/dept")
 @login_required
 def dept_list():
@@ -513,7 +499,8 @@ def detail(iid):
         qr_svg = _qr_svg(qr_url)
     return render_template("invoice_detail.html", inv=inv, lines=lines, tpl=tpl, owner_name=owner["full_name"] if owner else "",
                            qr_svg=qr_svg, qr_url=qr_url, colour=KIND_COLOURS.get((json.loads(inv["template_snapshot_json"] or "{}").get("kind") or "billing"), "#0F7CA6"),
-                           can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] == "draft"))
+                           can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] == "draft"),
+                           can_manage=(g.user["role"] == "admin" or inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])))
 
 @bp.route("/invoices/<int:iid>/pdf")
 @login_required

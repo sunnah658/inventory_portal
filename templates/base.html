@@ -25,8 +25,7 @@
   {% else %}
     {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}
   {% endif %}
-    {{ nav_link('ddb.index', 'Department database', ['ddb.index', 'ddb.new_row', 'ddb.row_detail', 'ddb.edit_row', 'ddb.columns', 'ddb.tabs', 'ddb.delegates']) }}
-    {{ nav_link('invoices.list_invoices', 'Invoices', ['invoices.list_invoices', 'invoices.invoice_new', 'invoices.invoice_edit', 'invoices.detail', 'invoices.code_page']) }}
+    {{ nav_link('ddb.index', 'Department database', ['ddb.index', 'ddb.new_row', 'ddb.row_detail', 'ddb.edit_row', 'ddb.columns', 'ddb.tabs', 'ddb.delegates', 'invoices.invoice_new', 'invoices.invoice_edit', 'invoices.detail', 'invoices.code_page']) }}
     {% if g.user['is_dept_admin'] %}{{ nav_link('invoices.templates', 'Invoice templates', ['invoices.templates', 'invoices.template_new', 'invoices.template_edit', 'invoices.template_share']) }}{% endif %}
     {{ nav_link('public.search_qr', 'Search QR', ['public.search_qr', 'public.code_page']) }}
     {{ nav_link('records.reminders', 'Reminders', ['records.reminders']) }}
