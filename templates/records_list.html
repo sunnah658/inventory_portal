@@ -10,7 +10,6 @@
       <a class="b sm wide" href="{{ url_for('bulk.export_list', fmt='xlsx', **keep) }}">Excel (.xlsx)</a>
       <a class="b sm wide" style="margin-top:8px" href="{{ url_for('bulk.export_list', fmt='pdf', **keep) }}">PDF</a>
       <a class="b sm wide" style="margin-top:8px" href="{{ url_for('records.download', **keep) }}">CSV</a></div></details>
-    <a class="b" href="{{ url_for('records.labels') }}">QR labels</a>
     <button class="b" type="button" onclick="window.print()">Print</button>
   </div>
 </div>
@@ -18,7 +17,7 @@
 <div class="tabs">
   {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for('records.list_records', tab=t) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
 </div>
-{{ listbar('records.list_records', {'tab': tab}, q, info, names, saved, view_page, keep) }}
+{{ listbar('records.list_records', {'tab': tab}, q, info, names) }}
 {% if ctx.groups %}
   {{ bulkbar(departments) }}
   {{ groups_table(ctx, 'mine' if tab in ('mine', 'shared_by_me') else 'shared', True) }}

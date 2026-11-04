@@ -1,4 +1,23 @@
 ==============================================================================
+ UPDATE: DEPARTMENT DATABASE, HRC QR CODES, CLEANER PDF / PRINT
+==============================================================================
+ 1. NEW tab "Department database": one shared table per department. The department admin
+    adds/removes columns and decides who may view, add and manage own rows, edit every row,
+    or work as manager. Users add their own rows (also copied from a personal record).
+    History, conflict protection, search, filter, sort, Excel / PDF / CSV export.
+ 2. PUBLIC QR now has a unique code under it: HRC-0, HRC-1 ... Choose the fields or the
+    full record, press "Generate public QR". Anyone logged in can search the code in a
+    search bar and download a clean PDF. The login-only "QR label" was removed.
+ 3. REPAIR LOG only in departments that use it (switch per department).
+ 4. PDF: only the fields you tick. No edit history, no repair log.
+ 5. PRINT: only the record's details are printed, no buttons or helper texts.
+ 6. Reminders page: 1, 3, 7 and 15 days added.
+ 7. REMOVED: Hand over, Requests (approval), saved filters.
+    NEW: "Change owner" for the portal admin and the department admin.
+ UPGRADE: ./backup.sh, unzip over the old folder, docker compose up -d --build.
+ Details: README.txt section 19.
+
+==============================================================================
  UPDATE: SHARING WITH ONE PERSON, EDIT / VIEW ONLY, REPLACE ATTACHMENT
 ==============================================================================
  1. The owner can share a record with a WHOLE DEPARTMENT or with ONE CHOSEN PERSON

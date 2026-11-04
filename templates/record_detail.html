@@ -4,27 +4,32 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ rec['department_name'] }} record #{{ rec['id'] }}</h1>
-    <p class="hint">Owner: {{ rec['owner_name'] }} · last changed {{ rec['updated_at'] }}{% if level == 'shared' %} · shared with you (you can edit){% elif level == 'shared_view' %} · shared with you (view only){% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</p></div>
-  <div class="acts">
+    <p class="hint keepprint">Owner: {{ rec['owner_name'] }} · last changed {{ rec['updated_at'] }}<span class="noprint">{% if level == 'shared' %} · shared with you (you can edit){% elif level == 'shared_view' %} · shared with you (view only){% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</span></p></div>
+  <div class="acts noprint">
     {% if can_edit %}<a class="b p" href="{{ url_for('records.edit_record', rid=rec['id']) }}">Edit</a>{% endif %}
-    <a class="b" href="{{ url_for('bulk.record_pdf', rid=rec['id']) }}">PDF</a>
-    <a class="b" href="{{ url_for('records.label', rid=rec['id']) }}">QR label</a>
+    <details class="dt"><summary class="b">PDF</summary>
+      <form class="pop" method="get" action="{{ url_for('bulk.record_pdf', rid=rec['id']) }}">
+        <div class="sub" style="margin-bottom:6px">Choose the fields to put in the PDF. Edit history and repair log are never included.</div>
+        {% for c in cols %}<label class="ck"><input type="checkbox" name="col" value="{{ c['id'] }}" checked>{{ c['name'] }}</label>{% endfor %}
+        <button class="b p sm wide" type="submit" style="margin-top:10px">Download PDF</button></form></details>
+    {% if can_copy and not rec['deleted_at'] %}<a class="b" href="{{ url_for('ddb.new_row', from_record=rec['id']) }}" title="Copy the matching fields into your department database">Copy to department database</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>
     {% if can_manage and not rec['deleted_at'] %}<form method="post" action="{{ url_for('records.delete_record', rid=rec['id']) }}" onsubmit="return confirm('Move this record to the recycle bin?');" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg" type="submit">Delete</button></form>{% endif %}
   </div>
 </div>
-{% if rec['deleted_at'] %}<div class="alert">This record is in the recycle bin since {{ rec['deleted_at'] }}. <a href="{{ url_for('records.bin_page') }}">Open the recycle bin</a> to restore it.</div>{% endif %}
-{% if not can_edit and not rec['deleted_at'] %}<div class="alert">You can view this record and write suggestions. Only the owner and the people it is shared with for editing can change it.</div>{% endif %}
+{% if rec['deleted_at'] %}<div class="alert noprint">This record is in the recycle bin since {{ rec['deleted_at'] }}. <a href="{{ url_for('records.bin_page') }}">Open the recycle bin</a> to restore it.</div>{% endif %}
+{% if not can_edit and not rec['deleted_at'] %}<div class="alert noprint">You can view this record and write suggestions. Only the owner and the people it is shared with for editing can change it.</div>{% endif %}
 <div class="tw">
   <div class="stack">
     <div class="card"><h2>Details</h2>
       <div class="ig">
-      {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}{% if c['is_reminder'] %} · reminder date{% endif %}</span>{{ cell(c, vals.get(c['id'])) or '' }}</div>{% endfor %}
+      {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}{% if c['is_reminder'] %}<span class="noprint"> · reminder date</span>{% endif %}</span>{{ cell(c, vals.get(c['id'])) or '' }}</div>{% endfor %}
       </div>
     </div>
 
-    <div class="card"><h2>Repair log</h2>
+    {% if rec['repairs_enabled'] %}
+    <div class="card noprint"><h2>Repair log</h2>
       {% if repairs %}<div class="tb" style="box-shadow:none"><table><thead><tr><th>Sent</th><th>Problem</th><th>Fixed by</th><th>Cost</th><th>Back</th><th class="noprint"></th></tr></thead><tbody>
       {% for p in repairs %}<tr class="r"><td>{{ p['date_in'] or '' }}</td><td>{{ p['problem'] or '' }}</td><td>{{ p['fixed_by'] or '' }}</td><td>{{ p['cost'] or '' }}</td>
         <td>{% if p['date_back'] %}{{ p['date_back'] }}{% else %}<span class="s a">In repair</span>{% endif %}</td>
@@ -43,11 +48,12 @@
             <div class="fd"><label>Cost</label><input type="text" name="cost" inputmode="decimal"></div></div>
           <button class="b p sm" type="submit">Save entry</button></form></details>{% endif %}
     </div>
+    {% endif %}
 
     {% if rec['attachments_enabled'] %}
     <div class="card"><h2>Attachments</h2>
       {% for a in attachments %}<div class="ck"><span style="flex:1"><a href="{{ url_for('records.download_attachment', aid=a['id']) }}">{{ a['original_name'] }}</a>
-        <span class="pill">{{ (a['size'] / 1024)|round(0)|int }} KB</span>{% if a['scan_status'] == 'clean' %} <span class="pill b2">Virus checked</span>{% endif %} <span class="sub">{{ a['by_name'] or '' }}, {{ a['uploaded_at'] }}</span></span>
+        <span class="pill">{{ (a['size'] / 1024)|round(0)|int }} KB</span>{% if a['scan_status'] == 'clean' %} <span class="pill b2 noprint">Virus checked</span>{% endif %} <span class="sub noprint">{{ a['by_name'] or '' }}, {{ a['uploaded_at'] }}</span></span>
         {% if can_edit %}<form method="post" enctype="multipart/form-data" action="{{ url_for('records.replace_attachment', aid=a['id']) }}" class="noprint"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="file" name="file" style="display:none" onchange="if(confirm('Replace this file with the file you chose? The old file will be deleted.')){this.form.submit();}else{this.value='';}"><button class="b sm" type="button" onclick="this.form.file.click()">Replace</button></form>
         <form method="post" action="{{ url_for('records.delete_attachment', aid=a['id']) }}" onsubmit="return confirm('Remove this file?');" class="noprint"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>{% endif %}</div>
@@ -72,26 +78,25 @@
     </div>
   </div>
 
-  <aside class="stack">
-    <div class="card qrbox"><h2 style="text-align:left">QR label</h2>{{ qr_svg|safe }}<div class="sub">Opens this record after login</div></div>
-
+  <aside class="stack noprint">
     {% if can_manage and not rec['deleted_at'] %}
-    <div class="card noprint" id="public"><h2>Public QR</h2>
-      <p class="hint" style="margin-bottom:10px">Anyone who scans it sees only the fields you tick, without logging in. No history, files or costs are shown.</p>
+    <div class="card" id="public"><h2>Public QR</h2>
+      <p class="hint" style="margin-bottom:10px">Anyone who scans it sees only what you choose, without logging in. No history, files or costs are shown. The QR gets a unique code that any portal user can search.</p>
       {% if link %}<div class="msg {{ 'ok' if link['enabled'] else 'error' }}" style="margin-bottom:10px">{{ 'Public QR is ON' if link['enabled'] else 'Public QR is OFF' }} · {{ link['views'] }} views</div>
-        {% if link['enabled'] %}<div class="qrbox">{{ public_svg|safe }}</div><div class="urlbox">{{ public_url }}</div>
-        <a class="b sm" href="{{ url_for('public.link_qr', lid=link['id']) }}">Print this QR</a>{% endif %}{% endif %}
+        {% if link['enabled'] %}<div class="qrbox">{{ public_svg|safe }}<div class="hrc">{{ public_code }}</div></div><div class="urlbox">{{ public_url }}</div>
+        <a class="b sm" href="{{ url_for('public.link_qr', lid=link['id']) }}">Print this QR</a>{% else %}<div class="hrc" style="text-align:left">{{ public_code }}</div>{% endif %}{% endif %}
       <form method="post" action="{{ url_for('public.record_public', rid=rec['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
-        <label>Fields to show</label>
+        <label class="ck"><input type="checkbox" name="full_record" value="1" {{ 'checked' if link and link['full_record'] }} onchange="document.querySelectorAll('.pf').forEach(function(x){x.disabled=this.checked}.bind(this))"><b>Share the full record</b></label>
+        <label style="margin-top:8px">Or choose the fields to show</label>
         {% set current = link['fields'].splitlines() if link else [] %}
-        {% for n in public_names %}<label class="ck"><input type="checkbox" name="fields" value="{{ n }}" {{ 'checked' if n|lower in current }}>{{ n }}</label>{% endfor %}
-        <button class="b p sm" type="submit" style="margin-top:10px">{{ 'Save and turn on' if link else 'Create public QR' }}</button></form>
+        {% for n in public_names %}<label class="ck"><input class="pf" type="checkbox" name="fields" value="{{ n }}" {{ 'checked' if n|lower in current }} {{ 'disabled' if link and link['full_record'] }}>{{ n }}</label>{% endfor %}
+        <button class="b p sm" type="submit" style="margin-top:10px">{{ 'Save' if link else 'Generate public QR' }}</button></form>
       {% if link %}<div class="acts" style="margin-top:10px">
         {% if link['enabled'] %}<form method="post" action="{{ url_for('public.record_public', rid=rec['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="off"><button class="b sm dg" type="submit">Turn off</button></form>{% endif %}
-        <form method="post" action="{{ url_for('public.record_public', rid=rec['id']) }}" onsubmit="return confirm('Old printed QR codes will stop working. Continue?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New code</button></form></div>{% endif %}
+        <form method="post" action="{{ url_for('public.record_public', rid=rec['id']) }}" onsubmit="return confirm('The scan link changes: old printed QR images stop working. The code (HRC number) stays the same. Continue?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New scan link</button></form></div>{% endif %}
     </div>
 
-    <div class="card noprint"><h2>Shared with</h2>
+    <div class="card"><h2>Shared with</h2>
       <h3 style="margin-bottom:6px">Whole departments</h3>
       <p class="hint" style="margin-bottom:8px">Every member of a ticked department gets the access you choose.</p>
       <form method="post" action="{{ url_for('records.share', rid=rec['id']) }}">
@@ -117,17 +122,16 @@
       <div class="sub" style="margin-top:10px"><b>Can edit</b>: change every field, upload, replace or remove files. <b>View only</b>: read the record, download files and write suggestions. Only you (and the admin) can change sharing or delete.</div>
     </div>
 
-    <div class="card noprint"><h2>Hand over</h2>
-      {% if transfer %}<p class="hint">Waiting for {{ transfer['to_name'] }} to accept.</p>
-        <form method="post" action="{{ url_for('flow.transfer_action', tid=transfer['id'], action='cancel') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit" style="margin-top:8px">Cancel handover</button></form>
-      {% else %}<p class="hint" style="margin-bottom:10px">Give this record to another person. They must accept it.</p>
-        <form method="post" action="{{ url_for('flow.start_transfer', rid=rec['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label for="to_user">New owner</label><select id="to_user" name="to_user" required><option value="">Choose a person</option>{% for p in people %}<option value="{{ p['id'] }}">{{ p['full_name'] }} ({{ p['username'] }})</option>{% endfor %}</select>
-          <label for="tnote" style="margin-top:8px">Note (optional)</label><input id="tnote" type="text" name="note" maxlength="300">
-          {% if g.user['role'] == 'admin' %}<label class="ck"><input type="checkbox" name="immediately" value="1">Hand over now, without waiting</label>{% endif %}
-          <button class="b p sm" type="submit" style="margin-top:10px">Send handover</button></form>{% endif %}
+    {% endif %}
+
+    {% if can_owner %}
+    <div class="card"><h2>Change owner</h2>
+      <p class="hint" style="margin-bottom:10px">Give this record to another person right away. {{ 'You may choose anybody.' if g.user['role'] == 'admin' else 'You may choose a member of this department.' }}</p>
+      <form method="post" action="{{ url_for('records.set_owner', rid=rec['id']) }}" onsubmit="return confirm('Change the owner of this record?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="new_owner">New owner</label><select id="new_owner" name="new_owner" required><option value="">Choose a person</option>{% for p in owner_options %}<option value="{{ p['id'] }}">{{ p['full_name'] }} ({{ p['username'] }})</option>{% endfor %}</select>
+        <button class="b p sm" type="submit" style="margin-top:10px">Change owner</button></form>
     </div>
-    {% elif link and link['enabled'] and not can_manage %}{% endif %}
+    {% endif %}
 
     <div class="card"><h2>Edit history</h2><div class="tl">{% for h in history %}{{ history_line(h) }}{% endfor %}</div></div>
   </aside>

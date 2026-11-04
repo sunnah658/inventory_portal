@@ -2,11 +2,13 @@
 {% block title %}Public QR{% endblock %}
 {% block content %}
 <div class="card medium"><h1>{{ 'Edit public QR' if link else 'One public QR for ' ~ count ~ ' records' }}</h1>
-  <p class="hint" style="margin-bottom:18px">Anyone who scans it sees only the fields you tick, without logging in. Nothing else is shown.</p>
+  <p class="hint" style="margin-bottom:18px">Anyone who scans it sees only what you choose, without logging in. Nothing else is shown.</p>
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% if ids %}<input type="hidden" name="ids" value="{{ ids }}">{% endif %}
     <div class="fd"><label for="title">Title shown on the page</label><input id="title" type="text" name="title" maxlength="100" required value="{{ title }}"></div>
-    <label>Fields to show</label>
-    {% for n in names %}<label class="ck"><input type="checkbox" name="fields" value="{{ n }}" {{ 'checked' if n|lower in chosen }}>{{ n }}</label>{% endfor %}
+    <label class="ck"><input type="checkbox" name="full_record" id="fullrec" value="1" {{ 'checked' if full }} onchange="document.querySelectorAll('.pf').forEach(function(x){x.disabled=this.checked}.bind(this))"><b>Share the full record</b> (every field, now and later)</label>
+    <label style="margin-top:10px">Or choose the fields to show</label>
+    {% for n in names %}<label class="ck"><input class="pf" type="checkbox" name="fields" value="{{ n }}" {{ 'checked' if n|lower in chosen }} {{ 'disabled' if full }}>{{ n }}</label>{% endfor %}
+    <div class="sub" style="margin-top:6px">History, files, costs and comments are never shown. The QR gets a unique code (HRC-number) that you can search in the portal.</div>
     <div class="acts" style="margin-top:16px"><button class="b p" type="submit">{{ 'Save' if link else 'Create public QR' }}</button><a class="b" href="{{ url_for('records.list_records') }}">Cancel</a></div>
   </form></div>
 {% endblock %}

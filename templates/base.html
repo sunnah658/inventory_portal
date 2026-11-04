@@ -25,11 +25,10 @@
   {% else %}
     {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}
   {% endif %}
-    {{ nav_link('flow.requests_page', 'Requests', ['flow.requests_page', 'flow.request_new'], pending_requests) }}
+    {{ nav_link('ddb.index', 'Department database', ['ddb.index', 'ddb.new_row', 'ddb.row_detail', 'ddb.edit_row', 'ddb.columns', 'ddb.people']) }}
     {{ nav_link('records.reminders', 'Reminders', ['records.reminders']) }}
     {{ nav_link('records.bin_page', 'Recycle bin', ['records.bin_page']) }}
     <details><summary>More</summary><div class="more">
-      <a href="{{ url_for('flow.transfers') }}">Handovers{% if pending_transfers %} <span class="badge">{{ pending_transfers }}</span>{% endif %}</a>
       <a href="{{ url_for('public.links') }}">Public QR links</a>
       {% if can_reports %}<a href="{{ url_for('bulk.reports') }}">Reports</a>{% endif %}
       {% if g.user['role'] == 'admin' %}

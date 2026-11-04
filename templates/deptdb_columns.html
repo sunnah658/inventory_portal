@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Database columns{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ dept['name'] }} database: columns</h1>
+  <p class="hint">Choose what this department keeps in its shared table. <a href="{{ url_for('ddb.index', dept=dept['id']) }}">Back to the database</a> · <a href="{{ url_for('ddb.people', dept=dept['id']) }}">People and access</a></p></div></div>
+<div class="tw" style="grid-template-columns:1fr 330px">
+  <div class="tb"><table><thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Shown</th><th>Filled in</th><th></th></tr></thead><tbody>
+  {% for c in cols %}<tr class="r"><td><b>{{ c['name'] }}</b>{% if c['has_time'] %} <span class="pill">with time</span>{% endif %}{% if c['col_type'] == 'dropdown' %}<div class="sub">{{ (c['options'] or '').replace('\n', ', ') }}</div>{% endif %}</td>
+    <td>{{ type_label[c['col_type']] }}</td><td>{{ 'Yes' if c['required'] else 'No' }}</td><td>{{ 'Yes' if c['shown'] else 'Hidden' }}</td><td>{{ c['used'] }}</td>
+    <td class="actcell">
+      <form method="post" action="{{ url_for('ddb.column_move', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="up"><button class="b sm" type="submit" title="Move up" aria-label="Move up">&uarr;</button></form>
+      <form method="post" action="{{ url_for('ddb.column_move', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="down"><button class="b sm" type="submit" title="Move down" aria-label="Move down">&darr;</button></form>
+      <a class="b sm" href="{{ url_for('ddb.column_edit', cid=c['id']) }}">Edit</a>
+      <form method="post" action="{{ url_for('ddb.column_remove', cid=c['id']) }}" onsubmit="return confirm('Remove this column? Its data is kept and it can be restored.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form></td></tr>
+  {% else %}<tr><td colspan="6" class="empty">No columns yet. Add the first one on the right.</td></tr>{% endfor %}</tbody></table></div>
+  <aside class="stack">
+    <div class="card"><h2>Add column</h2>
+      <form method="post" action="{{ url_for('ddb.column_add') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}">
+        <div class="fd"><label for="cname">Column name</label><input id="cname" name="name" type="text" maxlength="60" required></div>
+        <div class="fd"><label for="ctype">Type</label><select id="ctype" name="col_type">{% for k, label in types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="fd"><label for="copts">Dropdown options (one per line, only for Dropdown)</label><textarea id="copts" name="options" style="min-height:70px"></textarea></div>
+        <label class="ck"><input type="checkbox" name="required" value="1"> Required</label>
+        <label class="ck"><input type="checkbox" name="has_time" value="1"> Also keep a time (Date columns only)</label>
+        <button class="b p" type="submit" style="margin-top:12px">Add column</button></form></div>
+    {% if removed %}<div class="card"><h2>Removed columns</h2>
+      {% for c in removed %}<div class="ck" style="gap:8px"><span style="flex:1"><b>{{ c['name'] }}</b> <span class="sub">{{ c['removed_at'] }}</span></span>
+        <form method="post" action="{{ url_for('ddb.column_restore', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm" type="submit">Restore</button></form></div>{% endfor %}</div>{% endif %}
+  </aside></div>
+{% endblock %}

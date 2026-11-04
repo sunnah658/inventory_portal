@@ -46,10 +46,10 @@
 {% endmacro %}
 
 {# Search, filter and sort bar with saved views #}
-{% macro listbar(endpoint, hidden, q, info, names, saved, view_page, keep) %}
+{% macro listbar(endpoint, hidden, q, info, names) %}
 <form class="tools" method="get" action="{{ url_for(endpoint) }}">
   {% for k, v in hidden.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-  <input type="search" name="q" value="{{ q }}" placeholder="Search records" aria-label="Search records">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search records or a code like HRC-12" aria-label="Search records or code">
   <select name="fcol" aria-label="Filter column"><option value="">Filter by column</option>
     {% for n in names %}<option value="{{ n }}" {{ 'selected' if info.fcol|lower == n|lower }}>{{ n }}</option>{% endfor %}</select>
   <input type="search" name="fval" value="{{ info.fval }}" placeholder="contains" aria-label="Filter value">
@@ -60,17 +60,6 @@
   <button class="b" type="submit">Apply</button>
   {% if q or info.fcol or info.sort != 'updated' or info.dir != 'desc' %}<a href="{{ url_for(endpoint, **hidden) }}">Clear</a>{% endif %}
 </form>
-<div class="tools">
-  {% for v in saved %}
-    <span style="display:inline-flex;align-items:center;gap:2px"><a class="tab" href="{{ url_for(endpoint) }}{{ '?' ~ v.query if v.query }}">{{ v.name }}</a>
-    <form method="post" action="{{ url_for('bulk.view_delete', vid=v.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="iconbtn" style="width:28px;height:28px" type="submit" title="Delete this saved view" aria-label="Delete saved view">&times;</button></form></span>
-  {% endfor %}
-  <details class="dt"><summary class="b sm">Save this view</summary>
-    <form class="pop" method="post" action="{{ url_for('bulk.view_save') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="page" value="{{ view_page }}"><input type="hidden" name="query" value="{{ keep|urlencode }}"><input type="hidden" name="back" value="{{ request.full_path }}">
-      <label for="vname">Name of this view</label><input id="vname" type="text" name="name" maxlength="60" required>
-      <div class="sub">Saves the search, filter and sorting you see now.</div><button class="b p sm" type="submit" style="margin-top:10px">Save view</button></form></details>
-</div>
 {% endmacro %}
 
 {# The bar that appears when records are ticked #}
@@ -86,7 +75,6 @@
       <select id="bkuser" name="user_id"><option value="">(nobody)</option>{% for p in share_people() %}<option value="{{ p.id }}">{{ p.full_name }} ({{ p.username }}{% if p.dept_name %}, {{ p.dept_name }}{% endif %})</option>{% endfor %}</select>
       <button class="b p sm" type="submit" name="action" value="share" style="margin-top:10px">Share selected</button></div></details>
     <button class="b sm" type="submit" name="action" value="public">Public QR</button>
-    <button class="b sm" type="submit" name="action" value="labels">QR labels</button>
     <button class="b sm" type="submit" name="action" value="xlsx">Excel</button>
     <button class="b sm" type="submit" name="action" value="pdf">PDF</button>
     <button class="b sm" type="submit" name="action" value="csv">CSV</button>
@@ -128,3 +116,27 @@ document.addEventListener('change',function(e){var t=e.target;if(t.classList.con
 
 {# Asks for the admin's password unless it was typed a moment ago #}
 {% macro reauth() %}{% if not reauth_fresh %}<input class="pw" type="password" name="admin_password" placeholder="Your password to confirm" autocomplete="current-password" required aria-label="Your password">{% endif %}{% endmacro %}
+
+{# The input boxes of a record / department-database form (also used by the department database) #}
+{% macro record_fields(cols, values) %}
+    <div class="fm">
+    {% for c in cols %}{% set v = values.get(c['id']) or '' %}
+      <div class="fd {{ 'full' if c['col_type'] == 'longtext' }}">
+        <label for="c{{ c['id'] }}">{{ c['name'] }}{% if c['required'] %} <span class="req">*</span>{% endif %}</label>
+        {% if c['col_type'] == 'longtext' %}<textarea id="c{{ c['id'] }}" name="c{{ c['id'] }}" maxlength="2000">{{ v }}</textarea>
+        {% elif c['col_type'] == 'dropdown' %}
+          {% set opts = options_of(c) %}
+          <select id="c{{ c['id'] }}" name="c{{ c['id'] }}"><option value="">(blank)</option>
+            {% for o in opts %}<option value="{{ o }}" {{ 'selected' if v == o }}>{{ o }}</option>{% endfor %}
+            {% if v and v not in opts %}<option value="{{ v }}" selected>{{ v }}</option>{% endif %}</select>
+        {% elif c['col_type'] == 'yesno' %}
+          <select id="c{{ c['id'] }}" name="c{{ c['id'] }}"><option value="">(blank)</option><option {{ 'selected' if v == 'Yes' }}>Yes</option><option {{ 'selected' if v == 'No' }}>No</option></select>
+        {% elif c['col_type'] == 'date' %}
+          {% if c['has_time'] %}<div style="display:flex;gap:8px"><input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="date" value="{{ v[:10] }}" style="flex:3"><input name="c{{ c['id'] }}_time" type="time" value="{{ v[11:16] }}" aria-label="{{ c['name'] }} time" style="flex:2"></div>
+          {% else %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="date" value="{{ v[:10] }}">{% endif %}
+        {% elif c['col_type'] == 'number' %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="text" inputmode="decimal" value="{{ v }}">
+        {% else %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="text" maxlength="200" value="{{ v }}">{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+{% endmacro %}

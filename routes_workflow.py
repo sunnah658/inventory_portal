@@ -1,15 +1,14 @@
 """
-routes_workflow.py - notifications, comments/suggestions, handovers (transfers) and
-requests that need approval.
+routes_workflow.py - notifications (bell), the reminder-days setting, and comments/suggestions.
 
 Used by: app.py (registers it).   Uses: auth.py, core.py, routes_records.py, models.py
-Templates: notifications, transfers, requests, request_form.
+Templates: notifications.
 """
 import config
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 from auth import login_required
-from core import (EDIT_LEVELS, MANAGE_LEVELS, approver_ids, create_transfer, notify, resolve_transfer)
+from core import EDIT_LEVELS, MANAGE_LEVELS, notify
 from models import get_db, log
 from routes_records import _load as load_record
 
@@ -91,149 +90,3 @@ def delete_comment(cid):
     db.execute("DELETE FROM comments WHERE id=?", (cid,))
     db.commit()
     return redirect(url_for("records.detail", rid=row["record_id"]) + "#comments")
-
-
-# ---------------------------------------------------------------- handover (transfer)
-@bp.route("/records/<int:rid>/transfer", methods=["POST"])
-@login_required
-def start_transfer(rid):
-    rec, _level = load_record(rid, "manage")
-    db = get_db()
-    to_id = request.form.get("to_user", type=int)
-    now = bool(request.form.get("immediately")) and g.user["role"] == "admin"
-    error = create_transfer(db, g.user, rec, to_id, request.form.get("note"), immediately=now)
-    if error:
-        db.rollback()
-        flash(error, "error")
-    else:
-        log(db, "transfer_start", f"record {rid} to user {to_id}")
-        db.commit()
-        flash("Done. The record now belongs to the new owner." if now else
-              "The handover was sent. The new owner must accept it.", "ok")
-    return redirect(url_for("records.detail", rid=rid))
-
-
-@bp.route("/transfers")
-@login_required
-def transfers():
-    db = get_db()
-    base = ("SELECT t.*, fu.full_name AS from_name, tu.full_name AS to_name FROM transfers t "
-            "JOIN users fu ON fu.id=t.from_user JOIN users tu ON tu.id=t.to_user ")
-    incoming = db.execute(base + "WHERE t.status='pending' AND t.to_user=? ORDER BY t.id DESC", (g.user["id"],)).fetchall()
-    if g.user["role"] == "admin":
-        outgoing = db.execute(base + "WHERE t.status='pending' AND t.to_user != ? ORDER BY t.id DESC",
-                              (g.user["id"],)).fetchall()
-    else:
-        outgoing = db.execute(base + "WHERE t.status='pending' AND t.from_user=? ORDER BY t.id DESC",
-                              (g.user["id"],)).fetchall()
-    recent = db.execute(base + "WHERE t.status != 'pending' AND (t.from_user=? OR t.to_user=?) "
-                        "ORDER BY t.id DESC LIMIT 30", (g.user["id"], g.user["id"])).fetchall()
-    return render_template("transfers.html", incoming=incoming, outgoing=outgoing, recent=recent)
-
-
-@bp.route("/transfers/<int:tid>/<action>", methods=["POST"])
-@login_required
-def transfer_action(tid, action):
-    db = get_db()
-    tr = db.execute("SELECT * FROM transfers WHERE id=? AND status='pending'", (tid,)).fetchone()
-    if tr is None or action not in ("accept", "decline", "cancel"):
-        abort(404)
-    if action in ("accept", "decline") and tr["to_user"] != g.user["id"]:
-        abort(403)
-    if action == "cancel" and tr["from_user"] != g.user["id"] and g.user["role"] != "admin":
-        abort(403)
-    resolve_transfer(db, g.user, tr, action)
-    log(db, "transfer_" + action, f"record {tr['record_id']}")
-    db.commit()
-    flash({"accept": "You are now the owner of the record.", "decline": "Handover declined.",
-           "cancel": "Handover cancelled."}[action], "ok")
-    return redirect(url_for("flow.transfers"))
-
-
-# ---------------------------------------------------------------- requests that need approval
-KINDS = ("new_item", "repair", "other")
-
-
-def _can_review(db, user, req):
-    """Admins review everything; a department admin reviews requests of their own department."""
-    if req["requester_id"] == user["id"]:
-        return False
-    return user["role"] == "admin" or (user["is_dept_admin"] and req["department_id"] == user["department_id"])
-
-
-@bp.route("/requests")
-@login_required
-def requests_page():
-    db = get_db()
-    base = ("SELECT q.*, u.full_name AS requester_name, d.name AS department_name, "
-            "(SELECT full_name FROM users WHERE id=q.decided_by) AS decider_name "
-            "FROM requests q JOIN users u ON u.id=q.requester_id LEFT JOIN departments d ON d.id=q.department_id ")
-    mine = db.execute(base + "WHERE q.requester_id=? ORDER BY q.id DESC LIMIT 100", (g.user["id"],)).fetchall()
-    reviewer = g.user["role"] == "admin" or g.user["is_dept_admin"]
-    to_review = []
-    if reviewer:
-        if g.user["role"] == "admin":
-            to_review = db.execute(base + "WHERE q.requester_id != ? ORDER BY (q.status='pending') DESC, q.id DESC LIMIT 100",
-                                   (g.user["id"],)).fetchall()
-        else:
-            to_review = db.execute(base + "WHERE q.department_id=? AND q.requester_id != ? "
-                                   "ORDER BY (q.status='pending') DESC, q.id DESC LIMIT 100",
-                                   (g.user["department_id"], g.user["id"])).fetchall()
-    return render_template("requests.html", mine=mine, to_review=to_review, reviewer=reviewer,
-                           tab=request.args.get("tab", "review" if to_review else "mine"))
-
-
-@bp.route("/requests/new", methods=["GET", "POST"])
-@login_required
-def request_new():
-    if request.method == "POST":
-        kind = request.form.get("kind", "other")
-        title = (request.form.get("title") or "").strip()[:150]
-        details = (request.form.get("details") or "").strip()[:2000]
-        if kind not in KINDS or not title:
-            flash("Choose a type and write a short title.", "error")
-        else:
-            db = get_db()
-            db.execute("INSERT INTO requests(requester_id,department_id,kind,title,details) VALUES (?,?,?,?,?)",
-                       (g.user["id"], g.user["department_id"], kind, title, details))
-            notify(db, approver_ids(db, g.user["department_id"]),
-                   f"New request from {g.user['full_name']}: {title}", "/requests", skip=g.user["id"])
-            log(db, "request_new", title)
-            db.commit()
-            flash("Your request was sent for approval.", "ok")
-            return redirect(url_for("flow.requests_page", tab="mine"))
-    return render_template("request_form.html", form=request.form)
-
-
-@bp.route("/requests/<int:qid>/decide", methods=["POST"])
-@login_required
-def request_decide(qid):
-    db = get_db()
-    req = db.execute("SELECT * FROM requests WHERE id=? AND status='pending'", (qid,)).fetchone()
-    if req is None:
-        abort(404)
-    if not _can_review(db, g.user, req):
-        abort(403)
-    decision = "approved" if request.form.get("decision") == "approve" else "rejected"
-    note = (request.form.get("note") or "").strip()[:300]
-    db.execute("UPDATE requests SET status=?, decided_by=?, decided_at=datetime('now','localtime'), decision_note=? "
-               "WHERE id=?", (decision, g.user["id"], note, qid))
-    notify(db, [req["requester_id"]], f"Your request \"{req['title']}\" was {decision}.", "/requests", skip=g.user["id"])
-    log(db, "request_" + decision, req["title"])
-    db.commit()
-    flash(f"Request {decision}.", "ok")
-    return redirect(url_for("flow.requests_page", tab="review"))
-
-
-@bp.route("/requests/<int:qid>/cancel", methods=["POST"])
-@login_required
-def request_cancel(qid):
-    db = get_db()
-    req = db.execute("SELECT * FROM requests WHERE id=? AND requester_id=? AND status='pending'",
-                     (qid, g.user["id"])).fetchone()
-    if req is None:
-        abort(404)
-    db.execute("UPDATE requests SET status='cancelled' WHERE id=?", (qid,))
-    db.commit()
-    flash("Request cancelled.", "ok")
-    return redirect(url_for("flow.requests_page", tab="mine"))

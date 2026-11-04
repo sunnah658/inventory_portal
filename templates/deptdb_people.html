@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Database access{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ dept['name'] }} database: people and access</h1>
+  <p class="hint">Decide what each person may do. A <b>Manager</b> can do everything the department admin can here: add or remove columns, set access, and edit or delete any row. <a href="{{ url_for('ddb.index', dept=dept['id']) }}">Back to the database</a></p></div></div>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}">
+  <div class="tb"><table><thead><tr><th>Person</th><th>Access</th></tr></thead><tbody>
+  {% for m in members %}<tr class="r"><td><b>{{ m['full_name'] }}</b> <span class="sub">{{ m['username'] }}</span></td>
+    <td>{% if m['is_dept_admin'] or m['role'] == 'admin' %}<span class="pill b2">Manager</span> <span class="sub">{{ 'Administrator' if m['role'] == 'admin' else 'Department admin' }} (always)</span>
+      {% else %}<select name="level_{{ m['id']}}" aria-label="Access for {{ m['full_name'] }}" style="width:auto">{% for k, label in levels %}<option value="{{ k }}" {{ 'selected' if m['level'] == k }}>{{ label }}</option>{% endfor %}</select>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="2" class="empty">No people in this department.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="sub" style="margin:10px 0"><b>View only</b>: read every row. <b>Add and manage own rows</b> (the default): add rows and change or delete only their own. <b>Edit every row</b>: change any row (delete only their own). <b>Manager</b>: works as the department admin.</div>
+  <button class="b p" type="submit">Save access</button>
+</form>
+{% endblock %}

@@ -13,12 +13,12 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 import config
 import exports
 from auth import admin_required, login_required
-from core import (MANAGE_LEVELS, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, dept_member_ids, get_columns,
+from core import (MANAGE_LEVELS, show_when, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, dept_member_ids, get_columns,
                   get_record, notify, rec_select, reminder_rows, search_clause, soft_delete,
                   summaries_for, values_for)
 from models import get_db, log, setting_get
 from routes_admin import _record_filters
-from routes_records import (_load as load_record, available_tabs, label_items, list_options, tab_clause)
+from routes_records import (_load as load_record, available_tabs, list_options, tab_clause)
 from utils import csv_response
 
 bp = Blueprint("bulk", __name__)
@@ -78,8 +78,6 @@ def bulk():
         log(db, "bulk_delete", f"{len(mine)} records")
         db.commit()
         flash(f"{len(mine)} record(s) moved to the recycle bin.", "ok")
-    elif action == "labels":
-        return render_template("qr_label.html", items=label_items(db, recs), many=True)
     elif action == "public":
         return redirect(url_for("public.link_new", ids=",".join(str(r["id"]) for r in mine)))
     elif action in ("xlsx", "pdf", "csv"):
@@ -132,21 +130,20 @@ def export_admin():
 @bp.route("/records/<int:rid>/pdf")
 @login_required
 def record_pdf(rid):
+    """PDF of one record: ONLY the columns' values the person ticked (all, if none were ticked).
+    Edit history and repair log are never part of the PDF."""
     rec, _level = load_record(rid, "view")
     db = get_db()
     cols = get_columns(db, rec["department_id"])
+    chosen = {int(x) for x in request.args.getlist("col") if x.isdigit()}
+    if chosen:
+        cols = [c for c in cols if c["id"] in chosen]
     vals = values_for(db, [rid])[rid]
-    details = [[c["name"], vals.get(c["id"]) or ""] for c in cols]
-    repairs = [[r["date_in"], r["problem"], r["fixed_by"], r["cost"], r["date_back"] or "In repair"]
-               for r in db.execute("SELECT * FROM repairs WHERE record_id=? ORDER BY id DESC", (rid,))]
-    history = [[h["at"], h["full_name"] or "", h["action"] + (": " + h["field"] if h["field"] else ""),
-                f"{h['old_value'] or ''} -> {h['new_value'] or ''}" if h["field"] else (h["new_value"] or "")]
-               for h in db.execute("SELECT * FROM record_history WHERE record_id=? ORDER BY id DESC LIMIT 60", (rid,))]
+    details = [[c["name"], show_when(vals[c["id"]]) if c["col_type"] == "date" else vals[c["id"]]]
+               for c in cols if vals.get(c["id"])]                      # empty fields are left out
     data = exports.document_pdf(f"{rec['department_name']} record #{rid}",
-                                f"Owner: {rec['owner_name']} · {rec['updated_at']}",
-                                [("Details", ["Field", "Value"], details),
-                                 ("Repair log", ["Sent", "Problem", "Fixed by", "Cost", "Back"], repairs),
-                                 ("Edit history", ["When", "Who", "What", "Change"], history)], _company(db))
+                                f"Owner: {rec['owner_name']}",
+                                [("", ["Field", "Value"], details or [["", "No information to show."]])], _company(db))
     from flask import Response
     resp = Response(data, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = f'attachment; filename="record_{rid}.pdf"'
@@ -168,8 +165,10 @@ def _scope(user):
 @bp.route("/reports")
 @login_required
 def reports():
-    _scope(g.user)
-    return render_template("reports.html")
+    scope, sp = _scope(g.user)
+    repairs_on = get_db().execute("SELECT COUNT(*) FROM departments d WHERE d.repairs_enabled=1 AND "
+                                  + scope.replace("r.department_id", "d.id"), sp).fetchone()[0] > 0
+    return render_template("reports.html", repairs_on=repairs_on)
 
 
 @bp.route("/reports/<name>/<fmt>")
@@ -202,6 +201,7 @@ def report(name, fmt):
     elif name == "repairs":
         title = "Open repairs"
         found = db.execute(rec_select(", p.date_in, p.problem, p.fixed_by, p.cost") + " JOIN repairs p ON p.record_id=r.id "
+                           "JOIN departments dd ON dd.id=r.department_id AND dd.repairs_enabled=1 "
                            "WHERE p.date_back IS NULL AND r.deleted_at IS NULL AND " + scope + " ORDER BY p.date_in", sp).fetchall()
         sums = summaries_for(db, found)
         out = [[r["department_name"], sums[r["id"]], r["owner_name"], r["date_in"], r["problem"], r["fixed_by"], r["cost"]]
@@ -232,40 +232,3 @@ def report(name, fmt):
     db.commit()
     return exports.sheets_file(fmt, title, sheets, _company(db), "report_" + name,
                                f"{g.user['full_name']} · {today.isoformat()}")
-
-
-# ---------------------------------------------------------------- saved views (filters and sorting)
-VIEW_PAGES = {"records": "records.list_records", "admin_records": "admin.all_records"}
-VIEW_KEYS = ("tab", "q", "sort", "dir", "fcol", "fval", "department", "owner")
-
-
-@bp.route("/views/save", methods=["POST"])
-@login_required
-def view_save():
-    page = request.form.get("page", "")
-    name = (request.form.get("name") or "").strip()[:60]
-    if page not in VIEW_PAGES or not name or (page == "admin_records" and g.user["role"] != "admin"):
-        flash("Give the view a name.", "error")
-        return redirect(_safe_back(request.form.get("back")))
-    query = urlencode([(k, v) for k, v in parse_qsl(request.form.get("query", "")) if k in VIEW_KEYS and v])
-    db = get_db()
-    if db.execute("SELECT COUNT(*) FROM saved_views WHERE user_id=? AND page=?", (g.user["id"], page)).fetchone()[0] >= 20:
-        flash("You can save up to 20 views. Delete one first.", "error")
-    else:
-        db.execute("INSERT INTO saved_views(user_id,page,name,query) VALUES (?,?,?,?)", (g.user["id"], page, name, query))
-        db.commit()
-        flash("View saved.", "ok")
-    return redirect(url_for(VIEW_PAGES[page]) + ("?" + query if query else ""))
-
-
-@bp.route("/views/<int:vid>/delete", methods=["POST"])
-@login_required
-def view_delete(vid):
-    db = get_db()
-    row = db.execute("SELECT * FROM saved_views WHERE id=? AND user_id=?", (vid, g.user["id"])).fetchone()
-    if row is None:
-        abort(404)
-    db.execute("DELETE FROM saved_views WHERE id=?", (vid,))
-    db.commit()
-    flash("View deleted.", "ok")
-    return redirect(url_for(VIEW_PAGES.get(row["page"], "records.list_records")))

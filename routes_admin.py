@@ -23,7 +23,7 @@ from core import (COLUMN_TYPES, TYPE_LABEL, build_csv, column_names, create_depa
                   rec_select, reminder_rows, search_clause, summaries_for, table_context)
 from import_users import import_users
 from models import get_db, log, setting_get, setting_set
-from routes_records import label_items, list_options
+from routes_records import code_redirect, list_options
 from security import password_problem, reauth_ok, revoke_session, revoke_user_sessions
 from templates_data import TEMPLATES
 from utils import csv_response, generate_password, like_pattern, page_info
@@ -64,8 +64,7 @@ def dashboard():
                               "WHERE p.date_back IS NULL AND r.deleted_at IS NULL").fetchone()[0],
         "soon": len(soon),
         "bin": db.execute("SELECT COUNT(*) FROM records WHERE deleted_at IS NOT NULL").fetchone()[0],
-        "requests": db.execute("SELECT COUNT(*) FROM requests WHERE status='pending'").fetchone()[0],
-        "transfers": db.execute("SELECT COUNT(*) FROM transfers WHERE status='pending'").fetchone()[0],
+        "repairs_on": db.execute("SELECT COUNT(*) FROM departments WHERE repairs_enabled=1").fetchone()[0],
         "sessions": db.execute("SELECT COUNT(*) FROM sessions WHERE revoked=0 AND last_seen > "
                                "datetime('now','localtime',?)", (f"-{config.IDLE_MINUTES} minutes",)).fetchone()[0],
     }
@@ -115,6 +114,9 @@ def _record_filters():
 @admin_required
 def all_records():
     db = get_db()
+    code_page = code_redirect(request.args.get("q"))          # typing HRC-12 opens that QR code
+    if code_page:
+        return code_page
     where, params, q, dept, owner, order, op, info = _record_filters()
     total = db.execute("SELECT COUNT(*) FROM records r WHERE " + where, params).fetchone()[0]
     page, pages, offset = page_info(total, request.args.get("page", 1, type=int), config.PER_PAGE)
@@ -125,10 +127,8 @@ def all_records():
     sums = None if full else summaries_for(db, rows)
     return render_template("admin_records.html", rows=rows, full=full, sums=sums, q=q, dept=dept,
                            owner=owner, total=total, page=page, pages=pages, info=info,
-                           names=column_names(db, g.user), view_page="admin_records",
+                           names=column_names(db, g.user),
                            keep={k: v for k, v in request.args.items() if k != "page"},
-                           saved=db.execute("SELECT * FROM saved_views WHERE user_id=? AND page='admin_records' "
-                                            "ORDER BY name", (g.user["id"],)).fetchall(),
                            departments=_departments(),
                            people=db.execute("SELECT id, full_name, username FROM users "
                                              "ORDER BY full_name").fetchall())
@@ -149,30 +149,6 @@ def all_records_download():
     log(db, "download_csv", f"{len(rows)} records ({name})")
     db.commit()
     return csv_response(header, out, name)
-
-
-@bp.route("/labels")
-@admin_required
-def labels():
-    """Printable QR labels for one department (up to 300 records)."""
-    db = get_db()
-    dept = request.args.get("department", "")
-    if not dept.isdigit():
-        flash("Choose a department first, then print its labels.", "error")
-        return redirect(url_for("admin.all_records"))
-    rows = db.execute(rec_select() + " WHERE r.deleted_at IS NULL AND r.department_id=? "
-                      "ORDER BY r.id LIMIT 300", (int(dept),)).fetchall()
-    return render_template("qr_label.html", items=label_items(db, rows), many=True)
-
-
-# ================================================================ users
-def _save_view_departments(db, user_id, chosen, own_dept):
-    """Departments this user may view (and suggest changes for), besides their own."""
-    valid = {r[0] for r in db.execute("SELECT id FROM departments")}
-    wanted = {int(x) for x in chosen if str(x).isdigit() and int(x) in valid and int(x) != own_dept}
-    db.execute("DELETE FROM user_view_departments WHERE user_id=?", (user_id,))
-    for d in wanted:
-        db.execute("INSERT INTO user_view_departments(user_id,department_id) VALUES (?,?)", (user_id, d))
 
 
 @bp.route("/users")
@@ -343,6 +319,22 @@ def department_delete(did):
         db.commit()
         flash(f"Department '{row['name']}' removed.", "ok")
     return redirect(url_for("admin.departments"))
+
+
+@bp.route("/departments/<int:did>/repairs", methods=["POST"])
+@admin_required
+def department_repairs(did):
+    """Turn the repair log on or off for a department (not every department needs it)."""
+    db = get_db()
+    row = db.execute("SELECT name FROM departments WHERE id=?", (did,)).fetchone()
+    if row is None:
+        abort(404)
+    enabled = 1 if request.form.get("enabled") else 0
+    db.execute("UPDATE departments SET repairs_enabled=? WHERE id=?", (enabled, did))
+    log(db, "repair_log_setting", f"{row['name']}: {'on' if enabled else 'off'}")
+    db.commit()
+    flash("The repair log is " + ("ON" if enabled else "OFF (entries are kept, only hidden)") + " for this department.", "ok")
+    return redirect(url_for("admin.columns", did=did))
 
 
 @bp.route("/departments/<int:did>/attachments", methods=["POST"])

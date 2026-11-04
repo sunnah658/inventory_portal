@@ -27,6 +27,7 @@ from core import options_of, purge_expired, send_reminder_notifications, show_wh
 from models import get_db, setting_get
 from routes_admin import bp as admin_bp
 from routes_bulk import bp as bulk_bp
+from routes_deptdb import bp as ddb_bp
 from routes_public import bp as public_bp
 from routes_records import bp as records_bp
 from routes_workflow import bp as flow_bp
@@ -80,7 +81,7 @@ def create_app():
     if os.environ.get("PORTAL_NO_SCHEDULER") != "1":      # tests switch the helper off
         threading.Thread(target=_reminder_loop, name="reminders", daemon=True).start()
 
-    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, admin_bp, brand_bp):
+    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, ddb_bp, admin_bp, brand_bp):
         app.register_blueprint(blueprint)
 
     # ------------------------------------------------------------ before every request
@@ -159,23 +160,13 @@ def create_app():
                 "now_text": datetime.now().strftime("%d %b %Y %H:%M"),
                 "company_name": setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
                 "logo_url": url_for("brand.logo", v=version), "icon_url": url_for("brand.icon", v=version),
-                "reauth_fresh": reauth_fresh(), "unread": 0, "pending_transfers": 0, "pending_requests": 0,
+                "reauth_fresh": reauth_fresh(), "unread": 0,
                 "can_reports": False, "has_view_tabs": False}
         user = g.get("user")
         if user is not None:
             data["unread"] = db.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND read_at IS NULL",
                                         (user["id"],)).fetchone()[0]
-            data["pending_transfers"] = db.execute("SELECT COUNT(*) FROM transfers WHERE to_user=? AND status='pending'",
-                                                   (user["id"],)).fetchone()[0]
             data["can_reports"] = user["role"] == "admin" or bool(user["is_dept_admin"])
-            if data["can_reports"]:
-                if user["role"] == "admin":
-                    data["pending_requests"] = db.execute("SELECT COUNT(*) FROM requests WHERE status='pending' "
-                                                          "AND requester_id != ?", (user["id"],)).fetchone()[0]
-                else:
-                    data["pending_requests"] = db.execute("SELECT COUNT(*) FROM requests WHERE status='pending' "
-                                                          "AND department_id=? AND requester_id != ?",
-                                                          (user["department_id"], user["id"])).fetchone()[0]
         return data
 
     @app.template_filter("status_class")

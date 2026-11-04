@@ -36,6 +36,11 @@
         <label class="ck"><input type="checkbox" name="is_reminder" value="1"> Send reminders for this date (Date columns only; you can have several)</label>
         <label class="ck"><input type="checkbox" name="has_time" value="1"> Also keep a time, for meetings (Date columns only)</label>
         <button class="b p" type="submit" style="margin-top:12px">Add column</button></form></div>
+    <div class="card"><h2>Repair log</h2>
+      <form method="post" action="{{ url_for('admin.department_repairs', did=dept['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="ck"><input type="checkbox" name="enabled" value="1" {{ 'checked' if dept['repairs_enabled'] }}> Use a repair log in this department</label>
+        <div class="sub" style="margin:6px 0 10px">For departments that send equipment for repair. When it is off, the repair log is not shown on records. Existing entries are kept.</div>
+        <button class="b p sm" type="submit">Save</button></form></div>
     <div class="card"><h2>File attachments</h2>
       <form method="post" action="{{ url_for('admin.department_attachments', did=dept['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="ck"><input type="checkbox" name="enabled" value="1" {{ 'checked' if dept['attachments_enabled'] }}> Allow attachments in this department</label>

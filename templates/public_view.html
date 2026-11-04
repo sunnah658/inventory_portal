@@ -3,11 +3,11 @@
 <title>{{ title or company_name }}</title><link rel="icon" href="{{ icon_url }}"><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script>(function(){var h=document.documentElement;if(h.getAttribute('data-theme')==='auto'){h.setAttribute('data-theme',window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}})();</script></head>
 <body><div class="pubwrap">
-  <div class="pubhead"><img src="{{ logo_url }}" alt="{{ company_name }}"><div><b>{{ company_name }}</b><div class="sub">Public view · read only</div></div></div>
+  <div class="pubhead"><img src="{{ logo_url }}" alt="{{ company_name }}"><div><b>{{ company_name }}</b><div class="sub">Public view · read only</div></div>{% if code %}<span class="pill b2" style="margin-left:auto">{{ code }}</span>{% endif %}</div>
   {% if link['title'] and link['kind'] == 'group' %}<h1 style="margin-bottom:12px">{{ link['title'] }}</h1>{% endif %}
   {% for it in items %}<div class="pubcard">
     {% if items|length > 1 %}<div class="sub" style="margin:0 0 6px">{{ it.dept }}</div>{% endif %}
     {% for label, value in it.rows %}<div class="row"><span>{{ label }}</span><b>{{ value }}</b></div>{% else %}<p class="hint">Nothing to show.</p>{% endfor %}
   </div>{% else %}<div class="pubcard"><p class="hint">This record is not available.</p></div>{% endfor %}
-  <p class="sub" style="text-align:center">Only information chosen by the owner is shown.</p>
+  <p class="sub" style="text-align:center">{% if link['full_record'] %}The owner chose to share the full record.{% else %}Only information chosen by the owner is shown.{% endif %}</p>
 </div></body></html>

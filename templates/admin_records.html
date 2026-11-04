@@ -8,7 +8,7 @@
       <a class="b sm wide" href="{{ url_for('bulk.export_admin', fmt='xlsx', **keep) }}">Excel (.xlsx)</a>
       <a class="b sm wide" style="margin-top:8px" href="{{ url_for('bulk.export_admin', fmt='pdf', **keep) }}">PDF</a>
       <a class="b sm wide" style="margin-top:8px" href="{{ url_for('admin.all_records_download', **keep) }}">CSV</a></div></details>
-    {% if dept %}<a class="b" href="{{ url_for('admin.labels', department=dept) }}">QR labels</a>{% endif %}
+    {% if dept %}{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button></div></div>
 <form class="tools" method="get" action="{{ url_for('admin.all_records') }}">
   <select name="department" aria-label="Department"><option value="">All departments</option>{% for d in departments %}<option value="{{ d['id'] }}" {{ 'selected' if dept == d['id']|string }}>{{ d['name'] }}</option>{% endfor %}</select>
@@ -21,13 +21,6 @@
   <select name="dir" aria-label="Direction"><option value="desc" {{ 'selected' if info.dir == 'desc' }}>Descending</option><option value="asc" {{ 'selected' if info.dir == 'asc' }}>Ascending</option></select>
   <button class="b" type="submit">Apply</button>{% if keep %}<a href="{{ url_for('admin.all_records') }}">Clear</a>{% endif %}
 </form>
-<div class="tools">
-  {% for v in saved %}<span style="display:inline-flex;align-items:center;gap:2px"><a class="tab" href="{{ url_for('admin.all_records') }}{{ '?' ~ v.query if v.query }}">{{ v.name }}</a>
-    <form method="post" action="{{ url_for('bulk.view_delete', vid=v.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="iconbtn" style="width:28px;height:28px" type="submit" title="Delete this saved view" aria-label="Delete saved view">&times;</button></form></span>{% endfor %}
-  <details class="dt"><summary class="b sm">Save this view</summary>
-    <form class="pop" method="post" action="{{ url_for('bulk.view_save') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="page" value="admin_records"><input type="hidden" name="query" value="{{ keep|urlencode }}"><input type="hidden" name="back" value="{{ request.full_path }}">
-      <label for="vname">Name of this view</label><input id="vname" type="text" name="name" maxlength="60" required><div class="sub">Saves the search, filter and sorting you see now.</div><button class="b p sm" type="submit" style="margin-top:10px">Save view</button></form></details>
-</div>
 <p class="hint" style="margin-bottom:10px">{{ total }} record{{ '' if total == 1 else 's' }}</p>
 {% if full and full.groups %}
   {{ bulkbar(departments) }}

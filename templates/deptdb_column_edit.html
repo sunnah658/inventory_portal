@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Edit database column{% endblock %}
+{% block content %}
+<div class="card medium"><h1>Edit column</h1>
+  <p class="hint" style="margin-bottom:18px">{{ dept['name'] }} database · type: {{ type_label[col['col_type']] }} (the type cannot be changed; add a new column instead).</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}">
+    <div class="fd"><label for="name">Column name</label><input id="name" name="name" type="text" maxlength="60" required value="{{ col['name'] }}"></div>
+    {% if col['col_type'] == 'dropdown' %}<div class="fd"><label for="options">Dropdown options (one per line)</label><textarea id="options" name="options">{{ col['options'] or '' }}</textarea></div>{% endif %}
+    <label class="ck"><input type="checkbox" name="required" value="1" {{ 'checked' if col['required'] }}> Required</label>
+    <label class="ck"><input type="checkbox" name="shown" value="1" {{ 'checked' if col['shown'] }}> Shown in forms, lists and exports</label>
+    {% if col['col_type'] == 'date' %}<label class="ck"><input type="checkbox" name="has_time" value="1" {{ 'checked' if col['has_time'] }}> Also keep a time</label>{% endif %}
+    <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save column</button><a class="b" href="{{ url_for('ddb.columns', dept=dept['id']) }}">Cancel</a></div>
+  </form></div>
+{% endblock %}

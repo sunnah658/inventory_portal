@@ -1,9 +1,9 @@
 """
 routes_records.py - pages every user sees: records, detail, sharing, repair log,
-attachments, recycle bin, reminders and QR labels.
+attachments, recycle bin and reminders.
 
 Used by: app.py (registers it).   Uses: auth.py, core.py, models.py, utils.py, config.py
-Templates: records_list, record_form, record_detail, bin, reminders, qr_label.
+Templates: records_list, record_form, record_detail, bin, reminders.
 
 Permission levels (see core.access_level):
   owner      - made the record: edit, share, delete, hand over, public QR
@@ -23,7 +23,7 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
 import config
 from auth import login_required
 import scanner
-from core import (EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+from core import (ddb_can_add, change_owner, may_change_owner, owner_candidates, format_code, parse_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, create_record, dept_member_ids, filter_clause, get_columns, get_record,
                   names_for_records, notify, parse_form, purge_record, rec_select, reminder_rows,
@@ -97,16 +97,12 @@ def _load(rid, need="view"):
     return rec, level
 
 
-def label_items(db, rows):
-    """Data for printable QR labels (also used by the admin label page)."""
-    sums = summaries_for(db, rows)
-    items = []
-    for r in rows:
-        url = url_for("records.detail", rid=r["id"], _external=True)
-        svg = segno.make(url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
-        items.append({"id": r["id"], "title": sums[r["id"]], "dept": r["department_name"],
-                      "svg": svg, "url": url})
-    return items
+def code_redirect(text):
+    """If the search text is a QR code such as 'HRC-12', the page of that code (else None)."""
+    number = parse_code(text)
+    if number is None:
+        return None
+    return redirect(url_for("public.code_page", code=format_code(number)))
 
 
 # ---------------------------------------------------------------- lists
@@ -122,6 +118,9 @@ def home():
 @login_required
 def list_records():
     db = get_db()
+    code_page = code_redirect(request.args.get("q"))          # typing HRC-12 opens that QR code
+    if code_page:
+        return code_page
     tabs = available_tabs(db, g.user)
     tab = request.args.get("tab", "mine")
     tab = tab if tab in tabs else "mine"
@@ -140,13 +139,11 @@ def list_records():
     today = date.today()
     soon = len(reminder_rows(db, g.user, today.isoformat(),
                              (today + timedelta(days=config.REMINDER_DAYS)).isoformat()))
-    saved = db.execute("SELECT * FROM saved_views WHERE user_id=? AND page='records' ORDER BY name",
-                       (g.user["id"],)).fetchall()
     keep = {k: v for k, v in request.args.items() if k != "page"}
     return render_template("records_list.html", ctx=table_context(db, rows, g.user), tab=tab, tabs=tabs, q=q,
                            counts=counts, total=total, page=page, pages=pages, soon=soon,
                            reminder_days=config.REMINDER_DAYS, info=info, names=column_names(db, g.user),
-                           saved=saved, keep=keep, view_page="records",
+                           keep=keep,
                            departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall())
 
 
@@ -257,23 +254,24 @@ def detail(rid):
     db = get_db()
     cols = get_columns(db, rec["department_id"])
     vals = values_for(db, [rid])[rid]
-    url = url_for("records.detail", rid=rid, _external=True)
-    qr_svg = segno.make(url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
     link = db.execute("SELECT pl.* FROM public_links pl JOIN public_link_records plr ON plr.link_id=pl.id "
                       "WHERE plr.record_id=? AND pl.kind='single'", (rid,)).fetchone()
-    public_url = public_svg = None
+    public_url = public_svg = public_code = None
     if link:
         public_url = url_for("public.view", token=link["token"], _external=True)
         public_svg = segno.make(public_url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
+        public_code = format_code(link["code_no"])
     can_manage = level in MANAGE_LEVELS
+    can_owner = may_change_owner(g.user, rec) and not rec["deleted_at"]
     return render_template(
-        "record_detail.html", rec=rec, level=level, cols=cols, vals=vals, qr_svg=qr_svg,
+        "record_detail.html", rec=rec, level=level, cols=cols, vals=vals,
         can_edit=level in EDIT_LEVELS and not rec["deleted_at"], can_manage=can_manage,
         history=db.execute("SELECT * FROM record_history WHERE record_id=? ORDER BY id DESC LIMIT 100",
                            (rid,)).fetchall(),
         comments=db.execute("SELECT c.*, u.full_name FROM comments c JOIN users u ON u.id=c.user_id "
                             "WHERE record_id=? ORDER BY c.id DESC LIMIT 100", (rid,)).fetchall(),
-        repairs=db.execute("SELECT * FROM repairs WHERE record_id=? ORDER BY id DESC", (rid,)).fetchall(),
+        repairs=db.execute("SELECT * FROM repairs WHERE record_id=? ORDER BY id DESC", (rid,)).fetchall()
+        if rec["repairs_enabled"] else [],
         attachments=db.execute("SELECT a.*, u.full_name AS by_name FROM attachments a "
                                "LEFT JOIN users u ON u.id=a.uploaded_by WHERE record_id=? "
                                "ORDER BY a.id DESC", (rid,)).fetchall(),
@@ -289,13 +287,27 @@ def detail(rid):
             "ORDER BY d.name, u.full_name", (rec["owner_id"],)).fetchall() if can_manage else [],
         permissions=PERMISSIONS,
         departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall(),
-        link=link, public_url=public_url, public_svg=public_svg,
+        link=link, public_url=public_url, public_svg=public_svg, public_code=public_code,
         public_names=names_for_records(db, [rid]) if can_manage else [],
-        transfer=db.execute("SELECT t.*, u.full_name AS to_name FROM transfers t JOIN users u ON u.id=t.to_user "
-                            "WHERE t.record_id=? AND t.status='pending'", (rid,)).fetchone(),
-        people=db.execute("SELECT id, full_name, username FROM users WHERE is_active=1 AND id != ? "
-                          "ORDER BY full_name", (rec["owner_id"],)).fetchall() if can_manage else [],
+        can_owner=can_owner, owner_options=owner_candidates(db, g.user, rec) if can_owner else [],
+        can_copy=ddb_can_add(db, g.user) and level is not None,
         today=date.today().isoformat())
+
+
+@bp.route("/records/<int:rid>/owner", methods=["POST"])
+@login_required
+def set_owner(rid):
+    """Portal admin and department admin: give the record to another person."""
+    rec, _level = _load(rid, "view")
+    db = get_db()
+    problem = change_owner(db, g.user, rec, request.form.get("new_owner", type=int) or 0)
+    if problem:
+        flash(problem, "error")
+    else:
+        log(db, "record_owner_change", f"record {rid}")
+        db.commit()
+        flash("The owner was changed.", "ok")
+    return redirect(url_for("records.detail", rid=rid))
 
 
 @bp.route("/records/<int:rid>/share", methods=["POST"])
@@ -366,7 +378,9 @@ def unshare_user(rid, uid):
 @bp.route("/records/<int:rid>/repairs", methods=["POST"])
 @login_required
 def add_repair(rid):
-    _load(rid, "edit")
+    rec, _level = _load(rid, "edit")
+    if not rec["repairs_enabled"]:
+        abort(404)                                    # this department does not use a repair log
     db = get_db()
     date_in = (request.form.get("date_in") or date.today().isoformat()).strip()
     problem = (request.form.get("problem") or "").strip()[:500]
@@ -605,12 +619,12 @@ def bin_purge(rid):
     return redirect(url_for("records.bin_page"))
 
 
-# ---------------------------------------------------------------- reminders and labels
+# ---------------------------------------------------------------- reminders
 @bp.route("/reminders")
 @login_required
 def reminders():
     db = get_db()
-    days = min(max(request.args.get("days", config.REMINDER_DAYS, type=int), 1), 365)
+    days = min(max(request.args.get("days", config.REMINDER_DAYS, type=int), 1), 365)   # 1, 3, 7, 15, 30 ... 365
     today = date.today()
     soon = reminder_rows(db, g.user, today.isoformat(), (today + timedelta(days=days)).isoformat())
     gone = reminder_rows(db, g.user, "0000-01-01", (today - timedelta(days=1)).isoformat(),
@@ -630,20 +644,3 @@ def _valid_date(text):
         return True
     except (TypeError, ValueError):
         return False
-
-
-@bp.route("/records/<int:rid>/label")
-@login_required
-def label(rid):
-    rec, _level = _load(rid, "view")
-    return render_template("qr_label.html", items=label_items(get_db(), [rec]), many=False)
-
-
-@bp.route("/labels")
-@login_required
-def labels():
-    """Printable QR labels for all of the user's own records (up to 300)."""
-    db = get_db()
-    rows = db.execute(rec_select() + " WHERE r.deleted_at IS NULL AND r.owner_id=? "
-                      "ORDER BY r.id LIMIT 300", (g.user["id"],)).fetchall()
-    return render_template("qr_label.html", items=label_items(db, rows), many=True)

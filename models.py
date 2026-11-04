@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS departments (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     name               TEXT NOT NULL UNIQUE COLLATE NOCASE,
     attachments_enabled INTEGER NOT NULL DEFAULT 0,   -- admin turns this on per department
+    repairs_enabled     INTEGER NOT NULL DEFAULT 0,   -- admin turns the repair log on per department
     attachment_max_mb  INTEGER NOT NULL DEFAULT 10,   -- max size of one file
     created_at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -226,7 +227,9 @@ CREATE TABLE IF NOT EXISTS public_links (
     enabled      INTEGER NOT NULL DEFAULT 1,
     views        INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    regenerated_at TEXT
+    regenerated_at TEXT,
+    code_no      INTEGER,                   -- the number in the code HRC-<n>; never reused, never changes
+    full_record  INTEGER NOT NULL DEFAULT 0 -- 1 = show every column instead of chosen fields
 );
 CREATE TABLE IF NOT EXISTS public_link_records (
     link_id   INTEGER NOT NULL REFERENCES public_links(id) ON DELETE CASCADE,
@@ -256,6 +259,59 @@ CREATE TABLE IF NOT EXISTS reminder_sent (
 );
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+
+-- ======================= Department database (one shared table per department) =======================
+CREATE TABLE IF NOT EXISTS ddb_columns (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    col_type      TEXT NOT NULL CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno')),
+    options       TEXT,
+    required      INTEGER NOT NULL DEFAULT 0,
+    shown         INTEGER NOT NULL DEFAULT 1,
+    has_time      INTEGER NOT NULL DEFAULT 0,
+    position      INTEGER NOT NULL DEFAULT 0,
+    removed_at    TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ddb_column_name
+    ON ddb_columns(department_id, name COLLATE NOCASE) WHERE removed_at IS NULL;
+CREATE TABLE IF NOT EXISTS ddb_rows (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    owner_id      INTEGER NOT NULL REFERENCES users(id),
+    version       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    deleted_at    TEXT,
+    source_record_id INTEGER                -- the personal record it was copied from (if any)
+);
+CREATE INDEX IF NOT EXISTS idx_ddb_rows_dept ON ddb_rows(department_id, deleted_at);
+CREATE TABLE IF NOT EXISTS ddb_values (
+    row_id    INTEGER NOT NULL REFERENCES ddb_rows(id) ON DELETE CASCADE,
+    column_id INTEGER NOT NULL REFERENCES ddb_columns(id) ON DELETE CASCADE,
+    value     TEXT,
+    PRIMARY KEY (row_id, column_id)
+);
+CREATE TABLE IF NOT EXISTS ddb_history (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    row_id    INTEGER NOT NULL REFERENCES ddb_rows(id) ON DELETE CASCADE,
+    user_id   INTEGER REFERENCES users(id),
+    full_name TEXT,
+    action    TEXT NOT NULL,
+    field     TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- What each person may do in the department database: view, own (add + manage own rows),
+-- edit (edit every row) or manager (does the department admin's tasks). No row = own.
+CREATE TABLE IF NOT EXISTS ddb_perms (
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    level         TEXT NOT NULL DEFAULT 'own',
+    PRIMARY KEY (department_id, user_id)
+);
 
 CREATE INDEX IF NOT EXISTS idx_records_owner   ON records(owner_id);
 CREATE INDEX IF NOT EXISTS idx_records_dept    ON records(department_id);
@@ -303,6 +359,34 @@ def init_app(app):
 def _table_exists(conn, name):
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
                         (name,)).fetchone() is not None
+
+
+def _upgrade_repairs_switch(conn):
+    """The repair log became a per-department switch. Departments that already have repair
+    entries (and the IT department) keep it ON, so nothing disappears; all others start OFF."""
+    have = [r["name"] for r in conn.execute("PRAGMA table_info(departments)")]
+    if "repairs_enabled" in have:
+        return
+    conn.execute("ALTER TABLE departments ADD COLUMN repairs_enabled INTEGER NOT NULL DEFAULT 0")
+    conn.execute("UPDATE departments SET repairs_enabled=1 WHERE name='IT' OR id IN "
+                 "(SELECT DISTINCT r.department_id FROM repairs p JOIN records r ON r.id=p.record_id)")
+
+
+def _upgrade_public_codes(conn):
+    """Public QR links get a unique code HRC-0, HRC-1 ... in the order they were created."""
+    have = [r["name"] for r in conn.execute("PRAGMA table_info(public_links)")]
+    if "code_no" not in have:
+        conn.execute("ALTER TABLE public_links ADD COLUMN code_no INTEGER")
+    if "full_record" not in have:
+        conn.execute("ALTER TABLE public_links ADD COLUMN full_record INTEGER NOT NULL DEFAULT 0")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_public_code ON public_links(code_no)")
+    nxt = conn.execute("SELECT value FROM settings WHERE key='hrc_next'").fetchone()
+    n = int(nxt["value"]) if nxt else 0
+    for row in conn.execute("SELECT id FROM public_links WHERE code_no IS NULL ORDER BY id").fetchall():
+        conn.execute("UPDATE public_links SET code_no=? WHERE id=?", (n, row["id"]))
+        n += 1
+    conn.execute("INSERT INTO settings(key,value) VALUES ('hrc_next',?) "
+                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(n),))
 
 
 def _ensure_column(conn, table, column, ddl):
@@ -364,6 +448,8 @@ def init_db():
         _ensure_column(conn, "users", "warn_days", "INTEGER NOT NULL DEFAULT 3")
         _ensure_column(conn, "columns", "has_time", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "record_shares", "permission", "TEXT NOT NULL DEFAULT 'edit'")   # old shares stay 'edit'
+        _upgrade_repairs_switch(conn)
+        _upgrade_public_codes(conn)
         conn.execute("DROP INDEX IF EXISTS ux_column_reminder")   # several reminder columns are allowed now
         _ensure_column(conn, "activity_log", "ip", "TEXT")
         _ensure_column(conn, "attachments", "scan_status", "TEXT")
@@ -376,6 +462,7 @@ def init_db():
             if not row:                                  # give the first department the IT starter columns
                 from core import create_department_columns
                 create_department_columns(conn, dept_id, "IT")
+                conn.execute("UPDATE departments SET repairs_enabled=1 WHERE id=?", (dept_id,))   # the IT starter has a repair log
             conn.execute(
                 "INSERT INTO users(full_name,username,password_hash,department_id,role,"
                 "must_change_password) VALUES (?,?,?,?, 'admin', 1)",

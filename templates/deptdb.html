@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager, listbar with context %}
+{% block title %}Department database{% endblock %}
+{% block content %}
+<div class="hd">
+  <div><h1>{{ dept['name'] }} database</h1>
+    <p class="hint">One shared table for the whole department. Your access: <b>{{ level_word }}</b>.</p></div>
+  <div class="acts">
+    {% if can_add %}<a class="b p" href="{{ url_for('ddb.new_row', dept=dept['id']) }}">+ Add row</a>{% endif %}
+    <details class="dt"><summary class="b">Export</summary><div class="pop">
+      <a class="b sm wide" href="{{ url_for('ddb.export', fmt='xlsx', dept=dept['id'], **keep) }}">Excel (.xlsx)</a>
+      <a class="b sm wide" style="margin-top:8px" href="{{ url_for('ddb.export', fmt='pdf', dept=dept['id'], **keep) }}">PDF</a>
+      <a class="b sm wide" style="margin-top:8px" href="{{ url_for('ddb.export', fmt='csv', dept=dept['id'], **keep) }}">CSV</a></div></details>
+    {% if level == 'manager' %}<a class="b" href="{{ url_for('ddb.columns', dept=dept['id']) }}">Columns</a><a class="b" href="{{ url_for('ddb.people', dept=dept['id']) }}">People and access</a>{% endif %}
+    <button class="b" type="button" onclick="window.print()">Print</button>
+  </div>
+</div>
+{% if depts %}<form method="get" class="tools" style="margin-bottom:10px"><label for="dsel" style="margin:0">Department</label>
+  <select id="dsel" name="dept" style="width:auto" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept['id'] }}>{{ d['name'] }}</option>{% endfor %}</select></form>{% endif %}
+<div class="tabs">
+  <a class="tab {{ 'on' if not mine and not deleted }}" href="{{ url_for('ddb.index', dept=dept['id']) }}">All rows · {{ counts.all }}</a>
+  <a class="tab {{ 'on' if mine }}" href="{{ url_for('ddb.index', dept=dept['id'], mine=1) }}">My rows · {{ counts.mine }}</a>
+  {% if level == 'manager' %}<a class="tab {{ 'on' if deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], deleted=1) }}">Deleted · {{ counts.deleted }}</a>{% endif %}
+</div>
+{{ listbar('ddb.index', {'dept': dept['id'], 'mine': 1 if mine else '', 'deleted': 1 if deleted else ''}, q, info, names) }}
+{% if not cols %}
+  <div class="tb"><div class="empty">This database has no columns yet.{% if level == 'manager' %} <a href="{{ url_for('ddb.columns', dept=dept['id']) }}">Add the first column</a>.{% else %} Ask the department admin to add them.{% endif %}</div></div>
+{% elif rows %}
+  <div class="tb"><table>
+    <thead><tr>{% for c in cols[:7] %}<th>{{ c['name'] }}</th>{% endfor %}<th>Added by</th><th class="noprint"></th></tr></thead>
+    <tbody>{% for r in rows %}{% set v = vmap[r['id']] %}
+      <tr class="r">{% for c in cols[:7] %}<td>{% if c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
+        <td>{{ r['owner_name'] }}</td>
+        <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.row_detail', rid=r['id']) }}">Open</a>
+          {% if not deleted and can_edit_row(r) %}<a class="b sm" href="{{ url_for('ddb.edit_row', rid=r['id']) }}">Edit</a>{% endif %}
+          {% if deleted %}<form method="post" action="{{ url_for('ddb.restore_row', rid=r['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm" type="submit">Restore</button></form>{% endif %}</td></tr>
+    {% endfor %}</tbody></table>
+    {% if cols|length > 7 %}<div class="nt">The first 7 columns are shown. Open a row to see all fields.</div>{% endif %}</div>
+  {{ pager(page, pages, 'ddb.index', keep) }}
+{% else %}
+  <div class="tb"><div class="empty">{% if q or info.fval %}Nothing matches your search.{% elif deleted %}No deleted rows.{% elif mine %}You have not added any row yet.{% else %}No rows yet.{% endif %}</div></div>
+{% endif %}
+{% endblock %}

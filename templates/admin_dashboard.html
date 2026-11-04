@@ -6,10 +6,9 @@
 <div class="kp">
   <div class="k1"><span>Total records</span><b>{{ stats.records }}</b><small>+{{ stats.new_week }} this week</small></div>
   <div class="k1"><span>Active users</span><b>{{ stats.users }}</b><small>{{ stats.disabled }} account(s) disabled</small></div>
-  <div class="k1 d"><span>Open repairs</span><b>{{ stats.repairs }}</b><small>Items currently in repair</small></div>
+  {% if stats.repairs_on %}<div class="k1 d"><span>Open repairs</span><b>{{ stats.repairs }}</b><small>Items currently in repair</small></div>{% endif %}
   <div class="k1 w"><span>Reminders (next 30 days)</span><b>{{ stats.soon }}</b><small><a href="{{ url_for('records.reminders') }}" style="color:inherit">See all</a></small></div>
-  <div class="k1 w"><span>Requests waiting</span><b>{{ stats.requests }}</b><small><a href="{{ url_for('flow.requests_page') }}" style="color:inherit">Review</a></small></div>
-  <div class="k1"><span>Handovers waiting</span><b>{{ stats.transfers }}</b><small>{{ stats.sessions }} people logged in now</small></div>
+  <div class="k1"><span>Logged in now</span><b>{{ stats.sessions }}</b><small>People with an open session</small></div>
 </div>
 <div class="g2">
   <div class="card"><h2>Records by department</h2>

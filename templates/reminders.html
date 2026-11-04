@@ -3,8 +3,8 @@
 {% block content %}
 <div class="hd"><div><h1>Reminders</h1><p class="hint">Records whose reminder date (for example warranty end) is coming up or has passed.</p></div>
   <form method="get" class="acts"><label for="days" style="margin:0">Look ahead</label>
-    <select id="days" name="days" style="width:auto" onchange="this.form.submit()">{% for n in (30, 60, 90, 180, 365) %}<option value="{{ n }}" {{ 'selected' if n == days }}>{{ n }} days</option>{% endfor %}</select></form></div>
-<h2>Coming up in the next {{ days }} days ({{ soon|length }})</h2>
+    <select id="days" name="days" style="width:auto" onchange="this.form.submit()">{% for n in (1, 3, 7, 15, 30, 60, 90, 180, 365) %}<option value="{{ n }}" {{ 'selected' if n == days }}>{{ n }} days</option>{% endfor %}</select></form></div>
+<h2>Coming up in the next {{ days }} day{{ '' if days == 1 else 's' }} ({{ soon|length }})</h2>
 <div class="tb" style="margin-bottom:22px">{% if soon %}<table><thead><tr><th>Record</th><th>Department</th><th>Owner</th><th>Date</th><th>Days left</th></tr></thead><tbody>
 {% for r in soon %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a><div class="sub">{{ r['reminder_name'] }}</div></td><td>{{ r['department_name'] }}</td><td>{{ r['owner_name'] }}</td>
 <td>{{ r['reminder_date']|showdt }}</td><td><span class="s {{ 'r' if r['left'] <= 7 else 'a' }}">{{ r['left'] }} day{{ '' if r['left'] == 1 else 's' }}</span></td></tr>{% endfor %}</tbody></table>

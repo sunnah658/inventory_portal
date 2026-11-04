@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}QR labels{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>QR label{{ 's' if many }}</h1><p class="hint">Print and stick on the item. Scanning the code opens the page on this portal.</p></div>
+<div class="hd"><div><h1>QR label{{ 's' if many }}</h1><p class="hint">Print and stick on the item. Scanning the QR opens the public page. The code under it can be searched in the portal.</p></div>
   <div class="acts"><button class="b p" type="button" onclick="window.print()">Print</button><a class="b" href="javascript:history.back()">Back</a></div></div>
 {% if items %}<div class="labels">
-{% for it in items %}<div class="label">{{ it.svg|safe }}<div><img src="{{ logo_url }}" alt=""><b>{{ it.title }}</b><div class="sub">{{ it.dept }}{% if it.id %} · #{{ it.id }}{% endif %}</div><small>{{ it.url }}</small></div></div>{% endfor %}
+{% for it in items %}<div class="label">{{ it.svg|safe }}<div><img src="{{ logo_url }}" alt=""><b>{{ it.title }}</b>{% if it.code %}<div class="hrc">{{ it.code }}</div>{% endif %}<div class="sub">{{ it.dept }}{% if it.id %} · #{{ it.id }}{% endif %}</div>{% if not it.code %}<small>{{ it.url }}</small>{% endif %}</div></div>{% endfor %}
 </div>{% else %}<div class="tb"><div class="empty">No records to print labels for.</div></div>{% endif %}
 {% endblock %}

@@ -8,6 +8,7 @@ What lives here: record columns, permission checks, reading/saving record values
 edit history, recycle bin, department creation and the CSV builder.
 """
 import math
+import re
 import os
 import secrets
 import shutil
@@ -52,7 +53,8 @@ def create_department_columns(db, dept_id, template_key, selected=None):
 
 def create_department(db, name, template_key=None, selected=None):
     """Create a department (and its starter columns). Raises sqlite3.IntegrityError if it exists."""
-    dept_id = db.execute("INSERT INTO departments(name) VALUES (?)", (name,)).lastrowid
+    dept_id = db.execute("INSERT INTO departments(name,repairs_enabled) VALUES (?,?)",
+                         (name, 1 if template_key == "IT" else 0)).lastrowid   # only the IT starter has a repair log
     create_department_columns(db, dept_id, template_key, selected)
     return dept_id
 
@@ -61,7 +63,7 @@ def create_department(db, name, template_key=None, selected=None):
 def rec_select(extra=""):
     """Base SELECT for records with owner and department names."""
     return ("SELECT r.*, u.full_name AS owner_name, u.username AS owner_username, "
-            "d.name AS department_name, d.attachments_enabled, d.attachment_max_mb" + extra +
+            "d.name AS department_name, d.attachments_enabled, d.attachment_max_mb, d.repairs_enabled" + extra +
             " FROM records r JOIN users u ON u.id=r.owner_id "
             "JOIN departments d ON d.id=r.department_id")
 
@@ -329,6 +331,8 @@ def purge_expired(db):
     db.execute("DELETE FROM activity_log WHERE created_at < datetime('now','localtime',?)",
                (f"-{config.ACTIVITY_KEEP_DAYS} days",))
     db.execute("DELETE FROM reminder_sent WHERE sent_on < date('now','localtime','-90 days')")
+    db.execute("DELETE FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
+               (f"-{config.BIN_DAYS} days",))
     db.commit()
     return len(ids)
 
@@ -503,14 +507,6 @@ def admin_ids(db):
     return [r[0] for r in db.execute("SELECT id FROM users WHERE role='admin' AND is_active=1")]
 
 
-def approver_ids(db, dept_id):
-    """Who may decide requests of a department: all admins and the department's admins."""
-    ids = admin_ids(db)
-    ids += [r[0] for r in db.execute("SELECT id FROM users WHERE is_dept_admin=1 AND department_id=? "
-                                     "AND is_active=1", (dept_id,))]
-    return ids
-
-
 # ---------------------------------------------------------------- sharing
 def share_with_department(db, user, rec, dept_id, dept_name, permission, quiet=False):
     """Share a record with a whole department, or change the permission. Returns 'new', 'changed' or None."""
@@ -634,49 +630,203 @@ def public_fields_of(link):
     return [f for f in (link["fields"] or "").split("\n") if f]
 
 
-def public_view(db, rec, fields):
-    """[(label, value)] of one record, only the chosen fields and only the filled ones."""
+def public_view(db, rec, fields, full=False):
+    """[(label, value)] of one record: the chosen fields (or EVERY column when full=True),
+    only the filled ones. Dates show their time as '2026-11-04 3:30 PM'."""
     vals = values_for(db, [rec["id"]])[rec["id"]]
     out = []
     for c in get_columns(db, rec["department_id"]):
-        if c["name"].lower() in fields and vals.get(c["id"]):
-            out.append((c["name"], vals[c["id"]]))
+        if (full or c["name"].lower() in fields) and vals.get(c["id"]):
+            out.append((c["name"], show_when(vals[c["id"]]) if c["col_type"] == "date" else vals[c["id"]]))
     return out
 
 
-# ---------------------------------------------------------------- transfers
-def create_transfer(db, user, rec, to_id, note, immediately=False):
-    """Hand a record over to another user. Returns an error text or None."""
-    target = db.execute("SELECT * FROM users WHERE id=? AND is_active=1", (to_id,)).fetchone()
+# ---------------------------------------------------------------- the unique QR code HRC-<number>
+CODE_PREFIX = "HRC-"
+
+
+def format_code(n):
+    """Number -> 'HRC-12'."""
+    return f"{CODE_PREFIX}{int(n)}"
+
+
+def parse_code(text):
+    """'hrc-12', 'HRC 12' or 'HRC12' -> 12. Anything else -> None."""
+    m = re.fullmatch(r"\s*HRC[-\s]?(\d{1,12})\s*", text or "", re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def next_code_no(db):
+    """The next free number, starting at 0. A number is never given twice, even when a QR
+    is turned off or deleted (the counter only goes up)."""
+    db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('hrc_next','0')")
+    db.execute("UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='hrc_next'")   # takes the write lock
+    return int(db.execute("SELECT value FROM settings WHERE key='hrc_next'").fetchone()[0]) - 1
+
+
+def create_public_link(db, owner_id, kind, fields, full_record=False, title=None):
+    """Create a public QR link with its unique code. Returns the new link id."""
+    return db.execute(
+        "INSERT INTO public_links(token,owner_id,title,kind,fields,full_record,code_no) VALUES (?,?,?,?,?,?,?)",
+        (new_token(), owner_id, title, kind, "\n".join(fields), 1 if full_record else 0, next_code_no(db))).lastrowid
+
+
+# ---------------------------------------------------------------- change of owner
+def may_change_owner(user, rec):
+    """The portal admin, and the department admin of the record's department."""
+    return user["role"] == "admin" or bool(user["is_dept_admin"] and user["department_id"] == rec["department_id"])
+
+
+def owner_candidates(db, user, rec):
+    """Who the record may be given to: an admin may choose anybody, a department admin
+    the members of the record's department."""
+    sql = "SELECT id, full_name, username FROM users WHERE is_active=1 AND id != ?"
+    params = [rec["owner_id"]]
+    if user["role"] != "admin":
+        sql += " AND department_id=?"
+        params.append(rec["department_id"])
+    return db.execute(sql + " ORDER BY full_name", params).fetchall()
+
+
+def change_owner(db, user, rec, new_owner_id):
+    """Give a record to another person. Returns an error text or None."""
+    if not may_change_owner(user, rec):
+        return "You are not allowed to change the owner."
+    target = db.execute("SELECT * FROM users WHERE id=? AND is_active=1", (new_owner_id,)).fetchone()
     if target is None:
-        return "Choose a user."
+        return "Choose a person."
     if target["id"] == rec["owner_id"]:
-        return "That user already owns this record."
-    if db.execute("SELECT 1 FROM transfers WHERE record_id=? AND status='pending'", (rec["id"],)).fetchone():
-        return "A handover of this record is already waiting for an answer."
-    tid = db.execute("INSERT INTO transfers(record_id,from_user,to_user,note) VALUES (?,?,?,?)",
-                     (rec["id"], rec["owner_id"], target["id"], (note or "")[:300])).lastrowid
-    add_history(db, rec["id"], user, "transfer_requested", new=target["full_name"])
-    if immediately:
-        resolve_transfer(db, user, db.execute("SELECT * FROM transfers WHERE id=?", (tid,)).fetchone(), "accept")
-    else:
-        notify(db, [target["id"]], f"{user['full_name']} wants to hand over a record to you.", "/transfers", skip=user["id"])
+        return "That person already owns this record."
+    if user["role"] != "admin" and target["department_id"] != rec["department_id"]:
+        return "A department admin can only give a record to a member of the same department."
+    old = db.execute("SELECT full_name FROM users WHERE id=?", (rec["owner_id"],)).fetchone()
+    db.execute("UPDATE records SET owner_id=?, version=version+1, updated_at=datetime('now','localtime') WHERE id=?",
+               (target["id"], rec["id"]))
+    db.execute("DELETE FROM record_user_shares WHERE record_id=? AND user_id=?",
+               (rec["id"], target["id"]))                        # an owner needs no personal share
+    add_history(db, rec["id"], user, "owner_changed", old=old["full_name"] if old else "", new=target["full_name"])
+    notify(db, [target["id"]], f"{user['full_name']} made you the owner of a record.",
+           f"/records/{rec['id']}", skip=user["id"])
+    notify(db, [rec["owner_id"]], f"{user['full_name']} gave your record to {target['full_name']}.",
+           f"/records/{rec['id']}", skip=user["id"])
     return None
 
 
-def resolve_transfer(db, user, tr, action):
-    """accept / decline (by the receiver) or cancel (by the sender or an admin)."""
-    status = {"accept": "accepted", "decline": "declined", "cancel": "cancelled"}[action]
-    db.execute("UPDATE transfers SET status=?, resolved_at=datetime('now','localtime') WHERE id=?", (status, tr["id"]))
-    names = {r["id"]: r["full_name"] for r in db.execute(
-        "SELECT id, full_name FROM users WHERE id IN (?,?)", (tr["from_user"], tr["to_user"]))}
-    if action == "accept":
-        db.execute("UPDATE records SET owner_id=?, version=version+1, updated_at=datetime('now','localtime') WHERE id=?",
-                   (tr["to_user"], tr["record_id"]))
-        db.execute("DELETE FROM record_user_shares WHERE record_id=? AND user_id=?",
-                   (tr["record_id"], tr["to_user"]))             # an owner needs no share
-        add_history(db, tr["record_id"], user, "transferred", names.get(tr["from_user"]), names.get(tr["to_user"]))
-    else:
-        add_history(db, tr["record_id"], user, "transfer_" + status)
-    other = tr["from_user"] if user["id"] == tr["to_user"] else tr["to_user"]
-    notify(db, [other], f"Handover {status} by {user['full_name']}.", f"/records/{tr['record_id']}", skip=user["id"])
+# ================================================================ department database
+# One shared table per department. The department admin (or a "manager") decides the columns
+# and who may do what; normal users add and maintain their own rows.
+DDB_LEVELS = (("view", "View only"),
+              ("own", "Add and manage own rows"),
+              ("edit", "Edit every row"),
+              ("manager", "Manager (works as the department admin)"))
+DDB_LEVEL_WORDS = dict(DDB_LEVELS)
+
+
+def ddb_level(db, user, dept_id):
+    """This user's level in the department database of dept_id: manager / edit / own / view / None.
+    The portal admin and the department admin are always managers. Everybody else in the
+    department is 'own' (add and manage own rows) unless a manager chose another level."""
+    if user["role"] == "admin":
+        return "manager"
+    if user["department_id"] != dept_id:
+        return None
+    if user["is_dept_admin"]:
+        return "manager"
+    row = db.execute("SELECT level FROM ddb_perms WHERE department_id=? AND user_id=?",
+                     (dept_id, user["id"])).fetchone()
+    return row["level"] if row and row["level"] in DDB_LEVEL_WORDS else "own"
+
+
+def ddb_columns(db, dept_id, only_shown=True):
+    sql = "SELECT * FROM ddb_columns WHERE department_id=? AND removed_at IS NULL"
+    if only_shown:
+        sql += " AND shown=1"
+    return db.execute(sql + " ORDER BY position, id", (dept_id,)).fetchall()
+
+
+def ddb_can_add(db, user):
+    """May this user add rows to the database of his own department (and does it have columns)?"""
+    if user["department_id"] is None:
+        return False
+    return (ddb_level(db, user, user["department_id"]) in ("own", "edit", "manager")
+            and bool(ddb_columns(db, user["department_id"])))
+
+
+def ddb_can_edit_row(level, user, row):
+    """manager and edit may change every row; own may change only the rows he owns."""
+    if level in ("manager", "edit"):
+        return True
+    return level == "own" and row["owner_id"] == user["id"]
+
+
+def ddb_can_delete_row(level, user, row):
+    return level == "manager" or (level in ("own", "edit") and row["owner_id"] == user["id"])
+
+
+def ddb_values(db, row_ids):
+    """{row_id: {column_id: value}} for many rows at once."""
+    out = {rid: {} for rid in row_ids}
+    ids = list(row_ids)
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        q = ",".join("?" * len(chunk))
+        for r in db.execute(f"SELECT row_id,column_id,value FROM ddb_values WHERE row_id IN ({q})", chunk):
+            out[r["row_id"]][r["column_id"]] = r["value"]
+    return out
+
+
+def ddb_history(db, row_id, user, action, field=None, old=None, new=None):
+    db.execute("INSERT INTO ddb_history(row_id,user_id,full_name,action,field,old_value,new_value) "
+               "VALUES (?,?,?,?,?,?,?)",
+               (row_id, user["id"] if user else None, user["full_name"] if user else None, action, field, old, new))
+
+
+def ddb_create_row(db, user, dept_id, values, source_record_id=None):
+    rid = db.execute("INSERT INTO ddb_rows(department_id,owner_id,source_record_id) VALUES (?,?,?)",
+                     (dept_id, user["id"], source_record_id)).lastrowid
+    for cid, val in values.items():
+        if val is not None:
+            db.execute("INSERT INTO ddb_values(row_id,column_id,value) VALUES (?,?,?)", (rid, cid, val))
+    ddb_history(db, rid, user, "created", new=f"copied from record #{source_record_id}" if source_record_id else None)
+    return rid
+
+
+def ddb_update_row(db, user, row, columns, new_values, version):
+    """Save changes of a row. Returns 'ok', 'nochange' or 'conflict' (somebody saved first)."""
+    old = ddb_values(db, [row["id"]])[row["id"]]
+    changes = [(c, old.get(c["id"]), new_values[c["id"]]) for c in columns
+               if (old.get(c["id"]) or None) != new_values[c["id"]]]
+    if not changes:
+        return "nochange"
+    done = db.execute("UPDATE ddb_rows SET version=version+1, updated_at=datetime('now','localtime') "
+                      "WHERE id=? AND version=? AND deleted_at IS NULL", (row["id"], version)).rowcount
+    if done == 0:
+        db.rollback()
+        return "conflict"
+    for col, before, after in changes:
+        if after is None:
+            db.execute("DELETE FROM ddb_values WHERE row_id=? AND column_id=?", (row["id"], col["id"]))
+        else:
+            db.execute("INSERT INTO ddb_values(row_id,column_id,value) VALUES (?,?,?) "
+                       "ON CONFLICT(row_id,column_id) DO UPDATE SET value=excluded.value",
+                       (row["id"], col["id"], after))
+        ddb_history(db, row["id"], user, "edit", col["name"], before, after)
+    return "ok"
+
+
+def ddb_prefill_from_record(db, rec, dept_cols):
+    """Values for a new department-database row, taken from a personal record: every
+    department-database column whose NAME matches a column of the record gets its value."""
+    by_name = {c["name"].lower(): c for c in get_columns(db, rec["department_id"], only_shown=False)}
+    vals = values_for(db, [rec["id"]])[rec["id"]]
+    out = {}
+    for c in dept_cols:
+        src = by_name.get(c["name"].lower())
+        if src is not None and vals.get(src["id"]):
+            value = vals[src["id"]]
+            if c["col_type"] == "dropdown" and value not in options_of(c):
+                continue                                   # not one of the allowed choices
+            if c["col_type"] == "date":
+                value = value[:16] if c["has_time"] else value[:10]
+            out[c["id"]] = value
+    return out

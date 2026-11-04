@@ -1,9 +1,11 @@
 """
 routes_public.py - public QR links: anyone who scans the code sees ONLY the fields the
-owner chose, read-only, without logging in.
+owner chose (or the full record, if the owner chose that), read-only, without logging in.
+Every public QR gets a unique code HRC-0, HRC-1 ... printed under it. Any logged-in person can
+type that code in a search bar to see the same information and download it as a PDF.
 
 Used by: app.py (registers it).   Uses: core.py, auth.py, routes_records.py, models.py
-Templates: public_view, public_links, public_link_form, qr_label.
+Templates: public_view, public_links, public_link_form, qr_label, code_page.
 
 Safety rules built in: long random codes (cannot be guessed), only chosen fields, no
 history/attachments/repairs, a switch to turn a link off, a "new code" button that kills
@@ -13,13 +15,14 @@ import time
 from collections import defaultdict, deque
 
 import segno
-from flask import (Blueprint, abort, flash, g, redirect, render_template, request, url_for)
+from flask import (Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for)
 
 import config
 from auth import login_required
-from core import (MANAGE_LEVELS, access_level, get_record, names_for_records, new_token,
-                  public_fields_of, public_view, rec_select, summary_of, get_columns, values_for)
-from models import get_db, log
+import exports
+from core import (MANAGE_LEVELS, access_level, create_public_link, format_code, get_record, names_for_records, new_token,
+                  parse_code, public_fields_of, public_view, rec_select)
+from models import get_db, log, setting_get
 from routes_records import _load as load_record
 
 bp = Blueprint("public", __name__)
@@ -65,11 +68,68 @@ def view(token):
     if g.user is not None and link["kind"] == "single" and recs and access_level(db, g.user, recs[0]):
         return redirect(url_for("records.detail", rid=recs[0]["id"]))
     fields = set(public_fields_of(link))
-    items = [{"rows": public_view(db, r, fields), "dept": r["department_name"]} for r in recs]
+    items = [{"rows": public_view(db, r, fields, bool(link["full_record"])), "dept": r["department_name"]} for r in recs]
     db.execute("UPDATE public_links SET views=views+1 WHERE id=?", (link["id"],))
     db.commit()
     title = link["title"] or (items[0]["rows"][0][1] if items and items[0]["rows"] else "")
-    return render_template("public_view.html", link=link, items=items, title=title)
+    return render_template("public_view.html", link=link, items=items, title=title, code=format_code(link["code_no"]))
+
+
+# ---------------------------------------------------------------- find a QR by its code (people who are logged in)
+def _link_by_code(db, code):
+    number = parse_code(code)
+    if number is None:
+        return None, None
+    link = db.execute("SELECT * FROM public_links WHERE code_no=?", (number,)).fetchone()
+    return number, link
+
+
+def _link_items(db, link):
+    recs = db.execute(rec_select() + " JOIN public_link_records plr ON plr.record_id=r.id "
+                      "WHERE plr.link_id=? AND r.deleted_at IS NULL ORDER BY r.id", (link["id"],)).fetchall()
+    fields = set(public_fields_of(link))
+    return [{"rows": public_view(db, r, fields, bool(link["full_record"])), "dept": r["department_name"],
+             "rid": r["id"]} for r in recs]
+
+
+@bp.route("/code/<code>")
+@login_required
+def code_page(code):
+    """Search result for a code such as HRC-12: the information the owner made public."""
+    db = get_db()
+    number, link = _link_by_code(db, code)
+    if number is None:
+        abort(404)
+    wanted = format_code(number)
+    if link is None:
+        return render_template("code_page.html", code=wanted, status="missing", link=None, items=[]), 404
+    if not link["enabled"]:
+        return render_template("code_page.html", code=wanted, status="off", link=link, items=[]), 410
+    items = _link_items(db, link)
+    return render_template("code_page.html", code=wanted, status="ok", link=link, items=items,
+                           title=link["title"] or (items[0]["rows"][0][1] if items and items[0]["rows"] else ""))
+
+
+@bp.route("/code/<code>/pdf")
+@login_required
+def code_pdf(code):
+    """The same information as a clean PDF: the shared fields only, no history."""
+    db = get_db()
+    number, link = _link_by_code(db, code)
+    if number is None or link is None or not link["enabled"]:
+        abort(404)
+    items = _link_items(db, link)
+    wanted = format_code(number)
+    sections = [((it["dept"] if len(items) > 1 else ""), ["Field", "Value"], [list(r) for r in it["rows"]] or [["", "Nothing to show"]])
+                for it in items] or [("", ["Field", "Value"], [["", "This record is not available."]])]
+    data = exports.document_pdf(f"{wanted}" + (f" · {link['title']}" if link["title"] else ""),
+                                f"Printed by {g.user['full_name']}", sections,
+                                setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
+    log(db, "code_pdf", wanted)
+    db.commit()
+    resp = Response(data, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{wanted}.pdf"'
+    return resp
 
 
 # ---------------------------------------------------------------- one record: switch on the record page
@@ -82,18 +142,22 @@ def record_public(rid):
     link = db.execute("SELECT pl.* FROM public_links pl JOIN public_link_records plr ON plr.link_id=pl.id "
                       "WHERE plr.record_id=? AND pl.kind='single'", (rid,)).fetchone()
     if action == "save":
-        fields = _clean_fields(db, [rid], request.form)
-        if not fields:
-            flash("Tick at least one field to show.", "error")
+        full = bool(request.form.get("full_record"))
+        fields = [] if full else _clean_fields(db, [rid], request.form)
+        if not full and not fields:
+            flash("Tick the fields to show, or choose to share the full record.", "error")
             return redirect(url_for("records.detail", rid=rid) + "#public")
         if link is None:
-            lid = db.execute("INSERT INTO public_links(token,owner_id,kind,fields) VALUES (?,?,'single',?)",
-                             (new_token(), rec["owner_id"], "\n".join(fields))).lastrowid
+            lid = create_public_link(db, rec["owner_id"], "single", fields, full)
             db.execute("INSERT INTO public_link_records(link_id,record_id) VALUES (?,?)", (lid, rid))
+            code = format_code(db.execute("SELECT code_no FROM public_links WHERE id=?", (lid,)).fetchone()[0])
         else:
-            db.execute("UPDATE public_links SET fields=?, enabled=1 WHERE id=?", ("\n".join(fields), link["id"]))
-        log(db, "public_qr_on", f"record {rid}: {', '.join(fields)}")
-        flash("The public QR is on. Anyone with the link sees only the ticked fields.", "ok")
+            db.execute("UPDATE public_links SET fields=?, full_record=?, enabled=1 WHERE id=?",
+                       ("\n".join(fields), 1 if full else 0, link["id"]))
+            code = format_code(link["code_no"])
+        log(db, "public_qr_on", f"record {rid} {code}: " + ("full record" if full else ", ".join(fields)))
+        flash(f"The public QR is on. Its code is {code}. Anyone with the link sees only "
+              + ("the full record." if full else "the ticked fields."), "ok")
     elif link is not None and action == "off":
         db.execute("UPDATE public_links SET enabled=0 WHERE id=?", (link["id"],))
         log(db, "public_qr_off", f"record {rid}")
@@ -141,21 +205,22 @@ def link_new():
         return redirect(url_for("records.list_records"))
     ids = [r["id"] for r in recs]
     if request.method == "POST":
-        fields = _clean_fields(db, ids, request.form)
+        full = bool(request.form.get("full_record"))
+        fields = [] if full else _clean_fields(db, ids, request.form)
         title = (request.form.get("title") or "").strip()[:100]
-        if not fields or not title:
-            flash("Write a title and tick at least one field.", "error")
+        if (not fields and not full) or not title:
+            flash("Write a title and tick at least one field, or choose the full record.", "error")
         else:
-            lid = db.execute("INSERT INTO public_links(token,owner_id,title,kind,fields) VALUES (?,?,?,'group',?)",
-                             (new_token(), g.user["id"], title, "\n".join(fields))).lastrowid
+            lid = create_public_link(db, g.user["id"], "group", fields, full, title)
             for rid in ids:
                 db.execute("INSERT INTO public_link_records(link_id,record_id) VALUES (?,?)", (lid, rid))
             log(db, "public_qr_group", f"{len(ids)} records: {title}")
             db.commit()
-            flash("One public QR was created for the selected records.", "ok")
+            flash("One public QR was created for the selected records. Its code is "
+                  + format_code(db.execute("SELECT code_no FROM public_links WHERE id=?", (lid,)).fetchone()[0]) + ".", "ok")
             return redirect(url_for("public.link_qr", lid=lid))
     return render_template("public_link_form.html", link=None, ids=",".join(map(str, ids)), count=len(ids),
-                           names=names_for_records(db, ids), chosen=set(), title=request.form.get("title", ""))
+                           names=names_for_records(db, ids), chosen=set(), title=request.form.get("title", ""), full=False)
 
 
 def _own_link(lid):
@@ -173,18 +238,21 @@ def link_edit(lid):
     db = get_db()
     ids = [r[0] for r in db.execute("SELECT record_id FROM public_link_records WHERE link_id=?", (lid,))]
     if request.method == "POST":
-        fields = _clean_fields(db, ids, request.form)
+        full = bool(request.form.get("full_record"))
+        fields = [] if full else _clean_fields(db, ids, request.form)
         title = (request.form.get("title") or "").strip()[:100]
-        if not fields:
-            flash("Tick at least one field.", "error")
+        if not fields and not full:
+            flash("Tick at least one field, or choose the full record.", "error")
         else:
-            db.execute("UPDATE public_links SET fields=?, title=? WHERE id=?", ("\n".join(fields), title or link["title"], lid))
+            db.execute("UPDATE public_links SET fields=?, full_record=?, title=? WHERE id=?",
+                       ("\n".join(fields), 1 if full else 0, title or link["title"], lid))
             log(db, "public_qr_edit", f"link {lid}")
             db.commit()
             flash("Saved.", "ok")
             return redirect(url_for("public.links"))
     return render_template("public_link_form.html", link=link, ids="", count=len(ids),
-                           names=names_for_records(db, ids), chosen=set(public_fields_of(link)), title=link["title"] or "")
+                           names=names_for_records(db, ids), chosen=set(public_fields_of(link)), title=link["title"] or "",
+                           full=bool(link["full_record"]))
 
 
 @bp.route("/public-links/<int:lid>/<action>", methods=["POST"])
@@ -214,5 +282,6 @@ def link_action(lid, action):
 def link_qr(lid):
     link = _own_link(lid)
     url = url_for("public.view", token=link["token"], _external=True)
-    item = {"id": "", "title": link["title"] or "Public record", "dept": "Public QR", "svg": _qr_svg(url), "url": url}
+    item = {"id": "", "title": link["title"] or "Public record", "dept": "Public QR", "svg": _qr_svg(url), "url": url,
+            "code": format_code(link["code_no"])}
     return render_template("qr_label.html", items=[item], many=False)

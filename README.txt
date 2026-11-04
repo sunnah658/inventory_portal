@@ -48,13 +48,14 @@
    - Reminders: any number of date columns per department (for example Warranty end
      date, Meeting) drive the reminder list, the dashboard and the bell messages
      (see section 17).
-   - Repair log per record. QR code labels per record (print and stick on item).
+   - Repair log per record, only in departments where the admin switched it on.
+   - Public QR codes with a unique code under each (HRC-0, HRC-1 ...), see section 19.
    - Optional file attachments, switched on per department with a size limit.
    - CSV download (users: their own records; admin: everything, filterable).
    - Admin dashboard, activity log (with IP addresses), settings (company name, logo).
-   - NEW in this version (see section 13): public QR codes, hand over records,
-     requests with approval, comments and suggestions, notifications, bulk actions,
-     Excel and PDF exports and reports, saved filters and sorting,
+   - NEW in this version (see section 13): public QR codes, change of owner by
+     admins, comments and suggestions, notifications, bulk actions,
+     Excel and PDF exports and reports, filters and sorting,
      light/dark mode, department admins, view-only access to other departments,
      HTTPS, password re-entry, login protection, idle timeout, virus scanning,
      and a mobile-friendly layout.
@@ -137,7 +138,7 @@
 
  routes_records.py Pages every user sees: record list, add/edit, detail page,
                    sharing, repair log, attachments, recycle bin, reminders,
-                   QR labels, own CSV download.
+                   change of owner, own CSV download.
                    [Uses: core.py, auth.py, models.py, utils.py]
                    [Templates: records_list, record_form, record_detail, bin,
                     reminders, qr_label]
@@ -147,7 +148,7 @@
                    erase), attachment settings, user import, activity log,
                    settings (company name, logo).
                    [Uses: core.py, auth.py, backup.py, branding.py,
-                    import_users.py, routes_records.py (QR labels)]
+                    import_users.py, routes_records.py (QR codes)]
                    [Templates: all admin_*.html]
 
  branding.py       Serves the logo and the browser-tab icon. Picks the logo that
@@ -176,16 +177,18 @@
 
  --- NEW program files in this version ---------------------------------------
 
- routes_workflow.py  Notifications, comments/suggestions, handovers (transfers),
-                   requests that need approval.
-                   [Uses: core.py, routes_records.py]  [Templates: notifications,
-                    transfers, requests, request_form]
- routes_public.py  Public QR links: the public page /p/<code>, the switch on a
-                   record, group QR for many records, the QR print page.
+ routes_workflow.py  Notifications, comments/suggestions, reminder-days setting.
+                   [Uses: core.py, routes_records.py]  [Templates: notifications]
+ routes_deptdb.py  The DEPARTMENT DATABASE (section 19): columns, rows, access,
+                   export. [Uses: core.py]  [Templates: deptdb, deptdb_form,
+                    deptdb_row, deptdb_columns, deptdb_column_edit, deptdb_people]
+ routes_public.py  Public QR links: the public page /p/<token>, the code search
+                   page /code/HRC-n (+ PDF), the switch on a record, group QR for
+                   many records, the QR print page.
                    [Uses: core.py, routes_records.py]  [Templates: public_view,
                     public_message, public_links, public_link_form]
  routes_bulk.py    Bulk actions on ticked records, Excel/PDF exports, reports,
-                   saved views (filters and sorting).
+                   the clean record PDF.
                    [Uses: core.py, exports.py, routes_records.py, routes_admin.py]
  security.py       Login attempt locks (username and IP address), sessions with the
                    30-minute idle timeout, password rules, password re-entry.
@@ -198,7 +201,7 @@
 
  CHANGED program files: app.py (sessions, idle timeout, language/theme, HTTPS proxy
  headers), models.py (new tables), core.py (department admin and view-only access,
- notifications, handovers, sorting, public links), auth.py (login protection),
+ notifications, sorting, public links), auth.py (login protection),
  routes_records.py (new access levels, comments, public QR panel, virus scan),
  routes_admin.py (roles, password re-entry, sessions page, IP in the log),
  import_users.py and utils.py (password rules), style.css (mobile, dark mode).
@@ -225,9 +228,9 @@
  login.html           Login page.            change_password.html  Password page.
  error.html           Error page (403, 404 ...).
  records_list.html    My records / shared tabs.   record_form.html  Add / edit.
- record_detail.html   One record: details, repairs, files, sharing, history, QR.
+ record_detail.html   One record: details, repairs (if on), files, sharing, history, public QR.
  bin.html             Recycle bin.           reminders.html   Reminder lists.
- qr_label.html        Printable QR labels.
+ qr_label.html        Printable public QR codes (with the HRC code).
  admin_dashboard.html, admin_records.html, admin_users.html,
  admin_user_form.html, admin_departments.html, admin_columns.html,
  admin_column_edit.html, admin_removed_columns.html, admin_import.html,
@@ -235,7 +238,7 @@
 
  --- Look and files (folder static/) -----------------------------------------
  style.css            All colours, fonts, layout, animations and print styles.
- logo.png             DEFAULT logo (login page, menu, printouts, QR labels).
+ logo.png             DEFAULT logo (login page, menu, printouts, QR codes).
  favicon.png          DEFAULT browser-tab icon.
  users_template.csv   Sample file for "Import users".
  fonts/               The bundled font (works without internet).
@@ -603,15 +606,16 @@
    one computer may open at most 60 public pages per minute; search engines are
    told not to index it. Manage all links: More > Public QR links.
    A logged-in person who may open the record is taken to the full record instead.
-   Labels printed with the normal "QR label" still ask for a login.
+   The old login-only "QR label" no longer exists: only public QR codes remain.
 
  ROLES AND PERMISSIONS
    Admin               everything.
    User                own records, records shared with them or with their department.
    Department admin    (set per user: Admin > Users > Edit) sees EVERY record of
                        their department in the tab "My department", can write
-                       suggestions, decides requests of the department, can run
-                       reports of the department. Cannot edit others' records.
+                       suggestions, can run reports of the department, can CHANGE THE
+                       OWNER of the department's records and is the manager of the
+                       department database. Cannot edit others' records.
    View other          (set per user: "Can also view these departments") sees the
    departments         records of those departments in the tab "Other departments"
                        and can write suggestions. Cannot edit.
@@ -619,29 +623,25 @@
    Suggestions appear on the record with a "Suggestion" label; the owner gets a
    notification. They are separate from the edit history.
 
- HAND OVER A RECORD   Record page > "Hand over" > choose the new owner. The new
-   owner accepts or declines (menu: More > Handovers). Ownership changes only after
-   accepting and the edit history shows it. The admin can hand over immediately.
+ CHANGE OF OWNER   Record page > "Change owner" (only the portal admin and the department
+   admin of the record's department see it). The admin may choose anybody; a department
+   admin a member of the same department. It takes effect at once, is written in the edit
+   history, and the old and new owner get a bell message. (Hand over and Requests were removed.)
 
- REQUESTS WITH APPROVAL   Menu: Requests > New request (new item, repair, other).
-   The department admin and the admin are notified and approve or reject with a note.
+ NOTIFICATIONS   The bell in the top bar: shares, comments, suggestions,
+   replaced files, owner changes, blocked viruses (admin) and the reminder messages (section 17).
 
- NOTIFICATIONS   The bell in the top bar: shares, handovers, requests, comments,
-   suggestions, blocked viruses (admin) and a daily message about reminders due in the
-   next 7 days.
-
- BULK ACTIONS   Tick records in a list. A bar appears: Share with, Public QR, QR labels,
+ BULK ACTIONS   Tick records in a list. A bar appears: Share with, Public QR,
    Excel, PDF, CSV, Delete (recycle bin). Actions that change records work only on
    records you own (or all, as admin).
 
- EXCEL AND PDF   Lists: "Export" button. One record: "PDF" button (details, repairs,
-   history). Reports page (admin and department admins): all records, reminders,
+ EXCEL AND PDF   Lists: "Export" button. One record: "PDF" button, then tick the fields
+   you want (only fields, never history or repair log). Reports page (admin and department admins): all records, reminders,
    open repairs, summary, and activity log (admin). Excel files have a styled header,
    filters, frozen header, real numbers; PDF files have the logo and page numbers.
    PDF prints English and European letters; other letters print as ? in PDF, Excel keeps them.
 
- SAVED VIEWS, SORTING, FILTERS   In a list: search, "Filter by column", "Sort" and
-   direction, then "Save this view" to keep it. Saved views appear as buttons.
+ SORTING AND FILTERS   In a list: search, "Filter by column", "Sort" and direction.
 
  LOOK   Click your name (top right) > Appearance: Auto / Light / Dark. Saved per
    user. The login page has the same switch.
@@ -847,7 +847,7 @@
    "Shared with" column shows e.g.  Sales (view only)  /  Rahim (person, view only).
    Bulk bar (tick records > Share with): choose the access, then departments and/or
    one person. They get ONE bell message for the whole batch.
-   Handover: if the new owner already had a personal share, it is removed.
+   Change of owner: if the new owner already had a personal share, it is removed.
    Old shares from before this update stay "Can edit" exactly as they were.
 
  REPLACING AN ATTACHMENT
@@ -863,3 +863,57 @@
    docker compose up -d --build. The database upgrades itself; nothing is lost.
  FILES CHANGED: core.py, models.py, routes_records.py, routes_bulk.py,
    routes_workflow.py, app.py, and templates record_detail, _macros.
+
+
+==============================================================================
+ 19. DEPARTMENT DATABASE, PUBLIC QR CODES (HRC-n), REPAIR LOG SWITCH, PDF AND PRINT
+==============================================================================
+ DEPARTMENT DATABASE (menu: Department database)
+   One shared table per department (a staff list, vendor list, stock sheet ...).
+   Columns: the department admin (or a Manager) adds, edits, reorders, hides and removes
+     them under "Columns". Removing keeps the data and can be restored. Types: text, long
+     text, number, date (optionally with time), dropdown, yes/no.
+   Access: "People and access" sets for every person of the department:
+     View only                 read all rows
+     Add and manage own rows   (the default) add rows, change or delete only their own
+     Edit every row            change any row (deleting only their own)
+     Manager                   works as the department admin: columns, access, any row
+     The portal admin and the department admin are always Managers.
+   Rows: everybody sees all rows of the department. Tabs: All rows / My rows / Deleted
+     (managers; deleted rows can be restored for 30 days). Each row has an edit history and
+     the same "two people saved at once" protection as records. Search, filter by a column,
+     sort (numbers sort as numbers), export to Excel, PDF and CSV.
+   Copy: on a personal record the button "Copy to department database" opens a new row
+     pre-filled from the columns with the same name. Check it, then save.
+   The portal admin can open any department's database with the Department box.
+
+ PUBLIC QR WITH A UNIQUE CODE
+   Record page > Public QR: tick the fields to share, or "Share the full record", then
+   "Generate public QR". The QR gets the next code HRC-0, HRC-1, HRC-2 ... printed under it
+   (record page, print page, public page). Numbers are never reused, even if a QR is deleted.
+   "New scan link" changes the link inside the QR but KEEPS the code.
+   Any logged-in person can type the code (HRC-12, hrc 12) in a search bar: the page of
+   that code opens and "Download PDF" gives a clean PDF of the shared information only.
+   If the owner switched the QR off, the search says so. Existing public QRs got numbers in
+   the order they were created. The old login-only "QR label" was removed.
+
+ REPAIR LOG ONLY WHERE NEEDED
+   Admin > Departments > Columns > "Repair log". Off = the card, reports and dashboard
+   figure are hidden. Departments that already had repair entries (and IT) stay ON,
+   new departments start OFF (except the IT starter). Entries are never deleted by switching.
+
+ PDF
+   The "PDF" button on a record lets you tick the fields to include. The PDF contains only
+   those fields' values: no edit history, no repair log, empty fields are left out.
+
+ PRINT
+   Printing a record shows only its title, owner, the details and the attachment names.
+   Buttons, hints, tabs, side panels, comments, history and helper texts are hidden.
+   In the browser's print window untick "Headers and footers" to remove the web address.
+
+ REMINDER DAYS: the Reminders page can look 1, 3, 7, 15, 30, 60, 90, 180 or 365 days ahead.
+ SAVED FILTERS were removed (filtering and sorting stay).
+
+ UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
+   docker compose up -d --build. The database upgrades itself; old handover, request and
+   saved-view data stay in the database but are no longer shown.

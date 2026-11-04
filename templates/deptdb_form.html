@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "_macros.html" import record_fields with context %}
+{% block title %}{{ 'Edit row' if row else 'Add row' }}{% endblock %}
+{% block content %}
+<div class="card medium">
+  <h1>{{ 'Edit row' if row else 'Add row' }}</h1>
+  <p class="hint" style="margin-bottom:18px">{{ dept['name'] }} database. {% if source and not row %}Values were copied from your record #{{ source }}; check them before saving. {% endif %}Fill only what you know. <span class="req">*</span> means required.</p>
+  {% if conflict %}
+  <div class="alert"><b>{{ conflict.by }}</b> saved this row at {{ conflict.at }}. The latest values are loaded below.
+    {% if conflict.mine %}<br>Your own entries were:
+    <ul style="margin:6px 0 0">{% for n, v in conflict.mine %}<li>{{ n }}: {{ v or '(blank)' }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="dept" value="{{ dept['id'] }}">
+    {% if source and not row %}<input type="hidden" name="from_record" value="{{ source }}">{% endif %}
+    {% if row %}<input type="hidden" name="version" value="{{ version }}">{% endif %}
+    {{ record_fields(cols, values) }}
+    <div class="acts"><button class="b p" type="submit">Save</button>
+      <a class="b" href="{{ url_for('ddb.row_detail', rid=row['id']) if row else url_for('ddb.index', dept=dept['id']) }}">Cancel</a></div>
+  </form>
+</div>
+{% endblock %}

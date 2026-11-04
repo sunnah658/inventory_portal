@@ -151,7 +151,20 @@ html[data-theme=dark] .pubhead img{background:#fff;border-radius:8px;padding:3px
  .bulkbar{position:sticky;bottom:8px;z-index:12}.bulkbar .b{flex:1 1 calc(50% - 8px)}
 }
 /* ---------- printing: only the content, with the logo on top */
-@media print{body{background:#fff;color:#000}.top,.tools,.acts,.noprint,.msg,.tabs,.pager,.alert,.bulkbar,.chk{display:none!important}main{padding:0;max-width:none}
-.print-head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #49c7f5;padding-bottom:8px;margin-bottom:14px;font-size:10pt}.print-head img{height:40px;background:#fff}.print-head span{margin-left:auto;color:#506a7b}
-.tb,.card{box-shadow:none;border:1px solid #ccd;background:#fff;color:#000}table{font-size:8.5pt}.label{border-style:solid}
-.tb table,.tb tbody,.tb tr,.tb td{display:revert!important}.tb thead{display:table-header-group!important}.tb td::before{display:none!important}}
+@media print{
+@page{margin:12mm}
+body{background:#fff;color:#000;font-size:10.5pt}
+/* everything that is only for working on screen is hidden when printing */
+.top,.tools,.acts,.noprint,.msg,.tabs,.pager,.alert,.bulkbar,.chk,.actcell,.nt,.hint:not(.keepprint),.sub:not(.keepprint),details,.badge,.skip,button,nav{display:none!important}
+main{padding:0;max-width:none}
+.tw{display:block!important}.stack{display:block!important}
+a{color:inherit!important;text-decoration:none!important}
+h1{font-size:15pt;margin:0 0 6px}h2{font-size:11.5pt;margin:0 0 6px}
+.print-head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #49c7f5;padding-bottom:8px;margin-bottom:12px;font-size:9.5pt}.print-head img{height:36px;background:#fff}.print-head span{margin-left:auto;color:#506a7b}
+.hd{display:block!important;margin-bottom:8px}
+.tb,.card{box-shadow:none;border:1px solid #ccd;background:#fff;color:#000;break-inside:avoid;margin-bottom:10px}
+.ig{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 18px}.ig .k{display:block;font-size:8pt;color:#506a7b;text-transform:uppercase}
+table{font-size:8.5pt}.label{border-style:solid}
+.tb table,.tb tbody,.tb tr,.tb td{display:revert!important}.tb thead{display:table-header-group!important}.tb td::before{display:none!important}
+}
+.hrc{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:800;font-size:1.15rem;letter-spacing:.06em;color:#10283a;margin-top:6px;text-align:center}.label .hrc{text-align:left;font-size:1.05rem;margin:2px 0 4px}
