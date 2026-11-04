@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Department database delegates{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ dept['name'] }} database: delegates</h1>
+  <p class="hint">Choose a user to give permission to do everything a department admin can do in this department database: create tabs, customise columns, and edit every row. <a href="{{ url_for('ddb.index', dept=dept['id']) }}">Back to the database</a> · <a href="{{ url_for('ddb.tabs', dept=dept['id']) }}">Tabs</a></p></div></div>
+<div class="tw" style="grid-template-columns:1fr 330px">
+  <div class="tb"><table><thead><tr><th>User</th><th>Role</th><th></th></tr></thead><tbody>
+  {% for m in members %}<tr class="r"><td><b>{{ m['full_name'] }}</b> <span class="sub">{{ m['username'] }}</span></td>
+    <td>{% if m['role'] == 'admin' %}Portal admin{% elif m['is_dept_admin'] %}Department admin{% elif m['is_delegate'] %}Delegate{% else %}User{% endif %}</td>
+    <td class="actcell">
+      {% if m['is_delegate'] %}<form method="post" action="{{ url_for('ddb.delegate_revoke', uid=m['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}"><button class="b sm dg" type="submit">Remove delegate</button></form>{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div>
+  <aside class="stack"><div class="card"><h2>Make a delegate</h2>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}">
+      <div class="fd"><label for="uid">User in this department</label><select id="uid" name="user_id">{% for m in members %}<option value="{{ m['id'] }}">{{ m['full_name'] }} ({{ m['username'] }})</option>{% endfor %}</select></div>
+      <button class="b p" type="submit">Give delegate permission</button></form></div></aside></div>
+{% endblock %}

@@ -1,37 +1,102 @@
 """
-routes_deptdb.py - the DEPARTMENT DATABASE: one shared table per department.
+routes_deptdb.py - the DEPARTMENT DATABASE, as tabs inside one department page.
 
-The department admin (or a person he made "manager") decides the columns and who may do
-what. Normal users add their own rows (also copied from a personal record) and keep them up
-to date. Every change is written in the row's history, and two people saving the same row
-at the same time cannot overwrite each other.
+There is no single DeptDB table any more. Under "Department database" the
+department admin (or a delegate he chose) creates tabs — from a template
+(Client Info, Meetings, Employee Info, Billing, Accounts) or blank — and
+customises each tab's columns. Users switch tabs at the top of the page;
+filter and sorting sit on top of the tabs and apply to the open tab.
 
-Levels (see core.DDB_LEVELS):  view | own (default) | edit | manager.
-The portal admin and the department admin are always managers.
+Visibility / editing (per tab, per row):
+- Every user in the same department can see every row in a tab.
+- Only the row's owner may edit it, unless the owner shared it (with a whole
+  department or one specific user, with View only or Can edit permission).
+- Dept admins, their delegates and the portal admin may manage tabs and
+  columns and edit every row in their department.
+- Every change is written in the row's edit history, shown on the row page.
+
+Meeting notifications live in meeting-notify tabs (the Meetings template, or
+any tab with that tick): a date column that also keeps a time is a meeting
+schedule, notified 7, 3 and 1 days before and on the morning of the meeting.
 
 Used by: app.py (registers it).   Uses: core.py, auth.py, models.py, exports.py
-Templates: deptdb, deptdb_form, deptdb_row, deptdb_columns, deptdb_column_edit, deptdb_people.
+Templates: deptdb, deptdb_form, deptdb_row, deptdb_columns, deptdb_column_edit,
+deptdb_tabs, deptdb_delegates.
 """
+import json
+import os
+import secrets
 import sqlite3
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, url_for
 
 import config
 import exports
+import scanner
 from auth import login_required
-from core import (COLUMN_TYPES, DDB_LEVELS, DDB_LEVEL_WORDS, TYPE_LABEL, ddb_can_delete_row, ddb_can_edit_row,
-                  ddb_columns, ddb_create_row, ddb_history, ddb_level, ddb_prefill_from_record, ddb_update_row,
-                  ddb_values, format_code, notify, parse_code, parse_form, show_when)
+from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, ddb_attachment_info,
+                  ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
+                  ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
+                  ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
+                  format_code, notify, parse_code, parse_form, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, like_pattern, page_info
 
 bp = Blueprint("ddb", __name__, url_prefix="/deptdb")
 
+# Template tabs: (key, label, starter columns)
+# column: (name, type, options, required, has_time)
+TEMPLATE_TABS = [
+    ("client", "Client Info", [
+        ("Client name", "text", None, 1, 0),
+        ("Contact person", "text", None, 0, 0),
+        ("Phone number", "text", None, 0, 0),
+        ("Email", "text", None, 0, 0),
+        ("Address", "longtext", None, 0, 0),
+        ("Notes", "longtext", None, 0, 0),
+    ]),
+    ("meetings", "Meetings", [
+        ("Client name", "text", None, 1, 0),
+        ("Address", "longtext", None, 0, 0),
+        ("Contact number", "text", None, 0, 0),
+        ("Date", "date", None, 1, 1),
+        ("Purpose", "longtext", None, 0, 0),
+        ("Notes", "longtext", None, 0, 0),
+    ]),
+    ("employee", "Employee Info", [
+        ("Employee name", "text", None, 1, 0),
+        ("Employee ID", "text", None, 0, 0),
+        ("Designation", "text", None, 0, 0),
+        ("Phone number", "text", None, 0, 0),
+        ("Email", "text", None, 0, 0),
+        ("Joining date", "date", None, 0, 0),
+        ("Address", "longtext", None, 0, 0),
+    ]),
+    ("billing", "Billing", [
+        ("Client name", "text", None, 0, 0),
+        ("Bill number", "text", None, 0, 0),
+        ("Amount", "number", None, 0, 0),
+        ("Date", "date", None, 0, 0),
+        ("Status", "dropdown", "Paid\nUnpaid\nPartially paid", 0, 0),
+        ("Notes", "longtext", None, 0, 0),
+    ]),
+    ("accounts", "Accounts", [
+        ("Account / Head", "text", None, 0, 0),
+        ("Type", "dropdown", "Income\nExpense", 0, 0),
+        ("Amount", "number", None, 0, 0),
+        ("Date", "date", None, 0, 0),
+        ("Reference", "text", None, 0, 0),
+        ("Notes", "longtext", None, 0, 0),
+    ]),
+    ("custom", "Custom tab (blank)", []),
+]
+TEMPLATE_MAP = {k: (label, cols) for k, label, cols in TEMPLATE_TABS}
 
-# ---------------------------------------------------------------- which department, which level
+
+# ---------------------------------------------------------------- which department, which tab
 def _dept():
-    """(db, department row, level) of the department database being used. A normal user always
-    uses his own department; the portal admin may pick any with ?dept=."""
+    """(db, department row, is_tab_admin). A normal user always uses his own
+    department; the portal admin may pick any with ?dept=."""
     db = get_db()
     dept_id = g.user["department_id"]
     if g.user["role"] == "admin":
@@ -40,43 +105,161 @@ def _dept():
     if dept is None:
         flash("You are not in a department yet. Ask the admin.", "error")
         abort(403)
-    level = ddb_level(db, g.user, dept["id"])
-    if level is None:
-        abort(403)
-    return db, dept, level
+    return db, dept, ddb_is_tab_admin(db, g.user, dept["id"])
 
 
-def _manager():
-    db, dept, level = _dept()
-    if level != "manager":
+def _tab_admin():
+    db, dept, is_admin = _dept()
+    if not is_admin:
         abort(403)
     return db, dept
 
 
-def _row(rid, dept_id=None):
+def _get_tab(db, dept, tab_id=None):
+    tabs = ddb_tabs(db, dept["id"])
+    if not tabs:
+        return None, tabs
+    if tab_id is not None:
+        for tb in tabs:
+            if tb["id"] == tab_id:
+                return tb, tabs
+        abort(404)
+    return tabs[0], tabs
+
+
+def _back(dept, tab=None):
+    out = {}
+    if g.user["role"] == "admin":
+        out["dept"] = dept["id"]
+    if tab is not None:
+        out["tab"] = tab["id"]
+    return out
+
+
+def _row(rid):
     db = get_db()
     row = db.execute("SELECT r.*, u.full_name AS owner_name, d.name AS department_name FROM ddb_rows r "
                      "JOIN users u ON u.id=r.owner_id JOIN departments d ON d.id=r.department_id "
                      "WHERE r.id=?", (rid,)).fetchone()
     if row is None:
         abort(404)
-    level = ddb_level(db, g.user, row["department_id"])
-    if level is None:
+    if not ddb_can_view_row(db, g.user, row):
         abort(404)
-    if row["deleted_at"] and level != "manager":
+    if row["deleted_at"] and not ddb_is_tab_admin(db, g.user, row["department_id"]):
         abort(404)
-    return db, row, level
+    return db, row
 
 
-def _back(dept):
-    return {"dept": dept["id"]} if g.user["role"] == "admin" else {}
+def _can_create_attachment(user, dept_id=None):
+    """Portal admin always; a dept admin only if the portal admin gave them
+    access. A delegate inherits it when a dept admin of his department has it."""
+    db = get_db()
+    if user["role"] == "admin":
+        return True
+    try:
+        if user["is_dept_admin"] and user["can_ddb_attachment"]:
+            return True
+    except Exception:
+        return False
+    dept_id = dept_id or user["department_id"]
+    if dept_id and ddb_is_tab_admin(db, user, dept_id):
+        return db.execute("SELECT 1 FROM users WHERE department_id=? AND is_dept_admin=1 AND can_ddb_attachment=1",
+                          (dept_id,)).fetchone() is not None
+    return False
 
 
-# ---------------------------------------------------------------- list, search, filter, sort
-def _filters(db, dept, level, args):
-    """WHERE text, params, ORDER BY text, order params and the 'info' of the list bar."""
-    where, params = ["r.department_id=?"], [dept["id"]]
-    deleted = bool(args.get("deleted")) and level == "manager"
+def _ddb_file_path(stored):
+    return os.path.join(config.UPLOAD_DIR, "ddb_attachments", stored)
+
+
+def _save_ddb_file(file_storage, dept):
+    if not file_storage or not file_storage.filename:
+        return None, None
+    original = file_storage.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1][:200]
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in config.ALLOWED_EXTENSIONS:
+        return None, f"File type '.{ext}' is not allowed for attachments."
+    if scanner.enabled():
+        verdict, detail = scanner.scan_stream(file_storage.stream)
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+        if verdict != "clean":
+            return None, f"'{original}' could not be scanned, so it was not uploaded. Tell the admin ({detail})."
+    folder = os.path.join(config.UPLOAD_DIR, "ddb_attachments")
+    os.makedirs(folder, exist_ok=True)
+    stored = secrets.token_hex(10) + "." + ext
+    file_storage.save(os.path.join(folder, stored))
+    limit = min(int(dept["attachment_max_mb"] or 10), config.MAX_UPLOAD_MB) * 1024 * 1024
+    if os.path.getsize(os.path.join(folder, stored)) > limit:
+        os.remove(os.path.join(folder, stored))
+        return None, f"'{original}' is too large (max {limit // 1024 // 1024} MB)."
+    return json.dumps({"stored": stored, "original": original}), None
+
+
+def _handle_ddb_files(dept, cols, values, existing):
+    errors, saved, to_delete = [], [], []
+    for c in cols:
+        if c["col_type"] != "attachment":
+            continue
+        cid = c["id"]
+        if request.form.get(f"remove_c{cid}"):
+            old = ddb_attachment_info(existing.get(cid))
+            if old:
+                to_delete.append(old["stored"])
+            values[cid] = None
+            continue
+        file_storage = request.files.get(f"c{cid}_file")
+        if file_storage and file_storage.filename:
+            val, err = _save_ddb_file(file_storage, dept)
+            if err:
+                errors.append(err)
+            else:
+                old = ddb_attachment_info(existing.get(cid))
+                if old:
+                    to_delete.append(old["stored"])
+                info = ddb_attachment_info(val)
+                if info:
+                    saved.append(info["stored"])
+                values[cid] = val
+        else:
+            values[cid] = existing.get(cid)
+        if c["required"] and not values[cid]:
+            errors.append(f"{c['name']} is required.")
+    return errors, saved, to_delete
+
+
+def _delete_ddb_files(stored_list):
+    for s in stored_list:
+        try:
+            os.remove(_ddb_file_path(s))
+        except OSError:
+            pass
+
+
+def _display_map(db, rows, cols):
+    raw = ddb_values(db, [r["id"] for r in rows])
+    vmap, urls = {}, {}
+    for r in rows:
+        vmap[r["id"]] = {}
+        urls[r["id"]] = {}
+        for c in cols:
+            v = raw[r["id"]].get(c["id"])
+            if c["col_type"] == "attachment":
+                info = ddb_attachment_info(v)
+                vmap[r["id"]][c["id"]] = info["original"] if info else ""
+                if info:
+                    urls[r["id"]][c["id"]] = url_for("ddb.download_attachment", rid=r["id"], cid=c["id"])
+            else:
+                vmap[r["id"]][c["id"]] = v
+    return vmap, urls
+
+
+# ---------------------------------------------------------------- list, search, filter, sort (on top of the tabs)
+def _filters(db, dept, tab, is_admin, args):
+    where, params = ["r.department_id=?", "r.tab_id=?"], [dept["id"], tab["id"]]
+    deleted = bool(args.get("deleted")) and is_admin
     where.append("r.deleted_at IS NOT NULL" if deleted else "r.deleted_at IS NULL")
     mine = bool(args.get("mine"))
     if mine:
@@ -89,9 +272,9 @@ def _filters(db, dept, level, args):
     fcol, fval = (args.get("fcol") or "").strip(), (args.get("fval") or "").strip()
     if fcol and fval:
         where.append("EXISTS (SELECT 1 FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id "
-                     "AND c.removed_at IS NULL WHERE v.row_id=r.id AND c.department_id=? "
+                     "AND c.removed_at IS NULL WHERE v.row_id=r.id AND c.tab_id=? "
                      "AND lower(c.name)=lower(?) AND v.value LIKE ? ESCAPE '\\')")
-        params += [dept["id"], fcol, like_pattern(fval)]
+        params += [tab["id"], fcol, like_pattern(fval)]
     sort = args.get("sort", "updated")
     direction = "asc" if args.get("dir") == "asc" else "desc"
     d = "ASC" if direction == "asc" else "DESC"
@@ -100,13 +283,13 @@ def _filters(db, dept, level, args):
         order = f"r.created_at {d}, r.id {d}"
     elif sort.startswith("col:"):
         name = sort[4:]
-        numeric = db.execute("SELECT 1 FROM ddb_columns WHERE department_id=? AND lower(name)=lower(?) "
-                             "AND col_type='number' AND removed_at IS NULL", (dept["id"], name)).fetchone()
+        numeric = db.execute("SELECT 1 FROM ddb_columns WHERE tab_id=? AND lower(name)=lower(?) "
+                             "AND col_type='number' AND removed_at IS NULL", (tab["id"], name)).fetchone()
         sub = ("(SELECT v.value FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id AND c.removed_at IS NULL "
-               "WHERE v.row_id=r.id AND c.department_id=? AND lower(c.name)=lower(?) LIMIT 1)")
+               "WHERE v.row_id=r.id AND c.tab_id=? AND lower(c.name)=lower(?) LIMIT 1)")
         expr = f"CAST({sub} AS REAL)" if numeric else f"{sub} COLLATE NOCASE"
         order = f"({sub} IS NULL), {expr} {d}, r.id DESC"
-        op = [dept["id"], name, dept["id"], name]
+        op = [tab["id"], name, tab["id"], name]
     else:
         sort = "updated"
     info = {"sort": sort, "dir": direction, "fcol": fcol, "fval": fval}
@@ -116,125 +299,363 @@ def _filters(db, dept, level, args):
 @bp.route("")
 @login_required
 def index():
-    db, dept, level = _dept()
+    db, dept, is_admin = _dept()
     number = parse_code(request.args.get("q"))
-    if number is not None:                                   # typing HRC-12 opens that QR code
+    if number is not None:
         return redirect(url_for("public.code_page", code=format_code(number)))
-    where, params, order, op, info, q, mine, deleted = _filters(db, dept, level, request.args)
+    tab, tabs = _get_tab(db, dept, request.args.get("tab", type=int))
+    if tab is None:
+        return render_template("deptdb.html", dept=dept, tab=None, tabs=[], level="manager" if is_admin else "own",
+                               cols=[], rows=[], vmap={}, attach_urls={}, info={"sort": "updated", "dir": "desc", "fcol": "", "fval": ""},
+                               q="", mine=False, deleted=False, total=0, page=1, pages=1,
+                               counts={"all": 0, "mine": 0, "deleted": 0}, keep={}, can_add=False, names=[],
+                               depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
+                               if g.user["role"] == "admin" else [],
+                               is_admin=is_admin, can_edit_row=lambda r: False, can_delete_row=lambda r: False)
+    where, params, order, op, info, q, mine, deleted = _filters(db, dept, tab, is_admin, request.args)
     total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
     page, pages, offset = page_info(total, request.args.get("page", 1, type=int), config.PER_PAGE)
     rows = db.execute("SELECT r.*, u.full_name AS owner_name FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
                       "WHERE " + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
                       params + op + [config.PER_PAGE, offset]).fetchall()
-    cols = ddb_columns(db, dept["id"])
+    cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
     counts = {
-        "all": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND deleted_at IS NULL",
-                          (dept["id"],)).fetchone()[0],
-        "mine": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND deleted_at IS NULL "
-                           "AND owner_id=?", (dept["id"], g.user["id"])).fetchone()[0],
-        "deleted": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND deleted_at IS NOT NULL",
-                              (dept["id"],)).fetchone()[0] if level == "manager" else 0}
-    keep = {k: v for k, v in request.args.items() if k not in ("page", "dept")}
+        "all": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NULL",
+                          (dept["id"], tab["id"])).fetchone()[0],
+        "mine": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NULL "
+                           "AND owner_id=?", (dept["id"], tab["id"], g.user["id"])).fetchone()[0],
+        "deleted": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NOT NULL",
+                              (dept["id"], tab["id"])).fetchone()[0] if is_admin else 0}
+    keep = {k: v for k, v in request.args.items() if k not in ("page",)}
+    if g.user["role"] == "admin":
+        keep["dept"] = dept["id"]
+    _vmap, _urls = _display_map(db, rows, cols)
+    can_add_here = bool(cols) and (g.user["role"] == "admin" or g.user["department_id"] == dept["id"])
     return render_template(
-        "deptdb.html", dept=dept, level=level, level_word=DDB_LEVEL_WORDS[level], cols=cols, rows=rows,
-        vmap=ddb_values(db, [r["id"] for r in rows]), info=info, q=q, mine=mine, deleted=deleted,
+        "deptdb.html", dept=dept, tab=tab, tabs=tabs, level="manager" if is_admin else "own", cols=cols, rows=rows,
+        vmap=_vmap, attach_urls=_urls, info=info, q=q, mine=mine, deleted=deleted,
         total=total, page=page, pages=pages, counts=counts, keep=keep,
-        can_add=level in ("own", "edit", "manager") and bool(cols),
-        names=[c["name"] for c in cols],
+        can_add=can_add_here, names=[c["name"] for c in cols], is_admin=is_admin,
         depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
         if g.user["role"] == "admin" else [],
-        can_edit_row=lambda r: ddb_can_edit_row(level, g.user, r),
-        can_delete_row=lambda r: ddb_can_delete_row(level, g.user, r))
+        can_edit_row=lambda r: ddb_can_edit_row(db, g.user, r) and not r["deleted_at"],
+        can_delete_row=lambda r: ddb_can_delete_row(db, g.user, r) and not r["deleted_at"])
 
 
 @bp.route("/export")
 @login_required
 def export():
-    db, dept, level = _dept()
-    where, params, order, op, _info, _q, _mine, _deleted = _filters(db, dept, level, request.args)
+    db, dept, is_admin = _dept()
+    tab, _tabs = _get_tab(db, dept, request.args.get("tab", type=int))
+    if tab is None:
+        flash("This department database has no tabs yet.", "error")
+        return redirect(url_for("ddb.index", **_back(dept)))
+    where, params, order, op, _info, _q, _mine, _deleted = _filters(db, dept, tab, is_admin, request.args)
     rows = db.execute("SELECT r.*, u.full_name AS owner_name FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
                       "WHERE " + where + " ORDER BY " + order, params + op).fetchall()
-    cols = ddb_columns(db, dept["id"])
+    cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
     vals = ddb_values(db, [r["id"] for r in rows])
     header = [c["name"] for c in cols] + ["Added by", "Last updated"]
-    out = [[(show_when(vals[r["id"]].get(c["id"])) if c["col_type"] == "date" else vals[r["id"]].get(c["id"]))
+    out = [[(ddb_display_value(c, vals[r["id"]].get(c["id"])) if c["col_type"] == "attachment"
+             else (show_when(vals[r["id"]].get(c["id"])) if c["col_type"] == "date" else vals[r["id"]].get(c["id"])))
             for c in cols] + [r["owner_name"], r["updated_at"]] for r in rows]
     kinds = ["number" if c["col_type"] == "number" else "text" for c in cols] + ["text", "text"]
     fmt = request.args.get("fmt", "xlsx")
-    log(db, "export", f"department database {dept['name']}: {fmt}, {len(rows)} rows")
+    log(db, "export", f"department database {dept['name']} / {tab['name']}: {fmt}, {len(rows)} rows")
     db.commit()
     if fmt == "csv":
-        return csv_response(header, out, "department_database_" + dept["name"])
-    return exports.table_file("pdf" if fmt == "pdf" else "xlsx", f"{dept['name']} database", header, out, kinds,
+        return csv_response(header, out, "department_database_" + dept["name"] + "_" + tab["name"])
+    return exports.table_file("pdf" if fmt == "pdf" else "xlsx", f"{dept['name']} database — {tab['name']}", header, out, kinds,
                               f"{len(rows)} rows", setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
-                              "department_database_" + dept["name"])
+                              "department_database_" + dept["name"] + "_" + tab["name"])
+
+
+# ---------------------------------------------------------------- tabs (admins / delegates)
+@bp.route("/tabs", methods=["GET", "POST"])
+@login_required
+def tabs():
+    db, dept = _tab_admin()
+    if request.method == "POST":
+        name = " ".join((request.form.get("name") or "").split())[:60]
+        template = request.form.get("template", "custom")
+        if template not in TEMPLATE_MAP:
+            template = "custom"
+        meeting = 1 if (template == "meetings" or request.form.get("meeting_notify")) else 0
+        if not name:
+            flash("Type the tab name.", "error")
+        else:
+            pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM ddb_tabs WHERE department_id=?",
+                             (dept["id"],)).fetchone()[0]
+            try:
+                tab_id = db.execute("INSERT INTO ddb_tabs(department_id,name,template,meeting_notify,position,created_by) "
+                                    "VALUES (?,?,?,?,?,?)",
+                                    (dept["id"], name, template, meeting, pos, g.user["id"])).lastrowid
+                _label, starter = TEMPLATE_MAP[template]
+                for i, (cname, ctype, opts, req, has_time) in enumerate(starter):
+                    db.execute("INSERT INTO ddb_columns(department_id,tab_id,name,col_type,options,required,has_time,position) "
+                               "VALUES (?,?,?,?,?,?,?,?)",
+                               (dept["id"], tab_id, cname, ctype, opts, req, has_time, i))
+                log(db, "ddb_tab_add", f"{dept['name']}: {name} ({template})")
+                db.commit()
+                flash(f"Tab '{name}' created.", "ok")
+            except sqlite3.IntegrityError:
+                db.rollback()
+                flash(f"A tab named '{name}' already exists.", "error")
+        return redirect(url_for("ddb.tabs", **_back(dept)))
+    all_tabs = db.execute("SELECT t.*, (SELECT COUNT(*) FROM ddb_rows r WHERE r.tab_id=t.id AND r.deleted_at IS NULL) AS rows "
+                          "FROM ddb_tabs t WHERE t.department_id=? ORDER BY t.removed_at IS NOT NULL, t.position, t.id",
+                          (dept["id"],)).fetchall()
+    return render_template("deptdb_tabs.html", dept=dept, tabs=all_tabs, templates=TEMPLATE_TABS)
+
+
+@bp.route("/tabs/<int:tab_id>/edit", methods=["POST"])
+@login_required
+def tab_edit(tab_id):
+    db, dept = _tab_admin()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=? AND department_id=?", (tab_id, dept["id"])).fetchone()
+    if tab is None:
+        abort(404)
+    name = " ".join((request.form.get("name") or "").split())[:60]
+    meeting = 1 if request.form.get("meeting_notify") else 0
+    if not name:
+        flash("Type the tab name.", "error")
+    else:
+        try:
+            db.execute("UPDATE ddb_tabs SET name=?, meeting_notify=? WHERE id=?", (name, meeting, tab_id))
+            log(db, "ddb_tab_edit", f"{dept['name']}: {name}")
+            db.commit()
+            flash("Tab saved.", "ok")
+        except sqlite3.IntegrityError:
+            db.rollback()
+            flash(f"A tab named '{name}' already exists.", "error")
+    return redirect(url_for("ddb.tabs", **_back(dept)))
+
+
+@bp.route("/tabs/<int:tab_id>/delete", methods=["POST"])
+@login_required
+def tab_delete(tab_id):
+    db, dept = _tab_admin()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=? AND department_id=?", (tab_id, dept["id"])).fetchone()
+    if tab is None:
+        abort(404)
+    db.execute("UPDATE ddb_tabs SET removed_at=datetime('now','localtime') WHERE id=?", (tab_id,))
+    log(db, "ddb_tab_delete", f"{dept['name']}: {tab['name']}")
+    db.commit()
+    flash(f"Tab '{tab['name']}' deleted. Its rows are hidden until the tab is restored.", "ok")
+    return redirect(url_for("ddb.tabs", **_back(dept)))
+
+
+@bp.route("/tabs/<int:tab_id>/restore", methods=["POST"])
+@login_required
+def tab_restore(tab_id):
+    db, dept = _tab_admin()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=? AND department_id=?", (tab_id, dept["id"])).fetchone()
+    if tab is None:
+        abort(404)
+    try:
+        db.execute("UPDATE ddb_tabs SET removed_at=NULL WHERE id=?", (tab_id,))
+        log(db, "ddb_tab_restore", f"{dept['name']}: {tab['name']}")
+        db.commit()
+        flash("Tab restored.", "ok")
+    except sqlite3.IntegrityError:
+        db.rollback()
+        flash(f"A tab named '{tab['name']}' exists already. Rename it first, then restore.", "error")
+    return redirect(url_for("ddb.tabs", **_back(dept)))
+
+
+# ---------------------------------------------------------------- delegates (admins / delegates)
+@bp.route("/delegates", methods=["GET", "POST"])
+@login_required
+def delegates():
+    db, dept = _tab_admin()
+    if request.method == "POST":
+        uid = request.form.get("user_id", type=int)
+        member = db.execute("SELECT * FROM users WHERE id=? AND department_id=? AND is_active=1",
+                            (uid, dept["id"])).fetchone() if uid else None
+        if member is None:
+            flash("Choose a user from this department.", "error")
+        else:
+            db.execute("INSERT OR IGNORE INTO ddb_delegates(department_id,user_id,granted_by) VALUES (?,?,?)",
+                       (dept["id"], uid, g.user["id"]))
+            notify(db, [uid], f"You can now do everything a department admin can do in the {dept['name']} department database.",
+                   "/deptdb", skip=g.user["id"])
+            log(db, "ddb_delegate", f"{dept['name']}: {member['username']} made a department-database delegate")
+            db.commit()
+            flash(f"{member['full_name']} can now do everything a department admin can do in this department database.", "ok")
+        return redirect(url_for("ddb.delegates", **_back(dept)))
+    members = db.execute("SELECT u.id, u.full_name, u.username, u.is_dept_admin, u.role, "
+                         "CASE WHEN d.user_id IS NOT NULL THEN 1 ELSE 0 END AS is_delegate FROM users u "
+                         "LEFT JOIN ddb_delegates d ON d.user_id=u.id AND d.department_id=? "
+                         "WHERE u.department_id=? AND u.is_active=1 ORDER BY u.full_name",
+                         (dept["id"], dept["id"])).fetchall()
+    return render_template("deptdb_delegates.html", dept=dept, members=members)
+
+
+@bp.route("/delegates/<int:uid>/revoke", methods=["POST"])
+@login_required
+def delegate_revoke(uid):
+    db, dept = _tab_admin()
+    db.execute("DELETE FROM ddb_delegates WHERE department_id=? AND user_id=?", (dept["id"], uid))
+    log(db, "ddb_delegate_revoke", f"{dept['name']}: user {uid} no longer a department-database delegate")
+    db.commit()
+    flash("Delegate removed.", "ok")
+    return redirect(url_for("ddb.delegates", **_back(dept)))
 
 
 # ---------------------------------------------------------------- one row
 @bp.route("/row/<int:rid>")
 @login_required
 def row_detail(rid):
-    db, row, level = _row(rid)
-    cols = ddb_columns(db, row["department_id"])
+    db, row = _row(rid)
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    cols = ddb_columns(db, row["department_id"], tab_id=row["tab_id"]) if row["tab_id"] else []
+    _vmap, _urls = _display_map(db, [row], cols)
+    is_admin = ddb_is_tab_admin(db, g.user, row["department_id"])
+    can_share = (row["owner_id"] == g.user["id"] or is_admin) and not row["deleted_at"]
+    shares = db.execute("SELECT s.*, d.name AS dept_name, u.full_name AS user_name FROM ddb_row_shares s "
+                        "LEFT JOIN departments d ON d.id=s.department_id LEFT JOIN users u ON u.id=s.user_id "
+                        "WHERE s.row_id=? ORDER BY s.id", (rid,)).fetchall()
     return render_template(
-        "deptdb_row.html", row=row, level=level, cols=cols, vals=ddb_values(db, [rid])[rid],
+        "deptdb_row.html", row=row, tab=tab, cols=cols, vals=_vmap[rid], attach_urls=_urls[rid],
         history=db.execute("SELECT * FROM ddb_history WHERE row_id=? ORDER BY id DESC LIMIT 100", (rid,)).fetchall(),
-        can_edit=ddb_can_edit_row(level, g.user, row) and not row["deleted_at"],
-        can_delete=ddb_can_delete_row(level, g.user, row) and not row["deleted_at"],
-        can_restore=level == "manager" and bool(row["deleted_at"]))
+        can_edit=ddb_can_edit_row(db, g.user, row) and not row["deleted_at"],
+        can_delete=ddb_can_delete_row(db, g.user, row) and not row["deleted_at"],
+        can_restore=is_admin and bool(row["deleted_at"]),
+        can_share=can_share, shares=shares, is_admin=is_admin,
+        departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_share else [],
+        users=db.execute("SELECT u.id, u.full_name, d.name AS dept_name FROM users u LEFT JOIN departments d "
+                         "ON d.id=u.department_id WHERE u.is_active=1 ORDER BY d.name, u.full_name").fetchall() if can_share else [])
 
 
-def _form(dept, cols, values, row=None, version=None, conflict=None, source=None):
-    return render_template("deptdb_form.html", dept=dept, cols=cols, values=values, row=row,
+@bp.route("/row/<int:rid>/share", methods=["POST"])
+@login_required
+def row_share(rid):
+    db, row = _row(rid)
+    is_admin = ddb_is_tab_admin(db, g.user, row["department_id"])
+    if row["deleted_at"] or not (row["owner_id"] == g.user["id"] or is_admin):
+        abort(403)
+    kind = request.form.get("kind")
+    perm = request.form.get("permission", "view")
+    if perm not in ("view", "edit"):
+        perm = "view"
+    if kind == "department":
+        did = request.form.get("department_id", type=int)
+        dept = db.execute("SELECT * FROM departments WHERE id=?", (did,)).fetchone() if did else None
+        if dept is None:
+            flash("Choose a department.", "error")
+        elif did == row["department_id"]:
+            flash("That department can already see this row.", "error")
+        else:
+            db.execute("DELETE FROM ddb_row_shares WHERE row_id=? AND department_id=?", (rid, did))
+            db.execute("INSERT INTO ddb_row_shares(row_id,department_id,permission,created_by) VALUES (?,?,?,?)",
+                       (rid, did, perm, g.user["id"]))
+            ddb_history(db, rid, g.user, "shared", new=f"{dept['name']} ({'Can edit' if perm == 'edit' else 'View only'})")
+            log(db, "ddb_share", f"row {rid} shared with {dept['name']} ({perm})")
+            db.commit()
+            flash(f"Shared with {dept['name']} ({'Can edit' if perm == 'edit' else 'View only'}).", "ok")
+    elif kind == "user":
+        uid = request.form.get("user_id", type=int)
+        user = db.execute("SELECT * FROM users WHERE id=? AND is_active=1", (uid,)).fetchone() if uid else None
+        if user is None:
+            flash("Choose a user.", "error")
+        else:
+            db.execute("DELETE FROM ddb_row_shares WHERE row_id=? AND user_id=?", (rid, uid))
+            db.execute("INSERT INTO ddb_row_shares(row_id,user_id,permission,created_by) VALUES (?,?,?,?)",
+                       (rid, uid, perm, g.user["id"]))
+            notify(db, [uid], f"A department-database row was shared with you ({'Can edit' if perm == 'edit' else 'View only'}).",
+                   f"/deptdb/row/{rid}", skip=g.user["id"])
+            ddb_history(db, rid, g.user, "shared", new=f"{user['full_name']} ({'Can edit' if perm == 'edit' else 'View only'})")
+            log(db, "ddb_share", f"row {rid} shared with {user['username']} ({perm})")
+            db.commit()
+            flash(f"Shared with {user['full_name']} ({'Can edit' if perm == 'edit' else 'View only'}).", "ok")
+    else:
+        flash("Choose whether to share with a department or a user.", "error")
+    return redirect(url_for("ddb.row_detail", rid=rid))
+
+
+@bp.route("/row/<int:rid>/share/<int:sid>/delete", methods=["POST"])
+@login_required
+def row_share_delete(rid, sid):
+    db, row = _row(rid)
+    is_admin = ddb_is_tab_admin(db, g.user, row["department_id"])
+    if not (row["owner_id"] == g.user["id"] or is_admin):
+        abort(403)
+    db.execute("DELETE FROM ddb_row_shares WHERE id=? AND row_id=?", (sid, rid))
+    ddb_history(db, rid, g.user, "unshared")
+    log(db, "ddb_unshare", f"row {rid} share {sid} removed")
+    db.commit()
+    flash("Share removed.", "ok")
+    return redirect(url_for("ddb.row_detail", rid=rid))
+
+
+def _form(dept, tab, cols, values, row=None, version=None, conflict=None, source=None):
+    disp = dict(values or {})
+    for c in cols:
+        if c["col_type"] == "attachment":
+            disp[c["id"]] = ddb_display_value(c, disp.get(c["id"]))
+    return render_template("deptdb_form.html", dept=dept, tab=tab, cols=cols, values=disp, row=row,
                            version=version, conflict=conflict, source=source)
 
 
 @bp.route("/new", methods=["GET", "POST"])
 @login_required
 def new_row():
-    db, dept, level = _dept()
-    cols = ddb_columns(db, dept["id"])
-    if level not in ("own", "edit", "manager"):
+    db, dept, _is_admin = _dept()
+    if g.user["role"] != "admin" and g.user["department_id"] != dept["id"]:
         abort(403)
-    if not cols:
-        flash("This department database has no columns yet. Ask the department admin to add them.", "error")
+    tab, _tabs = _get_tab(db, dept, request.values.get("tab", type=int))
+    if tab is None:
+        flash("This department database has no tabs yet. Ask the department admin to create one.", "error")
         return redirect(url_for("ddb.index", **_back(dept)))
+    cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
+    if not cols:
+        flash(f"The '{tab['name']}' tab has no columns yet. Ask the department admin to add them.", "error")
+        return redirect(url_for("ddb.index", **_back(dept, tab)))
     source = request.values.get("from_record", type=int)
     rec = None
-    if source:                                                # "Copy to department database" on a record
-        from routes_records import _load as load_record      # (late import: avoids a circular import)
+    if source:
+        from routes_records import _load as load_record
         rec, _lvl = load_record(source, "view")
     if request.method == "POST":
         values, errors = parse_form(cols, request.form)
+        ferr, saved, _td = _handle_ddb_files(dept, cols, values, {})
+        errors += ferr
         if errors:
+            _delete_ddb_files(saved)
             for e in errors:
                 flash(e, "error")
-            return _form(dept, cols, values, source=source)
-        rid = ddb_create_row(db, g.user, dept["id"], values, rec["id"] if rec else None)
-        log(db, "ddb_add", f"{dept['name']} row {rid}")
+            return _form(dept, tab, cols, values, source=source)
+        rid = ddb_create_row(db, g.user, dept["id"], values, tab_id=tab["id"], source_record_id=rec["id"] if rec else None)
+        log(db, "ddb_add", f"{dept['name']} / {tab['name']} row {rid}")
         db.commit()
         flash("Row added to the department database.", "ok")
         return redirect(url_for("ddb.row_detail", rid=rid))
-    return _form(dept, cols, ddb_prefill_from_record(db, rec, cols) if rec else {}, source=source)
+    return _form(dept, tab, cols, ddb_prefill_from_record(db, rec, cols) if rec else {}, source=source)
 
 
 @bp.route("/row/<int:rid>/edit", methods=["GET", "POST"])
 @login_required
 def edit_row(rid):
-    db, row, level = _row(rid)
-    if row["deleted_at"] or not ddb_can_edit_row(level, g.user, row):
+    db, row = _row(rid)
+    if row["deleted_at"] or not ddb_can_edit_row(db, g.user, row):
         abort(403)
     dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
-    cols = ddb_columns(db, row["department_id"])
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    cols = ddb_columns(db, row["department_id"], tab_id=row["tab_id"]) if row["tab_id"] else []
     old = ddb_values(db, [rid])[rid]
     if request.method == "POST":
         values, errors = parse_form(cols, request.form, old)
+        ferr, saved, to_delete = _handle_ddb_files(dept, cols, values, old)
+        errors += ferr
         version = request.form.get("version", type=int) or 0
         if errors:
+            _delete_ddb_files(saved)
             for e in errors:
                 flash(e, "error")
-            return _form(dept, cols, values, row, version)
+            return _form(dept, tab, cols, values, row, version)
         result = ddb_update_row(db, g.user, row, cols, values, version)
+        if result == "ok":
+            _delete_ddb_files(to_delete)
         if result == "conflict":
             latest = ddb_values(db, [rid])[rid]
             fresh = db.execute("SELECT * FROM ddb_rows WHERE id=?", (rid,)).fetchone()
@@ -243,7 +664,7 @@ def edit_row(rid):
             mine = [(c["name"], values[c["id"]] or "") for c in cols
                     if (values[c["id"]] or None) != (latest.get(c["id"]) or None)]
             flash("This row was changed by someone else while you were editing. Your changes were NOT saved.", "error")
-            return _form(dept, cols, latest, fresh, fresh["version"],
+            return _form(dept, tab, cols, latest, fresh, fresh["version"],
                          {"by": last["full_name"] if last else "Someone", "at": last["at"] if last else "",
                           "mine": mine})
         if result == "nochange":
@@ -253,20 +674,20 @@ def edit_row(rid):
             db.commit()
             flash("Changes saved.", "ok")
         return redirect(url_for("ddb.row_detail", rid=rid))
-    return _form(dept, cols, old, row, row["version"])
+    return _form(dept, tab, cols, old, row, row["version"])
 
 
 @bp.route("/row/<int:rid>/delete", methods=["POST"])
 @login_required
 def delete_row(rid):
-    db, row, level = _row(rid)
-    if row["deleted_at"] or not ddb_can_delete_row(level, g.user, row):
+    db, row = _row(rid)
+    if row["deleted_at"] or not ddb_can_delete_row(db, g.user, row):
         abort(403)
     db.execute("UPDATE ddb_rows SET deleted_at=datetime('now','localtime') WHERE id=?", (rid,))
     ddb_history(db, rid, g.user, "deleted")
     log(db, "ddb_delete", f"row {rid}")
     db.commit()
-    flash("Row deleted. A manager can restore it for %d days." % config.BIN_DAYS, "ok")
+    flash("Row deleted. A department admin can restore it for %d days." % config.BIN_DAYS, "ok")
     return redirect(url_for("ddb.index", dept=row["department_id"]) if g.user["role"] == "admin"
                     else url_for("ddb.index"))
 
@@ -274,8 +695,8 @@ def delete_row(rid):
 @bp.route("/row/<int:rid>/restore", methods=["POST"])
 @login_required
 def restore_row(rid):
-    db, row, level = _row(rid)
-    if level != "manager" or not row["deleted_at"]:
+    db, row = _row(rid)
+    if not ddb_is_tab_admin(db, g.user, row["department_id"]) or not row["deleted_at"]:
         abort(403)
     db.execute("UPDATE ddb_rows SET deleted_at=NULL, version=version+1 WHERE id=?", (rid,))
     ddb_history(db, rid, g.user, "restored")
@@ -285,7 +706,7 @@ def restore_row(rid):
     return redirect(url_for("ddb.row_detail", rid=rid))
 
 
-# ---------------------------------------------------------------- columns (managers)
+# ---------------------------------------------------------------- columns (per tab, admins / delegates)
 def _clean_options(ctype, text):
     options = "\n".join(dict.fromkeys(o.strip() for o in (text or "").splitlines() if o.strip()))
     return options if ctype == "dropdown" else None
@@ -294,45 +715,57 @@ def _clean_options(ctype, text):
 @bp.route("/columns")
 @login_required
 def columns():
-    db, dept = _manager()
+    db, dept = _tab_admin()
+    tab, tabs = _get_tab(db, dept, request.args.get("tab", type=int))
+    if tab is None:
+        flash("Create a tab first.", "error")
+        return redirect(url_for("ddb.tabs", **_back(dept)))
     cols = db.execute("SELECT c.*, (SELECT COUNT(*) FROM ddb_values v JOIN ddb_rows r ON r.id=v.row_id "
                       "WHERE v.column_id=c.id AND r.deleted_at IS NULL) AS used FROM ddb_columns c "
-                      "WHERE c.department_id=? AND c.removed_at IS NULL ORDER BY c.position, c.id",
-                      (dept["id"],)).fetchall()
-    removed = db.execute("SELECT * FROM ddb_columns WHERE department_id=? AND removed_at IS NOT NULL "
-                         "ORDER BY removed_at DESC", (dept["id"],)).fetchall()
-    return render_template("deptdb_columns.html", dept=dept, cols=cols, removed=removed, types=COLUMN_TYPES,
-                           type_label=TYPE_LABEL)
+                      "WHERE c.tab_id=? AND c.removed_at IS NULL ORDER BY c.position, c.id",
+                      (tab["id"],)).fetchall()
+    removed = db.execute("SELECT * FROM ddb_columns WHERE tab_id=? AND removed_at IS NOT NULL "
+                         "ORDER BY removed_at DESC", (tab["id"],)).fetchall()
+    return render_template("deptdb_columns.html", dept=dept, tab=tab, tabs=tabs, cols=cols, removed=removed, types=DDB_COLUMN_TYPES,
+                           type_label=DDB_TYPE_LABEL, can_create_attachment=_can_create_attachment(g.user, dept["id"]))
 
 
 @bp.route("/columns/add", methods=["POST"])
 @login_required
 def column_add():
-    db, dept = _manager()
+    db, dept = _tab_admin()
+    tab, _tabs = _get_tab(db, dept, request.form.get("tab", type=int))
+    if tab is None:
+        flash("Choose a tab first.", "error")
+        return redirect(url_for("ddb.tabs", **_back(dept)))
     name = " ".join((request.form.get("name") or "").split())[:60]
     ctype = request.form.get("col_type", "text")
     options = _clean_options(ctype, request.form.get("options"))
     if not name:
         flash("Type the column name.", "error")
-    elif ctype not in TYPE_LABEL:
+    elif ctype == "attachment" and not _can_create_attachment(g.user, dept["id"]):
+        flash("Only a dept admin given attachment-column access by the portal admin can create an attachment column.", "error")
+    elif ctype not in DDB_TYPE_LABEL:
         flash("Choose a column type.", "error")
     elif ctype == "dropdown" and not options:
         flash("A dropdown needs at least one option (one per line).", "error")
     else:
-        pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM ddb_columns WHERE department_id=?",
-                         (dept["id"],)).fetchone()[0]
+        pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM ddb_columns WHERE tab_id=?",
+                         (tab["id"],)).fetchone()[0]
         try:
-            db.execute("INSERT INTO ddb_columns(department_id,name,col_type,options,required,has_time,position) "
-                       "VALUES (?,?,?,?,?,?,?)",
-                       (dept["id"], name, ctype, options, 1 if request.form.get("required") else 0,
+            db.execute("INSERT INTO ddb_columns(department_id,tab_id,name,col_type,options,required,has_time,position) "
+                       "VALUES (?,?,?,?,?,?,?,?)",
+                       (dept["id"], tab["id"], name, ctype, options, 1 if request.form.get("required") else 0,
                         1 if (request.form.get("has_time") and ctype == "date") else 0, pos))
-            log(db, "ddb_column_add", f"{dept['name']}: {name}")
+            log(db, "ddb_column_add", f"{dept['name']} / {tab['name']}: {name}")
             db.commit()
             flash(f"Column '{name}' added.", "ok")
         except sqlite3.IntegrityError:
             db.rollback()
-            flash(f"A column named '{name}' already exists.", "error")
-    return redirect(url_for("ddb.columns", **_back(dept)))
+            exists = db.execute("SELECT 1 FROM ddb_columns WHERE tab_id=? AND lower(name)=lower(?) AND removed_at IS NULL",
+                                (tab["id"], name)).fetchone()
+            flash(f"A column named '{name}' already exists in this tab." if exists else "Column could not be added. Check the type is allowed for this database.", "error")
+    return redirect(url_for("ddb.columns", **_back(dept, tab)))
 
 
 def _ddb_column(cid):
@@ -340,16 +773,17 @@ def _ddb_column(cid):
     col = db.execute("SELECT * FROM ddb_columns WHERE id=?", (cid,)).fetchone()
     if col is None:
         abort(404)
-    if ddb_level(db, g.user, col["department_id"]) != "manager":
+    if not ddb_is_tab_admin(db, g.user, col["department_id"]):
         abort(403)
     dept = db.execute("SELECT * FROM departments WHERE id=?", (col["department_id"],)).fetchone()
-    return db, col, dept
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (col["tab_id"],)).fetchone() if col["tab_id"] else None
+    return db, col, dept, tab
 
 
 @bp.route("/columns/<int:cid>/edit", methods=["GET", "POST"])
 @login_required
 def column_edit(cid):
-    db, col, dept = _ddb_column(cid)
+    db, col, dept, tab = _ddb_column(cid)
     if request.method == "POST":
         name = " ".join((request.form.get("name") or "").split())[:60]
         options = _clean_options(col["col_type"], request.form.get("options"))
@@ -366,28 +800,28 @@ def column_edit(cid):
                 log(db, "ddb_column_edit", f"{dept['name']}: {name}")
                 db.commit()
                 flash("Column saved.", "ok")
-                return redirect(url_for("ddb.columns", **_back(dept)))
+                return redirect(url_for("ddb.columns", **_back(dept, tab)))
             except sqlite3.IntegrityError:
                 db.rollback()
-                flash(f"A column named '{name}' already exists.", "error")
-    return render_template("deptdb_column_edit.html", col=col, dept=dept, type_label=TYPE_LABEL)
+                flash(f"A column named '{name}' already exists in this tab.", "error")
+    return render_template("deptdb_column_edit.html", col=col, dept=dept, tab=tab, type_label=DDB_TYPE_LABEL)
 
 
 @bp.route("/columns/<int:cid>/remove", methods=["POST"])
 @login_required
 def column_remove(cid):
-    db, col, dept = _ddb_column(cid)
+    db, col, dept, tab = _ddb_column(cid)
     db.execute("UPDATE ddb_columns SET removed_at=datetime('now','localtime') WHERE id=?", (cid,))
     log(db, "ddb_column_remove", f"{dept['name']}: {col['name']}")
     db.commit()
     flash(f"Column '{col['name']}' removed. Its data is kept and it can be restored.", "ok")
-    return redirect(url_for("ddb.columns", **_back(dept)))
+    return redirect(url_for("ddb.columns", **_back(dept, tab)))
 
 
 @bp.route("/columns/<int:cid>/restore", methods=["POST"])
 @login_required
 def column_restore(cid):
-    db, col, dept = _ddb_column(cid)
+    db, col, dept, tab = _ddb_column(cid)
     try:
         db.execute("UPDATE ddb_columns SET removed_at=NULL WHERE id=?", (cid,))
         log(db, "ddb_column_restore", f"{dept['name']}: {col['name']}")
@@ -396,15 +830,15 @@ def column_restore(cid):
     except sqlite3.IntegrityError:
         db.rollback()
         flash(f"A column named '{col['name']}' exists already. Rename it first, then restore.", "error")
-    return redirect(url_for("ddb.columns", **_back(dept)))
+    return redirect(url_for("ddb.columns", **_back(dept, tab)))
 
 
 @bp.route("/columns/<int:cid>/move", methods=["POST"])
 @login_required
 def column_move(cid):
-    db, col, dept = _ddb_column(cid)
-    cols = [r["id"] for r in db.execute("SELECT id FROM ddb_columns WHERE department_id=? AND removed_at IS NULL "
-                                        "ORDER BY position, id", (dept["id"],))]
+    db, col, dept, tab = _ddb_column(cid)
+    cols = [r["id"] for r in db.execute("SELECT id FROM ddb_columns WHERE tab_id=? AND removed_at IS NULL "
+                                        "ORDER BY position, id", (col["tab_id"],))]
     i = cols.index(cid) if cid in cols else -1
     j = i - 1 if request.form.get("dir") == "up" else i + 1
     if i >= 0 and 0 <= j < len(cols):
@@ -412,38 +846,31 @@ def column_move(cid):
         for pos, c in enumerate(cols):
             db.execute("UPDATE ddb_columns SET position=? WHERE id=?", (pos, c))
         db.commit()
-    return redirect(url_for("ddb.columns", **_back(dept)))
+    return redirect(url_for("ddb.columns", **_back(dept, tab)))
 
 
-# ---------------------------------------------------------------- who may do what (managers)
+@bp.route("/attachment/<int:rid>/<int:cid>")
+@login_required
+def download_attachment(rid, cid):
+    db, row = _row(rid)
+    col = db.execute("SELECT * FROM ddb_columns WHERE id=? AND department_id=?", (cid, row["department_id"])).fetchone()
+    if col is None or col["col_type"] != "attachment":
+        abort(404)
+    vals = ddb_values(db, [rid])[rid]
+    info = ddb_attachment_info(vals.get(cid))
+    if info is None:
+        abort(404)
+    path = _ddb_file_path(info["stored"])
+    if not os.path.exists(path):
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=info["original"])
+
+
+# Old "People and access" page: levels no longer exist — visibility is
+# department-wide and editing is owner-only (plus shares). Keep the URL
+# working by sending it to the delegates page.
 @bp.route("/people", methods=["GET", "POST"])
 @login_required
 def people():
-    db, dept = _manager()
-    members = db.execute("SELECT u.id, u.full_name, u.username, u.is_dept_admin, u.role, "
-                         "COALESCE(p.level, 'own') AS level FROM users u "
-                         "LEFT JOIN ddb_perms p ON p.user_id=u.id AND p.department_id=? "
-                         "WHERE u.department_id=? AND u.is_active=1 ORDER BY u.full_name",
-                         (dept["id"], dept["id"])).fetchall()
-    if request.method == "POST":
-        changed = 0
-        for m in members:
-            if m["is_dept_admin"] or m["role"] == "admin":
-                continue                                        # they are managers by their role
-            new = request.form.get(f"level_{m['id']}")
-            if new not in DDB_LEVEL_WORDS or new == m["level"]:
-                continue
-            if new == "own":
-                db.execute("DELETE FROM ddb_perms WHERE department_id=? AND user_id=?", (dept["id"], m["id"]))
-            else:
-                db.execute("INSERT INTO ddb_perms(department_id,user_id,level) VALUES (?,?,?) "
-                           "ON CONFLICT(department_id,user_id) DO UPDATE SET level=excluded.level",
-                           (dept["id"], m["id"], new))
-            notify(db, [m["id"]], f"Your access to the {dept['name']} department database is now: "
-                   f"{DDB_LEVEL_WORDS[new]}.", "/deptdb", skip=g.user["id"])
-            log(db, "ddb_permission", f"{dept['name']}: {m['username']} -> {new}")
-            changed += 1
-        db.commit()
-        flash(f"Saved. {changed} change(s)." if changed else "Nothing changed.", "ok")
-        return redirect(url_for("ddb.people", **_back(dept)))
-    return render_template("deptdb_people.html", dept=dept, members=members, levels=DDB_LEVELS)
+    db, dept = _tab_admin()
+    return redirect(url_for("ddb.delegates", **_back(dept)))

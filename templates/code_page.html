@@ -16,4 +16,5 @@
     <div class="ig">{% for label, value in it.rows %}<div><span class="k">{{ label }}</span>{{ value }}</div>{% else %}<p class="hint">Nothing to show.</p>{% endfor %}</div>
   </div>{% else %}<div class="tb"><div class="empty">This record is not available any more.</div></div>{% endfor %}
 {% endif %}
+{% if request.args.get('print') and status == 'ok' %}<script>window.addEventListener('load', function () { window.print(); });</script>{% endif %}
 {% endblock %}

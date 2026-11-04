@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Public QR links{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Public QR links</h1><p class="hint">QR codes anyone can scan without logging in. Each has a unique code (HRC-0, HRC-1 ...) that any portal user can type in the search bar. Create one for a single record on the record page, or tick many records in a list and choose "Public QR".</p></div></div>
+<div class="hd"><div><h1>Public QR links</h1><p class="hint">QR codes anyone can scan without logging in. Each has a unique random code (HRC-#####, for example HRC-48392) that any logged-in portal user can type in the search bar. New QRs get a random 5-digit code; old QRs keep their sequential number internally and were given a random code on upgrade. Create one for a single record on the record page, or tick many records in a list and choose "Public QR".</p></div></div>
 <div class="tb">{% if rows %}<table><thead><tr><th>Code</th><th>Title</th><th>Type</th><th>Records</th><th>Fields shown</th><th>Status</th><th>Views</th><th></th></tr></thead><tbody>
-{% for l in rows %}<tr class="r"><td><b>HRC-{{ l['code_no'] }}</b></td><td><b>{{ l['title'] or ('Record link #' ~ l['id']) }}</b>{% if g.user['role'] == 'admin' %}<div class="sub">{{ l['owner_name'] }}</div>{% endif %}</td>
+{% for l in rows %}<tr class="r"><td><b>{{ l['code_text'] or ('HRC-' ~ l['code_no']) }}</b></td><td><b>{{ l['title'] or ('Record link #' ~ l['id']) }}</b>{% if g.user['role'] == 'admin' %}<div class="sub">{{ l['owner_name'] }}</div>{% endif %}</td>
 <td>{{ 'Group' if l['kind'] == 'group' else 'Single record' }}</td><td>{{ l['n'] }}</td><td>{% if l['full_record'] %}Full record{% else %}{{ l['fields'].replace('\n', ', ') }}{% endif %}</td>
 <td>{% if l['enabled'] %}<span class="s g">On</span>{% else %}<span class="s r">Off</span>{% endif %}</td><td>{{ l['views'] }}</td>
 <td class="actcell"><a class="b sm" href="{{ url_for('public.link_qr', lid=l['id']) }}">QR</a><a class="b sm" href="{{ url_for('public.link_edit', lid=l['id']) }}">Fields</a>

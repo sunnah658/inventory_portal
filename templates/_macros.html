@@ -49,7 +49,7 @@
 {% macro listbar(endpoint, hidden, q, info, names) %}
 <form class="tools" method="get" action="{{ url_for(endpoint) }}">
   {% for k, v in hidden.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-  <input type="search" name="q" value="{{ q }}" placeholder="Search records or a code like HRC-12" aria-label="Search records or code">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search records or a code like HRC-48392" aria-label="Search records or code">
   <select name="fcol" aria-label="Filter column"><option value="">Filter by column</option>
     {% for n in names %}<option value="{{ n }}" {{ 'selected' if info.fcol|lower == n|lower }}>{{ n }}</option>{% endfor %}</select>
   <input type="search" name="fval" value="{{ info.fval }}" placeholder="contains" aria-label="Filter value">
@@ -134,6 +134,7 @@ document.addEventListener('change',function(e){var t=e.target;if(t.classList.con
         {% elif c['col_type'] == 'date' %}
           {% if c['has_time'] %}<div style="display:flex;gap:8px"><input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="date" value="{{ v[:10] }}" style="flex:3"><input name="c{{ c['id'] }}_time" type="time" value="{{ v[11:16] }}" aria-label="{{ c['name'] }} time" style="flex:2"></div>
           {% else %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="date" value="{{ v[:10] }}">{% endif %}
+        {% elif c['col_type'] == 'attachment' %}{% if v %}<div class="sub">Current file: {{ v }}</div>{% endif %}<input id="c{{ c['id'] }}_file" name="c{{ c['id'] }}_file" type="file">{% if v %}<label class="ck"><input type="checkbox" name="remove_c{{ c['id'] }}" value="1"> Remove this file</label>{% endif %}
         {% elif c['col_type'] == 'number' %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="text" inputmode="decimal" value="{{ v }}">
         {% else %}<input id="c{{ c['id'] }}" name="c{{ c['id'] }}" type="text" maxlength="200" value="{{ v }}">{% endif %}
       </div>

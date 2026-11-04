@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit template' if tpl else 'New template' }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ 'Edit template' if tpl else 'New template' }}{% if tpl %} · {{ tpl['name'] }}{% endif %}</h1><p class="hint">Everything on the invoice is decided here. Changes apply to new invoices only.</p></div></div>
+<form method="post" enctype="multipart/form-data" class="card">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<h2>1 · General</h2><div class="fm">
+<div class="fd"><label>Template name</label><input type="text" name="name" value="{{ tpl['name'] if tpl else '' }}" required></div>
+<div class="fd"><label>Invoice number prefix</label><input type="text" name="number_prefix" value="{{ tpl['number_prefix'] if tpl else 'BIL' }}"></div>
+<div class="fd"><label>Kind</label><select name="kind"><option value="billing" {{ 'selected' if tpl and tpl['kind']=='billing' }}>Billing</option><option value="admin" {{ 'selected' if tpl and tpl['kind']=='admin' }}>Admin Expense</option><option value="conveyance" {{ 'selected' if tpl and tpl['kind']=='conveyance' }}>Conveyance</option><option value="custom" {{ 'selected' if tpl and tpl['kind']=='custom' }}>Custom / Purchase Request</option></select></div>
+<div class="fd"><label>Default currency (beside every amount)</label><select name="currency">{% for c in currencies %}<option {{ 'selected' if tpl and tpl['default_currency']==c }}>{{ c }}</option>{% endfor %}</select></div>
+<div class="fd"><label>Status</label><select name="status"><option value="active" {{ 'selected' if not tpl or tpl['status']=='active' }}>Active</option><option value="draft" {{ 'selected' if tpl and tpl['status']=='draft' }}>Draft (hidden from employees)</option></select></div>
+</div>
+<h2>2 · Heading</h2><div class="fm">
+<div class="fd"><label>Title (invoice type)</label><input type="text" name="title" value="{{ tpl['title'] if tpl else 'INVOICE' }}"></div>
+<div class="fd"><label>Subtitle (optional)</label><input type="text" name="subtitle" value="{{ tpl['subtitle'] if tpl else '' }}"></div>
+</div>
+<label class="ck"><input type="checkbox" name="show_company_logo" {{ 'checked' if not tpl or tpl['show_company_logo'] }}> Show company logo</label>
+<label class="ck"><input type="checkbox" name="show_address" {{ 'checked' if not tpl or tpl['show_address'] }}> Show company address and contact</label>
+<h2>Logos — optional, two top corners</h2><p class="hint">Left logo: company. Right logo: department / branch. Leave empty = text only. If a right logo is uploaded, it sits in the right top corner; the invoice type then moves to just on top of the table.</p>
+<div class="fm"><div class="fd"><label>Left logo</label><input type="file" name="logo_left" accept=".png,.jpg,.jpeg,.webp">{% if tpl and tpl['logo_left'] %}<div class="sub">Current: {{ tpl['logo_left'] }}</div>{% endif %}</div>
+<div class="fd"><label>Right logo</label><input type="file" name="logo_right" accept=".png,.jpg,.jpeg,.webp">{% if tpl and tpl['logo_right'] %}<div class="sub">Current: {{ tpl['logo_right'] }}</div>{% endif %}</div></div>
+<h2>3 · Top fields</h2><div class="fd"><label>Top fields (comma list)</label><input type="text" name="top_fields" value="{{ tpl['top_fields_json'] if tpl else '' }}" placeholder="Invoice date, Bill to, Customer address, Reference"></div>
+<h2>4 · Items table</h2><div class="fd"><label>Item columns (text)</label><input type="text" name="item_columns" value="{{ tpl['item_columns_json'] if tpl else '' }}" placeholder="Description · Qty · Rate · Amount"></div>
+<h2>5 · Totals</h2><div class="fm"><div class="fd"><label>VAT / tax %</label><input type="number" step="0.01" name="vat" value="{{ tpl['vat_percent'] if tpl else 0 }}"></div></div>
+<label class="ck"><input type="checkbox" name="amount_in_words" {{ 'checked' if not tpl or tpl['show_amount_in_words'] }}> Amount in words</label>
+<h2>6 · Notes and terms</h2><div class="fd"><textarea name="notes">{{ tpl['notes'] if tpl else '' }}</textarea></div>
+<h2>7 · Signatures</h2><p class="hint">How many authorized signatures, with title, person name and designation. Employee signature is added automatically.</p>
+<div id="sigs">
+{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm"><div class="fd"><label>Authorized signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Authorized by"></div><div class="fd"><label>Person name</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
+</div>
+<p class="hint">Leave a signature row blank to skip it. Existing signatures are re-entered here on edit; blank rows are ignored.</p>
+<h2>8 · Watermark — OFF by default</h2>
+<label class="ck"><input type="checkbox" name="watermark_on" {{ 'checked' if tpl and tpl['watermark_on'] }}> Show watermark</label>
+<div class="fd"><label>Watermark text (when ON) — type your own, for example ISSUED, PAID, DRAFT, VOID</label><input type="text" name="watermark_text" value="{{ tpl['watermark_text'] if tpl else '' }}" placeholder="PAID"></div>
+<p class="hint">If OFF, the PDF shows no watermark at all, even on Issued / Paid invoices.</p>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save template</button><a class="b" href="{{ url_for('invoices.templates') }}">Cancel</a></div>
+</form>
+{% endblock %}

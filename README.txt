@@ -49,7 +49,8 @@
      date, Meeting) drive the reminder list, the dashboard and the bell messages
      (see section 17).
    - Repair log per record, only in departments where the admin switched it on.
-   - Public QR codes with a unique code under each (HRC-0, HRC-1 ...), see section 19.
+   - Public QR codes with a unique random code under each (HRC-#####, for example HRC-48392), see sections 19 and 20.
+   - Invoices: dept-admin invoice templates, employee invoices, PDF/print, public QR, see section 20.
    - Optional file attachments, switched on per department with a size limit.
    - CSV download (users: their own records; admin: everything, filterable).
    - Admin dashboard, activity log (with IP addresses), settings (company name, logo).
@@ -185,6 +186,9 @@
  routes_public.py  Public QR links: the public page /p/<token>, the code search
                    page /code/HRC-n (+ PDF), the switch on a record, group QR for
                    many records, the QR print page.
+ routes_invoices.py Invoices (section 20): dept-admin templates, employee invoices,
+                   invoice PDF, public QR with HRC-##### code, template sharing and
+                   department invoice sharing. [Templates: invoice_*.html]
                    [Uses: core.py, routes_records.py]  [Templates: public_view,
                     public_message, public_links, public_link_form]
  routes_bulk.py    Bulk actions on ticked records, Excel/PDF exports, reports,
@@ -917,3 +921,182 @@
  UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
    docker compose up -d --build. The database upgrades itself; old handover, request and
    saved-view data stay in the database but are no longer shown.
+
+==============================================================================
+ 20. INVOICES, RANDOM PUBLIC QR CODES (HRC-#####), WATERMARK, TWO LOGOS
+==============================================================================
+ INVOICES (menu: Invoices)
+   Dept admin (not the portal admin) creates invoice templates for their OWN
+   department: Invoice templates > New template, or "Create starter templates"
+   (Billing Invoice, Admin Expense Voucher, Conveyance Bill, Purchase Request).
+   A template sets: heading (title / subtitle), number format (for example
+   BIL-{0000}), top fields, item columns, totals, VAT %, amount in words,
+   notes / terms, signatures (how many authorized, with title, person name
+   and designation, plus the employee signature), currency, and the watermark
+   (see below). Draft templates stay hidden from employees until Active.
+   Changes to a template apply to NEW invoices only; issued invoices keep
+   the format they were made with (the format is frozen on the invoice).
+   Employees: Invoices tab > Create on a format card. Live totals update as
+   you type. Save as Draft (still editable), then "Finalize and number" -
+   the number (for example BIL-0007) is given once, never reused, and the
+   invoice is locked. After that it can be marked Paid, or Voided with a
+   reason (number kept, never reused). Draft and Void invoices never get a
+   live public QR.
+   Dept admin sees every invoice in their own department: Invoices > "All
+   invoices in my department". Other departments stay hidden unless shared.
+   Currency: one currency per invoice (BDT, USD, EUR, GBP, INR). The currency
+   is shown beside EVERY amount in the form and in the PDF - Rate, Amount,
+   Subtotal, VAT, Grand Total - and in the amount in words. No conversion.
+
+ INVOICE PDF (layout)
+   Top row: left HRC logo + company name + single-line address, right second
+   logo in the top right corner (optional, uploaded in the template; if none,
+   that corner stays empty). Below the coloured rule: invoice number, date,
+   reference, bill-to. Then the invoice type (INVOICE / CONVEYANCE BILL /
+   EXPENSE VOUCHER / PURCHASE REQUEST) centred ON TOP OF THE TABLE, and the
+   table below it (moved lower than before). Then totals, amount in words,
+   terms, horizontal signature blocks, and at the bottom the QR + its code.
+
+ WATERMARK
+   OFF by default. In the template, tick "Show watermark" and type what it
+   will be (for example ISSUED, PAID, DRAFT, VOID, or your own word). If OFF,
+   the PDF shows no watermark at all, even on Issued / Paid invoices.
+
+ PUBLIC QR FOR INVOICES - AND FOR ALL PUBLIC QRs
+   Every public QR now uses HRC- + a random 5-digit code, for example
+   HRC-48392, HRC-72914. This applies to record QRs and invoice QRs alike.
+   New QRs get a random code. Existing record QRs were given a random code
+   on upgrade (their old sequential number is kept internally only).
+   Invoice: detail page > Public QR. Tick what a stranger may see (amounts,
+   customer name, item lines), set an expiry date if wanted, then "Turn on".
+   The public PDF respects those ticks. "New scan link" gives a NEW random
+   code, so the old printed QR stops working. "Turn off" stops it.
+   SEARCHING A CODE NEEDS A LOGIN: type the code in the Invoices search box
+   or in Search QR. Without login there is no view and no PDF download.
+   Draft / Void / switched-off / expired codes show nothing to download.
+
+ SHARING (dept admin only)
+   1. Share a template: Invoice templates > Share > choose another department.
+      That dept admin sees it under "Shared with you" and presses "Use in my
+      department" - they get their own copy to use and edit. Your original
+      is unchanged. The share can be revoked. Sharing a template does NOT
+      share invoices or user data.
+   2. Share department data: Invoice templates > "Share department data" >
+      choose another department. That dept admin can view (and download) your
+      department's invoices, view-only: they cannot edit, void or mark paid.
+      This share can also be revoked, and can have an expiry date.
+
+ UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
+   docker compose up -d --build. The database upgrades itself. No other
+   behaviour was changed in this update.
+
+==============================================================================
+ 21. DEPARTMENT DATABASE MEETINGS + ATTACHMENT COLUMNS
+==============================================================================
+ MEETING NOTIFICATIONS (Department database)
+   A date column with "Also keep a time" ticked is a meeting schedule.
+   When a user adds (or changes) a row with a date + time in such a column,
+   the portal sends a bell notification to:
+     - the user who added the row: "You have a meeting at 05 Nov 2026 3:00 PM"
+     - every dept admin of that department: "Rahim Uddin has a meeting at
+       05 Nov 2026 3:00 PM"  (the owner's name, then the date and time)
+   When: the day before the meeting, and again on the morning of the meeting
+   (after REMINDER_HOUR in .env, default 7 in the morning, checked every
+   5 minutes and on each page load, like record reminders). Each person gets
+   each message only once; changing the date/time sends a new set for the
+   new time. If the meeting time has already passed today, no "today"
+   message is sent. Clicking the bell message opens the department-database
+   row. Portal admin is not notified unless they are also a dept admin of
+   that department.
+
+ ATTACHMENT COLUMNS (Department database)
+   New column type: "Attachment (file)". A user adds a file to a row in the
+   row form (file input, with the current file shown and a Remove tick on
+   edit). The row detail and list show the file name with a Download link;
+   only people who may open that department's database can download it.
+   Files are stored with a random name in uploads/ddb_attachments, with the
+   same allowed file types and size limit as record attachments, and the
+   same ClamAV scan when scanning is on (refused if it cannot be scanned).
+   Export shows the original file name, not the stored name. Files of rows
+   purged for good (after 30 days in the bin) are deleted with the row.
+   WHO CAN CREATE SUCH A COLUMN: the portal admin, always. A dept admin
+   only if the portal admin gave them access: Admin > DeptDB attachment
+   access (tick the dept admin), or Users > Edit user > "Can create
+   attachment columns in the Department Database". A dept admin without
+   that access gets a clear message and cannot create an attachment column,
+   but can still create all other column types. Old databases upgrade
+   automatically: the department-database column table is recreated with
+   the wider type list, keeping all columns and rows.
+
+ UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
+   docker compose up -d --build. The database upgrades itself.
+
+==============================================================================
+ 22. DEPARTMENT DATABASE TABS (replaces the old single DeptDB table)
+==============================================================================
+ There is no longer one shared table per department. Under "Department
+ database" the department admin (or a delegate, see below) creates
+ different tabs, and users switch between those tabs on the page.
+ Filter and sorting sit ON TOP of the tabs and apply to the tab that is
+ open (search text, filter by a column, sort by last changed / created /
+ any column, ascending or descending).
+
+ TEMPLATE TABS (starter columns, which the admin can then customise):
+   - Client Info: Client name, Contact person, Phone number, Email,
+     Address, Notes. This is only a record of clients.
+   - Meetings: Client name, Address, Contact number, Date (with time),
+     Purpose, Notes. This is a meeting schedule; it is NOT connected to
+     the Client Info tab — the meeting row carries its own client name,
+     address and contact number, typed in again.
+   - Employee Info: Employee name, Employee ID, Designation, Phone
+     number, Email, Joining date, Address.
+   - Billing: Client name, Bill number, Amount, Date, Status
+     (Paid / Unpaid / Partially paid), Notes.
+   - Accounts: Account / Head, Type (Income / Expense), Amount, Date,
+     Reference, Notes.
+   - Custom tab (blank): no starter columns; the admin adds them.
+ Customising a tab: Tabs > Columns for that tab — add, rename, reorder,
+ remove (restorable) columns, exactly as columns worked before, but per
+ tab. Attachment columns keep the previous rule (portal admin grants
+ which dept admins may create them, Admin > DeptDB attachment access).
+
+ WHO CAN SEE / EDIT A ROW:
+   - Every user in the same department can see every row in a tab.
+   - Only the row's owner can edit it.
+   - The owner may share a row with another department or with a
+     specific user, and sets the permission when sharing: View only or
+     Can edit. A shared user/department can only do what was allowed.
+   - Every change is shown in the row's edit history on the row page
+     (who changed what, when, plus shares and unshares).
+   - Department admins, their delegates and the portal admin may manage
+     tabs and columns and edit every row in their department.
+
+ DELEGATE (a user who can do what a dept admin can do):
+   Department database > Delegates: the dept admin chooses a user in the
+   department and gives them permission to do everything a department
+   admin can do in the Department Database — create tabs, customise
+   columns, edit every row, and grant/remove delegates. Delegates are
+   also notified about meetings like dept admins (below).
+
+ MEETING NOTIFICATIONS (now in meeting tabs, at 7 / 3 / 1 days + same day):
+   A tab with meeting notifications on (the Meetings template turns this
+   on; any tab can be ticked on the Tabs page) works like this: a date
+   column with "Also keep a time" in such a tab is a meeting schedule.
+   The row owner gets "You have a meeting at <date time>" and every dept
+   admin (and delegate) of that department gets "<USER> has a meeting at
+   <date time>", at 7 days before, 3 days before, 1 day before, and on
+   the morning of the meeting (after REMINDER_HOUR in .env, default 7 AM).
+   Each message once per person per meeting date/time; changing the
+   date/time sends a new set; no "today" message if the time has passed.
+   This replaces the old day-before + morning-of timing in section 21.
+   Meeting notifications do NOT fire for date columns in other tabs.
+
+ UPGRADE FROM THE OLD DEPARTMENT DATABASE:
+   Old columns and rows are NOT lost: on first start they are moved into
+   a first tab called "General" for their department. If the old table had
+   a date+time column, that General tab keeps meeting notifications on.
+   The old "People and access" levels (view / own / edit / manager) are
+   replaced by the see-all / owner-only-edit / share rules above.
+
+ UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
+   docker compose up -d --build. The database upgrades itself.

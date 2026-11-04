@@ -4,14 +4,14 @@
 {% block content %}
 <div class="card medium">
   <h1>{{ 'Edit row' if row else 'Add row' }}</h1>
-  <p class="hint" style="margin-bottom:18px">{{ dept['name'] }} database. {% if source and not row %}Values were copied from your record #{{ source }}; check them before saving. {% endif %}Fill only what you know. <span class="req">*</span> means required.</p>
+  <p class="hint" style="margin-bottom:18px">{{ dept['name'] }} database · {{ tab['name'] }}. {% if source and not row %}Values were copied from your record #{{ source }}; check them before saving. {% endif %}Fill only what you know. <span class="req">*</span> means required.</p>
   {% if conflict %}
   <div class="alert"><b>{{ conflict.by }}</b> saved this row at {{ conflict.at }}. The latest values are loaded below.
     {% if conflict.mine %}<br>Your own entries were:
     <ul style="margin:6px 0 0">{% for n, v in conflict.mine %}<li>{{ n }}: {{ v or '(blank)' }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}
-  <form method="post">
+  <form method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="dept" value="{{ dept['id'] }}">
+    <input type="hidden" name="dept" value="{{ dept['id'] }}"><input type="hidden" name="tab" value="{{ tab['id'] }}">
     {% if source and not row %}<input type="hidden" name="from_record" value="{{ source }}">{% endif %}
     {% if row %}<input type="hidden" name="version" value="{{ version }}">{% endif %}
     {{ record_fields(cols, values) }}

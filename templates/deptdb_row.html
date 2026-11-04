@@ -2,27 +2,45 @@
 {% block title %}Database row {{ row['id'] }}{% endblock %}
 {% block content %}
 <div class="hd">
-  <div><h1>{{ row['department_name'] }} database · row #{{ row['id'] }}</h1>
+  <div><h1>{{ row['department_name'] }} database{% if tab %} · {{ tab['name'] }}{% endif %} · row #{{ row['id'] }}</h1>
     <p class="hint keepprint">Added by {{ row['owner_name'] }} on {{ row['created_at'] }} · last changed {{ row['updated_at'] }}{% if row['source_record_id'] %} · copied from record #{{ row['source_record_id'] }}{% endif %}</p></div>
   <div class="acts noprint">
     {% if can_edit %}<a class="b p" href="{{ url_for('ddb.edit_row', rid=row['id']) }}">Edit</a>{% endif %}
-    <a class="b" href="{{ url_for('ddb.index', dept=row['department_id']) }}">Back to the list</a>
+    <a class="b" href="{{ url_for('ddb.index', dept=row['department_id'], tab=row['tab_id']) }}">Back to the list</a>
     <button class="b" type="button" onclick="window.print()">Print</button>
-    {% if can_delete %}<form method="post" action="{{ url_for('ddb.delete_row', rid=row['id']) }}" onsubmit="return confirm('Delete this row? A manager can restore it later.');" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg" type="submit">Delete</button></form>{% endif %}
+    {% if can_delete %}<form method="post" action="{{ url_for('ddb.delete_row', rid=row['id']) }}" onsubmit="return confirm('Delete this row? A department admin can restore it later.');" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg" type="submit">Delete</button></form>{% endif %}
     {% if can_restore %}<form method="post" action="{{ url_for('ddb.restore_row', rid=row['id']) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Restore</button></form>{% endif %}
   </div>
 </div>
 {% if row['deleted_at'] %}<div class="alert">This row was deleted on {{ row['deleted_at'] }}.</div>{% endif %}
 <div class="tw"><div class="stack">
   <div class="card"><h2>Details</h2><div class="ig">
-    {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}</span>{% if c['col_type'] == 'date' %}{{ (vals.get(c['id']) or '')|showdt }}{% else %}{{ vals.get(c['id']) or '' }}{% endif %}</div>{% endfor %}
-  </div></div></div>
+    {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}</span>{% if c['col_type'] == 'attachment' %}{% if attach_urls and attach_urls.get(c['id']) %}<a href="{{ attach_urls[c['id']] }}">Download {{ vals.get(c['id']) }}</a>{% else %}{{ vals.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (vals.get(c['id']) or '')|showdt }}{% else %}{{ vals.get(c['id']) or '' }}{% endif %}</div>{% endfor %}
+  </div></div>
+  {% if can_share %}<div class="card noprint"><h2>Share this row</h2>
+    <p class="hint">Everyone in this department can already see this row. Share it with another department or a specific user, and set what they may do.</p>
+    <form method="post" action="{{ url_for('ddb.row_share', rid=row['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fd"><label>Share with a department</label><select name="department_id">{% for d in departments %}<option value="{{ d['id'] }}">{{ d['name'] }}</option>{% endfor %}</select></div>
+      <div class="fd"><label>Permission</label><select name="permission"><option value="view">View only</option><option value="edit">Can edit</option></select></div>
+      <button class="b" type="submit" name="kind" value="department">Share with department</button></form>
+    <form method="post" action="{{ url_for('ddb.row_share', rid=row['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fd"><label>Share with a specific user</label><select name="user_id">{% for u in users %}<option value="{{ u['id'] }}">{{ u['full_name'] }} ({{ u['dept_name'] or 'no department' }})</option>{% endfor %}</select></div>
+      <div class="fd"><label>Permission</label><select name="permission"><option value="view">View only</option><option value="edit">Can edit</option></select></div>
+      <button class="b" type="submit" name="kind" value="user">Share with user</button></form>
+    {% if shares %}<h2 style="margin-top:16px">Shared with</h2>
+      {% for s in shares %}<div class="ck" style="gap:8px"><span style="flex:1"><b>{{ s['dept_name'] or s['user_name'] }}</b> <span class="sub">{{ 'Can edit' if s['permission'] == 'edit' else 'View only' }}</span></span>
+        <form method="post" action="{{ url_for('ddb.row_share_delete', rid=row['id'], sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form></div>{% endfor %}{% endif %}
+  </div>{% elif shares %}<div class="card noprint"><h2>Shared with</h2>
+    {% for s in shares %}<div><b>{{ s['dept_name'] or s['user_name'] }}</b> <span class="sub">{{ 'Can edit' if s['permission'] == 'edit' else 'View only' }}</span></div>{% endfor %}</div>{% endif %}
+  </div>
   <aside class="stack noprint"><div class="card"><h2>Edit history</h2><div class="tl">
     {% for h in history %}<div class="ev"><b>{{ h.full_name or 'System' }}</b>
       {% if h.action == 'created' %} added this row{% if h.new_value %} ({{ h.new_value }}){% endif %}
       {% elif h.action == 'edit' %} changed <b>{{ h.field }}</b><br><del>{{ h.old_value or '(blank)' }}</del> &rarr; <ins>{{ h.new_value or '(blank)' }}</ins>
       {% elif h.action == 'deleted' %} deleted this row
       {% elif h.action == 'restored' %} restored this row
+      {% elif h.action == 'shared' %} shared this row{% if h.new_value %} with {{ h.new_value }}{% endif %}
+      {% elif h.action == 'unshared' %} removed a share from this row
       {% else %} {{ h.action }}{% endif %} <small>{{ h.at }}</small></div>{% endfor %}
   </div></div></aside></div>
 {% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Share department data{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Share department data</h1><p class="hint">Share your department's invoices, view-only, with another dept admin. They can view and download (not edit, void or mark paid). This is separate from sharing a template.</p></div></div>
+<form method="post" class="card"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label>Share with department (its dept admin)</label><select name="to_department" required><option value="">Choose a department</option>{% for d in depts %}<option value="{{ d['id'] }}">{{ d['name'] }}</option>{% endfor %}</select></div>
+<div class="fd"><label>Scope</label><select name="scope"><option value="invoices">Invoices only (view-only)</option><option value="both">Invoices + templates list</option></select></div>
+<div class="fd"><label>Expires (optional)</label><input type="date" name="expires"></div>
+<button class="b p" type="submit">Share, view-only</button></form>
+<div class="tb" style="margin-top:16px"><table><thead><tr><th>Shared with</th><th>Scope</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>
+{% for s in shares %}<tr class="r"><td>{{ s['to_dept'] }}</td><td>{{ s['scope'] }}</td><td>{{ s['expires'] or '—' }}</td><td>{{ 'Revoked' if s['revoked'] else 'Active' }}</td><td class="actcell">{% if not s['revoked'] %}<form method="post" action="{{ url_for('invoices.share_department_revoke', sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Revoke</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5"><div class="empty">Not shared yet.</div></td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

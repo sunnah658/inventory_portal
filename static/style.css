@@ -83,6 +83,14 @@ td.chk,th.chk{width:34px;padding-right:0}td.chk input{width:18px;height:18px;acc
 .bulkbar.show{display:flex}.bulkbar .count{font-weight:800;margin-right:6px}
 details.dt{display:inline-block;position:relative}details.dt summary{list-style:none;cursor:pointer}details.dt summary::-webkit-details-marker{display:none}
 details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;width:270px;box-shadow:var(--shadow);text-align:left;white-space:normal}
+/* Pop-up boxes (PDF, Export, Share with, Remove ...) must open IN FRONT of the cards below them.
+   The page header, cards and tables fade in with an animation, and that makes each of them its own
+   layer that is painted in page order, so the box (which lives inside the header) was hidden behind
+   the cards that come after it. Giving the part that holds the box a higher level fixes it. */
+.hd{position:relative;z-index:8}.tools{position:relative;z-index:5}
+.card:has(details[open]),.tb:has(details[open]),.bulkbar:has(details[open]){position:relative;z-index:6}
+/* a table normally scrolls sideways, which would cut the box off: while a box is open let it show */
+.tb:has(details[open]){overflow:visible}
 /* ---------- dashboard */
 .kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:20px}.k1{background:var(--card);border-radius:14px;padding:18px 20px;border-top:4px solid var(--cyan);box-shadow:var(--shadow);animation:up .5s both}
 .k1 span{font-size:.8rem;color:var(--soft);font-weight:700}.k1 b{display:block;font-size:1.9rem;font-weight:800;line-height:1.2}.k1 small{font-size:.78rem;font-weight:700;color:var(--g-tx)}.k1.w{border-top-color:#e8a317}.k1.w small{color:var(--a-tx)}.k1.d{border-top-color:#d9534f}.k1.d small{color:var(--r-tx)}

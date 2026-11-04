@@ -23,11 +23,12 @@ import config
 import models
 from auth import bp as auth_bp
 from branding import bp as brand_bp, logo_version
-from core import options_of, purge_expired, send_reminder_notifications, show_when
+from core import options_of, purge_expired, send_ddb_meeting_notifications, send_reminder_notifications, show_when
 from models import get_db, setting_get
 from routes_admin import bp as admin_bp
 from routes_bulk import bp as bulk_bp
 from routes_deptdb import bp as ddb_bp
+from routes_invoices import bp as invoices_bp
 from routes_public import bp as public_bp
 from routes_records import bp as records_bp
 from routes_workflow import bp as flow_bp
@@ -45,7 +46,7 @@ def _reminder_loop():
         try:
             conn = models.connect()
             try:
-                if send_reminder_notifications(conn):
+                if send_reminder_notifications(conn) or send_ddb_meeting_notifications(conn):
                     conn.commit()
             finally:
                 conn.close()
@@ -81,7 +82,7 @@ def create_app():
     if os.environ.get("PORTAL_NO_SCHEDULER") != "1":      # tests switch the helper off
         threading.Thread(target=_reminder_loop, name="reminders", daemon=True).start()
 
-    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, ddb_bp, admin_bp, brand_bp):
+    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, ddb_bp, admin_bp, brand_bp, invoices_bp):
         app.register_blueprint(blueprint)
 
     # ------------------------------------------------------------ before every request
@@ -122,6 +123,7 @@ def create_app():
             if time.time() - _last_reminders[0] > 300:     # also check when someone opens a page
                 _last_reminders[0] = time.time()
                 send_reminder_notifications(db)
+                send_ddb_meeting_notifications(db)
                 db.commit()
             if (g.user["must_change_password"]
                     and request.endpoint not in ("auth.change_password", "auth.logout", "brand.logo",

@@ -23,7 +23,7 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
 import config
 from auth import login_required
 import scanner
-from core import (ddb_can_add, change_owner, may_change_owner, owner_candidates, format_code, parse_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+from core import (ddb_can_add, change_owner, may_change_owner, owner_candidates, display_code, format_code, parse_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, create_record, dept_member_ids, filter_clause, get_columns, get_record,
                   names_for_records, notify, parse_form, purge_record, rec_select, reminder_rows,
@@ -136,13 +136,9 @@ def list_records():
     page, pages, offset = page_info(total, request.args.get("page", 1, type=int), config.PER_PAGE)
     rows = db.execute(rec_select() + " WHERE " + where + sq + fq + " ORDER BY " + order + " LIMIT ? OFFSET ?",
                       params + sp + fp + op + [config.PER_PAGE, offset]).fetchall()
-    today = date.today()
-    soon = len(reminder_rows(db, g.user, today.isoformat(),
-                             (today + timedelta(days=config.REMINDER_DAYS)).isoformat()))
     keep = {k: v for k, v in request.args.items() if k != "page"}
     return render_template("records_list.html", ctx=table_context(db, rows, g.user), tab=tab, tabs=tabs, q=q,
-                           counts=counts, total=total, page=page, pages=pages, soon=soon,
-                           reminder_days=config.REMINDER_DAYS, info=info, names=column_names(db, g.user),
+                           counts=counts, total=total, page=page, pages=pages, info=info, names=column_names(db, g.user),
                            keep=keep,
                            departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall())
 
@@ -260,7 +256,7 @@ def detail(rid):
     if link:
         public_url = url_for("public.view", token=link["token"], _external=True)
         public_svg = segno.make(public_url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
-        public_code = format_code(link["code_no"])
+        public_code = display_code(link)
     can_manage = level in MANAGE_LEVELS
     can_owner = may_change_owner(g.user, rec) and not rec["deleted_at"]
     return render_template(

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Invoice templates{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Invoice templates</h1><p class="hint">Design every invoice format once. Dept admin creates for their own department. Employees choose from these in the Invoices tab. Templates are made by the dept admin, not the portal admin.</p></div>
+<div class="acts"><a class="b p" href="{{ url_for('invoices.template_new') }}">+ New template</a><form method="post" action="{{ url_for('invoices.starters') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Create starter templates</button></form><a class="b" href="{{ url_for('invoices.share_department') }}">Share department data</a></div></div>
+<div class="tb"><table><thead><tr><th>Template</th><th>Numbering</th><th>Available to</th><th>Item columns</th><th>Signatures</th><th>Watermark</th><th>Status</th><th></th></tr></thead><tbody>
+{% for t in rows %}<tr class="r"><td><b>{{ t['name'] }}</b><div class="sub">{{ t['title'] }}</div></td><td>{{ t['number_prefix'] }}-0001</td><td>Own department</td><td>{{ t['item_columns_json'] or '' }}</td><td>{{ (t['signatures_json']|length) if t['signatures_json'] else 0 }} authorized + employee</td><td>{{ 'ON: ' ~ t['watermark_text'] if t['watermark_on'] else 'OFF (default)' }}</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('invoices.template_edit', tid=t['id']) }}">Edit</a><a class="b sm" href="{{ url_for('invoices.template_share', tid=t['id']) }}">Share</a></td></tr>
+{% else %}<tr><td colspan="8"><div class="empty">No templates yet. Create starter templates above.</div></td></tr>{% endfor %}
+</tbody></table></div>
+<h2 class="grp">Shared with you — use it in your department</h2>
+<div class="tb"><table><thead><tr><th>Template</th><th>From department</th><th></th></tr></thead><tbody>
+{% for s in shared %}<tr class="r"><td><b>{{ s['template_name'] }}</b></td><td>{{ s['from_dept'] }}</td><td class="actcell"><form method="post" action="{{ url_for('invoices.template_share_use', sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Use in my department</button></form></td></tr>
+{% else %}<tr><td colspan="3"><div class="empty">No templates shared with your department yet.</div></td></tr>{% endfor %}
+</tbody></table></div>
+<p class="hint" style="margin-top:10px">Invoices already issued keep the format they were made with, even if you change the template later. A shared template is copied to your department; the original stays with the sharing dept admin, and the share can be revoked.</p>
+{% endblock %}

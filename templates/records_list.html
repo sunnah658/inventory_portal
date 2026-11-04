@@ -13,7 +13,6 @@
     <button class="b" type="button" onclick="window.print()">Print</button>
   </div>
 </div>
-{% if soon %}<div class="alert">{{ soon }} record(s) have a reminder date in the next {{ reminder_days }} days. <a href="{{ url_for('records.reminders') }}">See reminders</a></div>{% endif %}
 <div class="tabs">
   {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for('records.list_records', tab=t) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
 </div>

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ code }}{% if inv %} · {{ inv['title'] }} {{ inv['number'] or '' }}{% endif %}</h1><p class="hint">Login is required to search a code, view it and download its PDF. Without login, no view.</p></div>
+<div class="acts noprint">{% if status=='ok' %}<a class="b p" href="{{ url_for('invoices.code_pdf', code=code) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>{% endif %}<a class="b" href="{{ url_for('invoices.list_invoices') }}">Back to Invoices</a></div></div>
+{% if status=='missing' %}<div class="alert">No invoice with the code <b>{{ code }}</b> exists.</div>
+{% elif status=='off' %}<div class="alert">The code <b>{{ code }}</b> exists, but its public QR is off, expired, or the invoice is Draft / Void.</div>
+{% else %}
+<div class="card">
+{% if inv['public_show_customer'] %}<p><b>Customer:</b> {{ inv['customer_name'] or '—' }}<br>{{ inv['customer_address'] or '' }}</p>{% endif %}
+<p><b>Date:</b> {{ inv['invoice_date'] or '' }} {% if inv['reference'] %}· <b>Reference:</b> {{ inv['reference'] }}{% endif %} · <b>Status:</b> {{ inv['status']|title }}</p>
+{% if inv['public_show_lines'] %}<div class="tb"><table><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+{% for l in lines %}<tr><td>{{ l['description'] }}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) if inv['public_show_amounts'] else '—' }} {{ inv['currency'] if inv['public_show_amounts'] else '' }}</td><td class="num">{{ '%.2f'|format(l['amount']) if inv['public_show_amounts'] else '—' }} {{ inv['currency'] if inv['public_show_amounts'] else '' }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="hint">Item lines are hidden by the owner.</p>{% endif %}
+<div style="margin-top:12px;text-align:right">Grand total: <b>{% if inv['public_show_amounts'] %}{{ '%.2f'|format(inv['total']) }} {{ inv['currency'] }}{% else %}—{% endif %}</b></div>
+{% if inv['public_show_amounts'] and inv['amount_in_words'] %}<p class="hint">{{ inv['amount_in_words'] }}</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

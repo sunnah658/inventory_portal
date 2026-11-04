@@ -22,6 +22,9 @@ from utils import like_pattern
 COLUMN_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                 ("date", "Date"), ("dropdown", "Dropdown list"), ("yesno", "Yes / No")]
 TYPE_LABEL = dict(COLUMN_TYPES)
+# Department-database columns only: attachment is NOT a record column type.
+DDB_COLUMN_TYPES = COLUMN_TYPES + [("attachment", "Attachment (file)")]
+DDB_TYPE_LABEL = dict(DDB_COLUMN_TYPES)
 
 
 # ---------------------------------------------------------------- columns
@@ -216,6 +219,10 @@ def parse_form(columns, form, existing=None):
     existing = existing or {}
     values, errors = {}, []
     for c in columns:
+        if c["col_type"] == "attachment":
+            # file is handled by routes_deptdb (upload / keep / remove); text form has nothing for it
+            values[c["id"]] = existing.get(c["id"])
+            continue
         raw = (form.get(f"c{c['id']}") or "").strip()
         label, ctype = c["name"], c["col_type"]
         if raw:
@@ -331,6 +338,18 @@ def purge_expired(db):
     db.execute("DELETE FROM activity_log WHERE created_at < datetime('now','localtime',?)",
                (f"-{config.ACTIVITY_KEEP_DAYS} days",))
     db.execute("DELETE FROM reminder_sent WHERE sent_on < date('now','localtime','-90 days')")
+    for _rid in [r[0] for r in db.execute(
+            "SELECT id FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
+            (f"-{config.BIN_DAYS} days",))]:
+        for _v in db.execute("SELECT v.value FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id "
+                             "WHERE v.row_id=? AND c.col_type='attachment'", (_rid,)):
+            try:
+                import json as _json
+                _info = _json.loads(_v[0] or "")
+                if isinstance(_info, dict) and _info.get("stored"):
+                    os.remove(os.path.join(config.UPLOAD_DIR, "ddb_attachments", _info["stored"]))
+            except Exception:
+                pass
     db.execute("DELETE FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
                (f"-{config.BIN_DAYS} days",))
     db.commit()
@@ -491,6 +510,83 @@ def send_reminder_notifications(db, now=None):
     return sent
 
 
+def send_ddb_meeting_notifications(db, now=None):
+    """Department Database meeting notifications: a row in a meeting-notify tab with a
+    date column that also keeps a time (has_time) is a meeting schedule. The row
+    owner and every dept admin of that department get a bell message 7, 3 and 1 days
+    before the meeting and again on the morning of the meeting (after
+    config.REMINDER_HOUR, like record reminders). Dept admin text
+    is exactly: "<USER> has a meeting at <date time>". Owner text: "You have a meeting
+    at <date time>". Each (row, column, value, day-offset, person) is sent only once,
+    so changing the date/time sends a new set for the new time. Returns how many were sent."""
+    now = now or datetime.now()
+    if now.hour < config.REMINDER_HOUR:
+        return 0
+    today = now.date()
+    rows = db.execute(
+        "SELECT r.id AS rid, r.owner_id, r.department_id, v.column_id, v.value, c.name AS cname, "
+        "u.full_name AS owner_name FROM ddb_values v "
+        "JOIN ddb_columns c ON c.id=v.column_id AND c.col_type='date' AND c.has_time=1 AND c.removed_at IS NULL "
+        "JOIN ddb_tabs tb ON tb.id=c.tab_id AND tb.meeting_notify=1 AND tb.removed_at IS NULL "
+        "JOIN ddb_rows r ON r.id=v.row_id AND r.deleted_at IS NULL "
+        "JOIN users u ON u.id=r.owner_id AND u.is_active=1 "
+        "WHERE substr(v.value,1,10) BETWEEN ? AND ?",
+        (today.isoformat(), (today + timedelta(days=7)).isoformat())).fetchall()
+    sent = 0
+    for r in rows:
+        when = parse_when(r["value"])
+        if when is None:
+            continue
+        day, clock = when
+        left = (day - today).days
+        if left not in (0, 1, 3, 7):
+            continue
+        if left == 0 and clock is not None and clock < now.time():
+            continue
+        admins = [x[0] for x in db.execute(
+            "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1 "
+            "UNION SELECT user_id FROM ddb_delegates WHERE department_id=?",
+            (r["department_id"], r["department_id"])).fetchall()]
+        recipients = []
+        if r["owner_id"] not in recipients:
+            recipients.append(r["owner_id"])
+        for a in admins:
+            if a not in recipients:
+                recipients.append(a)
+        when_text = show_when(r["value"])
+        for uid in recipients:
+            if db.execute("INSERT OR IGNORE INTO ddb_meeting_sent(row_id,column_id,value,offset_days,user_id) "
+                          "VALUES (?,?,?,?,?)", (r["rid"], r["column_id"], r["value"], left, uid)).rowcount == 0:
+                continue
+            text = (f"You have a meeting at {when_text}" if uid == r["owner_id"]
+                    else f"{r['owner_name']} has a meeting at {when_text}")
+            notify(db, [uid], text, f"/deptdb/row/{r['rid']}")
+            sent += 1
+    return sent
+
+
+def ddb_attachment_info(value):
+    """ddb_values text for an attachment column -> {'stored','original'} or None."""
+    if not value:
+        return None
+    try:
+        import json as _json
+        info = _json.loads(value)
+        if isinstance(info, dict) and info.get("stored") and info.get("original"):
+            return info
+    except Exception:
+        return None
+    return None
+
+
+def ddb_display_value(col, value):
+    """What to show for a deptdb value: attachment columns show the original file name, not the JSON."""
+    if col["col_type"] == "attachment":
+        info = ddb_attachment_info(value)
+        return info["original"] if info else ""
+    return value
+
+
 # ---------------------------------------------------------------- notifications
 def notify(db, user_ids, text, link=None, skip=None):
     """Put a message in the bell of each user (never for 'skip', the person who acted)."""
@@ -646,8 +742,45 @@ CODE_PREFIX = "HRC-"
 
 
 def format_code(n):
-    """Number -> 'HRC-12'."""
+    """Number -> 'HRC-12' (kept for old sequential codes)."""
     return f"{CODE_PREFIX}{int(n)}"
+
+
+def display_code(link):
+    """The code shown under a public QR: the random HRC-##### code_text if present,
+    otherwise the old sequential HRC-<code_no>."""
+    if link is None:
+        return ""
+    try:
+        ct = link["code_text"]
+    except Exception:
+        ct = None
+    if ct:
+        return ct
+    try:
+        return format_code(link["code_no"]) if link["code_no"] is not None else ""
+    except Exception:
+        return ""
+
+
+def parse_code_text(text):
+    """'HRC-48392' / 'hrc 48392' -> 'HRC-48392'. Anything else -> None."""
+    m = re.fullmatch(r"\s*HRC[-\s]?(\d{5})\s*", text or "", re.IGNORECASE)
+    return f"HRC-{m.group(1)}" if m else None
+
+
+def new_random_code_text(db):
+    """A random HRC-##### code not used by any public link or invoice."""
+    import secrets as _secrets
+    for _ in range(200):
+        cand = f"HRC-{_secrets.randbelow(90000) + 10000}"
+        if db.execute("SELECT 1 FROM public_links WHERE code_text=?", (cand,)).fetchone() is None:
+            try:
+                if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
+                    return cand
+            except Exception:
+                return cand
+    return None
 
 
 def parse_code(text):
@@ -667,8 +800,9 @@ def next_code_no(db):
 def create_public_link(db, owner_id, kind, fields, full_record=False, title=None):
     """Create a public QR link with its unique code. Returns the new link id."""
     return db.execute(
-        "INSERT INTO public_links(token,owner_id,title,kind,fields,full_record,code_no) VALUES (?,?,?,?,?,?,?)",
-        (new_token(), owner_id, title, kind, "\n".join(fields), 1 if full_record else 0, next_code_no(db))).lastrowid
+        "INSERT INTO public_links(token,owner_id,title,kind,fields,full_record,code_no,code_text) VALUES (?,?,?,?,?,?,?,?)",
+        (new_token(), owner_id, title, kind, "\n".join(fields), 1 if full_record else 0, next_code_no(db),
+         new_random_code_text(db))).lastrowid
 
 
 # ---------------------------------------------------------------- change of owner
@@ -737,30 +871,77 @@ def ddb_level(db, user, dept_id):
     return row["level"] if row and row["level"] in DDB_LEVEL_WORDS else "own"
 
 
-def ddb_columns(db, dept_id, only_shown=True):
+def ddb_columns(db, dept_id, only_shown=True, tab_id=None):
     sql = "SELECT * FROM ddb_columns WHERE department_id=? AND removed_at IS NULL"
+    params = [dept_id]
+    if tab_id is not None:
+        sql += " AND tab_id=?"
+        params.append(tab_id)
     if only_shown:
         sql += " AND shown=1"
-    return db.execute(sql + " ORDER BY position, id", (dept_id,)).fetchall()
+    return db.execute(sql + " ORDER BY position, id", params).fetchall()
+
+
+def ddb_tabs(db, dept_id):
+    return db.execute("SELECT * FROM ddb_tabs WHERE department_id=? AND removed_at IS NULL ORDER BY position, id",
+                      (dept_id,)).fetchall()
+
+
+def ddb_is_tab_admin(db, user, dept_id):
+    """Portal admin, dept admin, or a user the dept admin chose as a delegate
+    for the Department Database — all may manage tabs, columns and any row."""
+    if user["role"] == "admin":
+        return True
+    if user["department_id"] == dept_id and user["is_dept_admin"]:
+        return True
+    if user["department_id"] == dept_id:
+        return db.execute("SELECT 1 FROM ddb_delegates WHERE department_id=? AND user_id=?",
+                          (dept_id, user["id"])).fetchone() is not None
+    return False
+
+
+def ddb_can_view_row(db, user, row):
+    """Every user in the same department can see every row in a tab. A row
+    shared with another department or a specific user is also visible there."""
+    if user["role"] == "admin":
+        return True
+    if user["department_id"] == row["department_id"]:
+        return True
+    if db.execute("SELECT 1 FROM ddb_row_shares WHERE row_id=? AND (user_id=? OR department_id=?)",
+                  (row["id"], user["id"], user["department_id"])).fetchone():
+        return True
+    return False
+
+
+def ddb_share_permission(db, user, row):
+    """'edit' if this user (or his department) was shared the row with edit rights, else None."""
+    r = db.execute("SELECT permission FROM ddb_row_shares WHERE row_id=? AND (user_id=? OR department_id=?) "
+                   "ORDER BY CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END LIMIT 1",
+                   (row["id"], user["id"], user["department_id"])).fetchone()
+    return r["permission"] if r else None
 
 
 def ddb_can_add(db, user):
-    """May this user add rows to the database of his own department (and does it have columns)?"""
+    """May this user add rows to the Department Database of his own department
+    (and does it have a tab with columns)? Used for 'Copy to department database'."""
     if user["department_id"] is None:
         return False
-    return (ddb_level(db, user, user["department_id"]) in ("own", "edit", "manager")
-            and bool(ddb_columns(db, user["department_id"])))
+    tabs = ddb_tabs(db, user["department_id"])
+    return bool(tabs) and any(ddb_columns(db, user["department_id"], tab_id=tb["id"]) for tb in tabs)
 
 
-def ddb_can_edit_row(level, user, row):
-    """manager and edit may change every row; own may change only the rows he owns."""
-    if level in ("manager", "edit"):
+def ddb_can_edit_row(db, user, row):
+    """Only the owner may edit a row — unless a dept admin / delegate (who may
+    edit every row in the department) or a share with edit permission says otherwise."""
+    if ddb_is_tab_admin(db, user, row["department_id"]):
         return True
-    return level == "own" and row["owner_id"] == user["id"]
+    if row["owner_id"] == user["id"]:
+        return True
+    return ddb_share_permission(db, user, row) == "edit"
 
 
-def ddb_can_delete_row(level, user, row):
-    return level == "manager" or (level in ("own", "edit") and row["owner_id"] == user["id"])
+def ddb_can_delete_row(db, user, row):
+    return ddb_is_tab_admin(db, user, row["department_id"]) or row["owner_id"] == user["id"]
 
 
 def ddb_values(db, row_ids):
@@ -781,9 +962,9 @@ def ddb_history(db, row_id, user, action, field=None, old=None, new=None):
                (row_id, user["id"] if user else None, user["full_name"] if user else None, action, field, old, new))
 
 
-def ddb_create_row(db, user, dept_id, values, source_record_id=None):
-    rid = db.execute("INSERT INTO ddb_rows(department_id,owner_id,source_record_id) VALUES (?,?,?)",
-                     (dept_id, user["id"], source_record_id)).lastrowid
+def ddb_create_row(db, user, dept_id, values, tab_id=None, source_record_id=None):
+    rid = db.execute("INSERT INTO ddb_rows(department_id,tab_id,owner_id,source_record_id) VALUES (?,?,?,?)",
+                     (dept_id, tab_id, user["id"], source_record_id)).lastrowid
     for cid, val in values.items():
         if val is not None:
             db.execute("INSERT INTO ddb_values(row_id,column_id,value) VALUES (?,?,?)", (rid, cid, val))
@@ -810,6 +991,9 @@ def ddb_update_row(db, user, row, columns, new_values, version):
             db.execute("INSERT INTO ddb_values(row_id,column_id,value) VALUES (?,?,?) "
                        "ON CONFLICT(row_id,column_id) DO UPDATE SET value=excluded.value",
                        (row["id"], col["id"], after))
+        if col["col_type"] == "attachment":
+            before = ddb_display_value(col, before)
+            after = ddb_display_value(col, after)
         ddb_history(db, row["id"], user, "edit", col["name"], before, after)
     return "ok"
 

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ inv['number'] or 'Draft invoice' }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ inv['title'] }} {% if inv['number'] %}· {{ inv['number'] }}{% else %}· Draft{% endif %}</h1>
+<p class="hint">{{ inv['subtitle'] or '' }} · {{ inv['customer_name'] or '' }} · {{ inv['invoice_date'] or '' }} · Owner: {{ owner_name }}</p></div>
+<div class="acts noprint">
+{% if can_edit %}<a class="b" href="{{ url_for('invoices.invoice_edit', iid=inv['id']) }}">Edit draft</a>{% endif %}
+<a class="b p" href="{{ url_for('invoices.invoice_pdf', iid=inv['id']) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>
+{% if inv['status']=='draft' %}<form method="post" action="{{ url_for('invoices.invoice_finalize', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Finalize and number</button></form>{% endif %}
+{% if inv['status']=='issued' %}<form method="post" action="{{ url_for('invoices.invoice_paid', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Mark Paid</button></form>{% endif %}
+{% if inv['status'] in ('issued','paid') %}<form method="post" action="{{ url_for('invoices.invoice_void', iid=inv['id']) }}" onsubmit="return confirm('Void this invoice? Its number is kept and never reused.')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="reason" value="Voided by owner / dept admin"><button class="b dg" type="submit">Void</button></form>{% endif %}
+</div></div>
+<div class="card"><div><span class="s {{ 'g' if inv['status'] in ('issued','paid') else 'a' if inv['status']=='draft' else 'r' }}">{{ inv['status']|title }}</span>
+{% if inv['status']=='draft' %}<span class="hint"> Draft has no number and no public QR yet.</span>{% endif %}
+{% if inv['void_reason'] %}<div class="hint">Void reason: {{ inv['void_reason'] }}</div>{% endif %}</div>
+<div class="tb" style="margin-top:14px"><table><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+{% for l in lines %}<tr><td>{{ l['description'] }}{% if l['spec'] %} · {{ l['spec'] }}{% endif %}{% if l['line_date'] %} · {{ l['line_date'] }} {{ l['from_place'] }} → {{ l['to_place'] }} ({{ l['mode'] }}, {{ l['purpose'] }}){% endif %}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) }} {{ inv['currency'] }}</td><td class="num">{{ '%.2f'|format(l['amount']) }} {{ inv['currency'] }}</td></tr>{% endfor %}
+</tbody></table></div>
+<div style="margin-top:14px;text-align:right">Subtotal: <b>{{ '%.2f'|format(inv['subtotal']) }} {{ inv['currency'] }}</b><br>VAT: <b>{{ '%.2f'|format(inv['vat_amount']) }} {{ inv['currency'] }}</b><br>Grand total: <b>{{ '%.2f'|format(inv['total']) }} {{ inv['currency'] }}</b><br><span class="hint">{{ inv['amount_in_words'] }}</span></div>
+{% if inv['notes'] %}<p class="hint" style="margin-top:10px">Terms: {{ inv['notes'] }}</p>{% endif %}
+</div>
+<div class="card" style="margin-top:16px"><h2>Public QR</h2>
+<p class="hint">Generate a public QR to share this invoice. Public QR uses a unique code: HRC- + random 5-digit code, for example HRC-48392. Searching that code, viewing it and downloading its PDF all need a login.</p>
+{% if inv['status'] not in ('issued','paid') %}<div class="alert">Draft and Void invoices do not get a live QR.</div>
+{% else %}
+{% if inv['public_code'] and inv['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ inv['public_views'] }} views · Code: <b>{{ inv['public_code'] }}</b></div>
+{% if qr_svg %}<div>{{ qr_svg|safe }}</div><div class="hrc">{{ inv['public_code'] }}</div>{% endif %}
+<a class="b sm" href="{{ url_for('invoices.invoice_qr', iid=inv['id']) }}">Print this QR</a>
+{% else %}<div class="msg error">Public QR is OFF{% if inv['public_code'] %} · Code was {{ inv['public_code'] }}{% endif %}</div>{% endif %}
+<form method="post" action="{{ url_for('invoices.invoice_public', iid=inv['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
+<label class="ck"><input type="checkbox" name="show_amounts" {{ 'checked' if inv['public_show_amounts'] }}> Show amounts to a stranger</label>
+<label class="ck"><input type="checkbox" name="show_customer" {{ 'checked' if inv['public_show_customer'] }}> Show customer name</label>
+<label class="ck"><input type="checkbox" name="show_lines" {{ 'checked' if inv['public_show_lines'] }}> Show item lines</label>
+<div class="fd" style="margin-top:10px"><label>Link expires on (optional)</label><input type="date" name="public_expires" value="{{ inv['public_expires'] or '' }}"></div>
+<button class="b p" type="submit">Turn on / Save public QR</button></form>
+{% if inv['public_code'] %}<div class="acts" style="margin-top:10px">
+<form method="post" action="{{ url_for('invoices.invoice_public', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="off"><button class="b sm dg" type="submit">Turn off</button></form>
+<form method="post" action="{{ url_for('invoices.invoice_public', iid=inv['id']) }}" onsubmit="return confirm('New scan link: the old code stops working. Continue?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New scan link</button></form></div>{% endif %}
+{% endif %}
+</div>
+{% endblock %}

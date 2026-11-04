@@ -196,9 +196,9 @@ def user_add():
         else:
             password = password or generate_password()
             uid = db.execute("INSERT INTO users(full_name,username,password_hash,department_id,role,"
-                             "must_change_password,is_dept_admin) VALUES (?,?,?,?,?,1,?)",
+                             "must_change_password,is_dept_admin,can_ddb_attachment) VALUES (?,?,?,?,?,1,?,?)",
                              (full_name, username, generate_password_hash(password), int(dept), role,
-                              1 if form.get("is_dept_admin") else 0)).lastrowid
+                              1 if form.get("is_dept_admin") else 0, 1 if form.get("can_ddb_attachment") else 0)).lastrowid
             _save_view_departments(db, uid, form.getlist("view_dept"), int(dept))
             log(db, "user_add", username)
             db.commit()
@@ -233,8 +233,8 @@ def user_edit(user_id):
             flash(error, "error")
         else:
             # Records stay in the department they were created in.
-            db.execute("UPDATE users SET full_name=?, department_id=?, role=?, is_active=?, is_dept_admin=? WHERE id=?",
-                       (full_name, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, user_id))
+            db.execute("UPDATE users SET full_name=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=? WHERE id=?",
+                       (full_name, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, user_id))
             _save_view_departments(db, user_id, request.form.getlist("view_dept"), int(dept))
             if not active:
                 revoke_user_sessions(db, user_id)             # a disabled user is logged out at once
@@ -264,6 +264,26 @@ def user_reset(user_id):
     db.commit()
     flash(f"New temporary password for {row['username']}: {password}", "secret")
     return redirect(url_for("admin.users"))
+
+
+# ================================================================ deptdb attachment access (portal admin only)
+@bp.route("/ddb-attachment-access", methods=["GET", "POST"])
+@admin_required
+def ddb_attachment_access():
+    """Portal admin gives (or removes) attachment-column access for dept admins."""
+    db = get_db()
+    if request.method == "POST":
+        rows = db.execute("SELECT id FROM users WHERE is_dept_admin=1 AND is_active=1").fetchall()
+        for r in rows:
+            db.execute("UPDATE users SET can_ddb_attachment=? WHERE id=?",
+                       (1 if request.form.get(f"allow_{r['id']}") else 0, r["id"]))
+        log(db, "ddb_attachment_access", "portal admin updated dept-admin attachment access")
+        db.commit()
+        flash("Attachment-column access saved.", "ok")
+        return redirect(url_for("admin.ddb_attachment_access"))
+    rows = db.execute("SELECT u.*, d.name AS department_name FROM users u LEFT JOIN departments d ON d.id=u.department_id "
+                      "WHERE u.is_dept_admin=1 AND u.is_active=1 ORDER BY d.name, u.full_name").fetchall()
+    return render_template("admin_ddb_attachment.html", rows=rows)
 
 
 # ================================================================ departments

@@ -1,4 +1,82 @@
 ==============================================================================
+ UPDATE: DEPARTMENT DATABASE TABS (replaces the old single DeptDB table)
+==============================================================================
+ 1. TABS under Department database: the dept admin creates tabs users
+    switch between, from templates Client Info, Meetings, Employee Info,
+    Billing, Accounts, or a blank custom tab, with starter columns the
+    admin can customise per tab. Filter and sorting sit on top of the tabs.
+ 2. SEE / EDIT / SHARE: every user in the same department can see every
+    row in a tab, but only the owner can edit it. The owner may share a
+    row with another department or a specific user, setting View only or
+    Can edit. Edit history is shown on the row page.
+ 3. DELEGATE: the dept admin can choose a user to do everything a dept
+    admin can do in the Department Database (Department database >
+    Delegates), including creating tabs and editing every row.
+ 4. MEETINGS move to the Meetings tab (not connected to Client Info):
+    its rows carry client name, address, contact number, date and time.
+    Notifications now come 7, 3 and 1 days before and on the morning of
+    the meeting, with the same dept-admin wording as before.
+ 5. UPGRADE: old DeptDB columns/rows become a "General" tab, so nothing
+    is lost. ./backup.sh, unzip over the old folder, docker compose up
+    -d --build. Details: README.txt section 22.
+
+==============================================================================
+ UPDATE: DEPT DATABASE MEETINGS + ATTACHMENT COLUMNS
+==============================================================================
+ 1. MEETING NOTIFICATIONS in the Department Database: a date column with a
+    time is a meeting schedule. The row owner gets "You have a meeting at
+    <date time>" and every dept admin gets "<USER> has a meeting at
+    <date time>", the day before the meeting and again on the morning of
+    the meeting (after REMINDER_HOUR, default 7 AM). Each message once only.
+ 2. ATTACHMENT COLUMNS in the Department Database: new "Attachment (file)"
+    column type, so a user can add a file to a row, with Download on the
+    row page. Portal admin can give access to which dept admin can create
+    such a column: Admin > DeptDB attachment access, or Users > Edit user.
+    Dept admins without that access cannot create attachment columns.
+ UPGRADE: ./backup.sh, unzip over the old folder, docker compose up -d --build.
+ Details: README.txt section 21.
+
+==============================================================================
+ UPDATE: INVOICES, RANDOM PUBLIC QR CODES (HRC-#####), WATERMARK, TWO LOGOS
+==============================================================================
+ 1. NEW tab "Invoices": dept-admin templates (Billing, Admin Expense Voucher,
+    Conveyance Bill, custom Purchase Request), employee invoices with live
+    totals, Draft -> Issued -> Paid / Void, PDF and print. Dept admin sees
+    every invoice in their own department; the portal admin does not make
+    templates. Changes to a template apply to new invoices only.
+ 2. INVOICE PDF: top row left HRC logo + company + single-line address, right
+    second logo in the top right corner (optional). Invoice type is centred
+    ON TOP OF THE TABLE, table moved lower. Currency beside every amount.
+    Watermark OFF by default; template can turn it on and type the text
+    (ISSUED, PAID, DRAFT, VOID, or custom). If OFF, no watermark is shown.
+ 3. PUBLIC QR CODE SYSTEM CHANGED FOR ALL PUBLIC QRs: HRC- + random 5-digit
+    code (for example HRC-48392), not sequential HRC-0, HRC-1 and not INV-12.
+    Existing record QRs were given a random code on upgrade. New scan link
+    for an invoice gives a new random code, so the old printed QR stops.
+ 4. LOGIN-ONLY CODE SEARCH: you must be logged in to search a code in the
+    search bar, view it and download its PDF. Without login, no view.
+ 5. SHARING: dept admin can share a template with another dept admin, who
+    can Use it in their own department (a copy; original unchanged, revocable).
+    Separately, a dept admin can share their department's invoices, view-only,
+    with another dept admin (revocable, optional expiry).
+ UPGRADE: ./backup.sh, unzip over the old folder, docker compose up -d --build.
+ Details: README.txt section 20.
+
+==============================================================================
+ UPDATE: SEARCH QR TAB, POP-UP FIX, REMINDER BANNER REMOVED
+==============================================================================
+ 1. NEW tab "Search QR" (menu, for every logged-in person): type the unique code
+    (HRC-12, hrc 12 or 12). The result shows the code and three buttons:
+    View record, Download PDF and Print. People who may open the whole record also get
+    "Open full record". Everybody else only sees what the owner made public.
+ 2. FIXED: the PDF / Export / Share-with / Remove pop-up boxes opened BEHIND the cards below
+    them (static/style.css). They now open in front.
+ 3. REMOVED: the yellow "N record(s) have a reminder date..." bar on My records.
+    Reminders arrive in the bell (Notifications) and on the Reminders page.
+ UPGRADE: ./backup.sh, unzip over the old folder, docker compose up -d --build,
+          then press Ctrl+F5 in the browser so the new style.css is loaded.
+
+==============================================================================
  UPDATE: DEPARTMENT DATABASE, HRC QR CODES, CLEANER PDF / PRINT
 ==============================================================================
  1. NEW tab "Department database": one shared table per department. The department admin

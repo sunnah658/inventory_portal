@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Department invoices{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>All invoices — {{ dept['name'] if dept else '' }}</h1><p class="hint">Dept admin sees every invoice in their own department. Other departments stay hidden unless shared.</p></div><div class="acts"><a class="b" href="{{ url_for('invoices.shared_list') }}">Invoices shared with me</a></div></div>
+<div class="tb"><table><thead><tr><th>Number</th><th>Format</th><th>Owner</th><th>Customer</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr class="r"><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['owner_name'] }}</td><td>{{ r['customer_name'] or '—' }}</td><td>{{ r['invoice_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid') else 'a' if r['status']=='draft' else 'r' }}">{{ r['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('invoices.detail', iid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('invoices.invoice_pdf', iid=r['id']) }}">PDF</a></td></tr>
+{% else %}<tr><td colspan="8"><div class="empty">No invoices in this department yet.</div></td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

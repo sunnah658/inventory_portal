@@ -199,3 +199,107 @@ def sheets_file(fmt, title, sheets, company="", filename="report", subtitle=""):
     resp = Response(data, mimetype=mime)
     resp.headers["Content-Disposition"] = f'attachment; filename="{safe_name(filename)}_{stamp}.{ext}"'
     return resp
+
+
+# ------------------------------------------------------------------ Invoice PDF (v4 layout)
+def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals, words, terms, sigs, code, company="",
+                logo_left=None, logo_right=None, watermark_on=False, watermark_text=""):
+    """Invoice PDF, layout v4:
+    Top row: left logo + company (single-line address), right second logo in the top right corner.
+    Then meta, then the invoice type centred ON TOP OF THE TABLE, then the table (moved lower).
+    Currency is beside every amount (the caller formats amounts as '18,500.00 BDT').
+    Watermark: OFF by default; only drawn when watermark_on is true and text is set."""
+    import segno as _segno
+    font = _fonts()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.4 * cm, rightMargin=1.4 * cm,
+                            topMargin=1.2 * cm, bottomMargin=1.4 * cm, title=title)
+    accent = colors.HexColor("#" + colour.lstrip("#"))
+    small = ParagraphStyle("cell", fontName=font["regular"], fontSize=9, leading=12)
+    head = ParagraphStyle("head", fontName=font["bold"], fontSize=9, leading=12, textColor=colors.white)
+    h1 = ParagraphStyle("h1", fontName=font["bold"], fontSize=22, textColor=accent, leading=26, alignment=1)
+    sub = ParagraphStyle("sub", fontName=font["regular"], fontSize=9, textColor=colors.HexColor("#506A7B"), leading=12, alignment=1)
+    meta_s = ParagraphStyle("meta", fontName=font["regular"], fontSize=8.5, textColor=colors.HexColor("#506A7B"), leading=11)
+    meta_b = ParagraphStyle("metab", fontName=font["bold"], fontSize=10, textColor=colors.HexColor("#10283A"), leading=13)
+    right_s = ParagraphStyle("right", fontName=font["regular"], fontSize=9, leading=12, alignment=2)
+    right_b = ParagraphStyle("rightb", fontName=font["bold"], fontSize=10, leading=13, alignment=2)
+    story = []
+    # top row
+    def _img(path, w=2.6 * cm, h=1.6 * cm):
+        try:
+            return Image(path, width=w, height=h, kind="proportional")
+        except Exception:
+            return ""
+    left_logo = _img(logo_left) if logo_left else _img(custom_logo_path() or os.path.join(current_app.static_folder, "logo.png"))
+    right_logo = _img(logo_right, w=2.2 * cm, h=1.4 * cm) if logo_right else ""
+    company_para = Paragraph(f"<b>{_pdf_text(company)}</b><br/><font color='#506A7B'>Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100 · accounts@hrctech.net</font>",
+                             ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
+    banner = Table([[left_logo, company_para, right_logo]], colWidths=[3 * cm, None, 3 * cm],
+                   style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent)])
+    story += [banner, Spacer(1, 10)]
+    # meta: left fields + bill to right
+    meta_cells = []
+    for lab, val in meta:
+        meta_cells.append(Paragraph(f"<font color='#506A7B'>{_pdf_text(lab)}</font><br/><b>{_pdf_text(val)}</b>", meta_s))
+    bill = Paragraph(f"<font color='#506A7B'>BILL TO</font><br/><b>{_pdf_text(bill_to[0])}</b><br/>{_pdf_text(bill_to[1])}", right_s)
+    if meta_cells:
+        story.append(Table([meta_cells + [bill]], colWidths=[None] * len(meta_cells) + [5 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        story.append(Spacer(1, 12))
+    # invoice type on top of the table
+    story += [Paragraph(_pdf_text(title), h1), Paragraph(_pdf_text(subtitle), sub), Spacer(1, 10)]
+    # table (lower than the old top-right title layout)
+    usable = A4[0] - 2.8 * cm
+    data = [[Paragraph(_pdf_text(h), head) for h in cols]]
+    data += [[Paragraph(_pdf_text(v), small) for v in row] for row in rows] or [[Paragraph("No lines.", small)]]
+    table = Table(data, colWidths=[usable / len(cols)] * len(cols), repeatRows=1)
+    table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), accent), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F7FA")]),
+                               ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D3DBE0")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
+    story += [table, Spacer(1, 10)]
+    # totals, right aligned
+    tot_data = [[Paragraph(_pdf_text(lab), small), Paragraph(_pdf_text(val), ParagraphStyle("tot", fontName=font["bold"], fontSize=10, leading=13, alignment=2))] for lab, val in totals]
+    story.append(Table(tot_data, colWidths=[usable - 5 * cm, 5 * cm], style=[("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#EFF4F8")), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(Spacer(1, 10))
+    if words:
+        story.append(Table([[Paragraph(_pdf_text("In words: " + words), small)]], colWidths=[usable], style=[("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F2F6F9")), ("LINEBEFORE", (0, 0), (0, 0), 3, accent)]))
+        story.append(Spacer(1, 8))
+    if terms:
+        story.append(Paragraph(_pdf_text("Terms: " + terms), small)); story.append(Spacer(1, 16))
+    # signatures, horizontal
+    sig_cells = []
+    for _script, name, role in sigs:
+        sig_cells.append(Paragraph(f"_________________________<br/><b>{_pdf_text(name)}</b><br/><font color='#506A7B'>{_pdf_text(role)}</font>", small))
+    if sig_cells:
+        story.append(Table([sig_cells], colWidths=[usable / len(sig_cells)] * len(sig_cells)))
+        story.append(Spacer(1, 24))
+    # footer: QR + code
+    qr_buf = io.BytesIO()
+    if code:
+        try:
+            _segno.make(f"https://portal/invoices/code/{code}", error="m").save(qr_buf, kind="png", scale=4, border=1)
+            qr_buf.seek(0)
+            qr_img = Image(qr_buf, width=2.8 * cm, height=2.8 * cm)
+        except Exception:
+            qr_img = ""
+    else:
+        qr_img = ""
+    story.append(Table([[Paragraph(_pdf_text("Scan to verify this invoice online.\nGenerated by HRC Portal"), small), qr_img],
+                        ["", Paragraph(_pdf_text(code), ParagraphStyle("code", fontName=font["bold"], fontSize=10, alignment=1))]],
+                       colWidths=[usable - 3.2 * cm, 3.2 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    def _on_page(canvas, _doc):
+        if watermark_on and watermark_text:
+            canvas.saveState()
+            try:
+                canvas.setFillAlpha(0.08)
+            except Exception:
+                pass
+            canvas.setFillColor(colors.HexColor("#1E8A5A"))
+            canvas.setFont(font["bold"], 90)
+            canvas.translate(A4[0] / 2, A4[1] / 2)
+            canvas.rotate(30)
+            canvas.drawCentredString(0, 0, watermark_text)
+            canvas.restoreState()
+        canvas.saveState(); canvas.setFont(font["regular"], 8); canvas.setFillColor(colors.HexColor("#506A7B"))
+        canvas.drawRightString(A4[0] - 1.4 * cm, 0.8 * cm, f"Page {canvas.getPageNumber()}"); canvas.restoreState()
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    return buf.getvalue()

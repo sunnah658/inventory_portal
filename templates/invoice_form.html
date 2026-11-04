@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit invoice' if inv else 'New invoice' }}{% endblock %}
+{% block content %}
+{% if not tpl %}<div class="card"><h1>Choose a format first</h1><p class="hint">Go to the Invoices tab and press Create on a format card.</p><a class="b p" href="{{ url_for('invoices.list_invoices') }}">Back to Invoices</a></div>
+{% else %}
+<div class="hd"><div><h1>{{ tpl['name'] }} {% if inv %}· {{ inv['number'] or 'Draft' }}{% endif %}</h1><p class="hint">Live totals update as you type. Finalize locks the invoice and gives it a number — a draft can still be changed.</p></div></div>
+<form method="post" class="card" id="invForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm">
+{% if tpl['kind'] != 'conveyance' %}<div class="fd"><label>Bill to / Customer</label><input type="text" name="customer_name" value="{{ inv['customer_name'] if inv else '' }}"></div>
+<div class="fd"><label>Customer address</label><input type="text" name="customer_address" value="{{ inv['customer_address'] if inv else '' }}"></div>{% endif %}
+<div class="fd"><label>Reference / PO number</label><input type="text" name="reference" value="{{ inv['reference'] if inv else '' }}"></div>
+<div class="fd"><label>Date</label><input type="date" name="invoice_date" value="{{ inv['invoice_date'] if inv else '' }}"></div>
+<div class="fd"><label>Currency — beside every amount</label><select name="currency" id="curSel">{% for c in currencies %}<option {{ 'selected' if (inv and inv['currency']==c) or (not inv and tpl['default_currency']==c) }}>{{ c }}</option>{% endfor %}</select><div class="sub">One currency per invoice. Totals and amount in words use this currency. No auto-conversion.</div></div>
+</div>
+<h2>Items</h2>
+<div id="lines">
+{% if lines %}{% for l in lines %}
+<div class="fm line">
+{% if tpl['kind']=='conveyance' %}
+<div class="fd"><label>Date</label><input type="date" name="line_date" value="{{ l['line_date'] }}"></div>
+<div class="fd"><label>From</label><input type="text" name="from_place" value="{{ l['from_place'] }}"></div>
+<div class="fd"><label>To</label><input type="text" name="to_place" value="{{ l['to_place'] }}"></div>
+<div class="fd"><label>Mode</label><input type="text" name="mode" value="{{ l['mode'] }}"></div>
+<div class="fd"><label>Purpose</label><input type="text" name="purpose" value="{{ l['purpose'] }}"></div>
+<div class="fd"><label>Amount (<span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" value="{{ l['amount'] }}"><input type="hidden" name="description" value="Travel"><input type="hidden" name="qty" value="1"><input type="hidden" name="rate" value="0"></div>
+{% elif tpl['kind']=='custom' %}
+<div class="fd"><label>Item</label><input type="text" name="description" value="{{ l['description'] }}"></div>
+<div class="fd"><label>Spec</label><input type="text" name="spec" value="{{ l['spec'] }}"></div>
+<div class="fd"><label>Qty</label><input type="number" step="0.01" name="qty" value="{{ l['qty'] }}"></div>
+<div class="fd"><label>Est. cost (<span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" value="{{ l['amount'] }}"><input type="hidden" name="rate" value="0"></div>
+{% elif tpl['kind']=='admin' %}
+<div class="fd"><label>Item</label><input type="text" name="description" value="{{ l['description'] }}"></div>
+<div class="fd"><label>Purpose</label><input type="text" name="purpose" value="{{ l['purpose'] }}"></div>
+<div class="fd"><label>Amount (<span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" value="{{ l['amount'] }}"><input type="hidden" name="qty" value="1"><input type="hidden" name="rate" value="0"></div>
+{% else %}
+<div class="fd"><label>Description</label><input type="text" name="description" value="{{ l['description'] }}"></div>
+<div class="fd"><label>Qty</label><input type="number" step="0.01" name="qty" class="qty" value="{{ l['qty'] }}"></div>
+<div class="fd"><label>Rate (<span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="rate" class="rate" value="{{ l['rate'] }}"></div>
+<div class="fd"><label>Amount (<span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" value="{{ l['amount'] }}" readonly></div>
+{% endif %}
+</div>
+{% endfor %}{% else %}
+<div class="fm line">
+{% if tpl['kind']=='conveyance' %}
+<div class="fd"><label>Date</label><input type="date" name="line_date"></div><div class="fd"><label>From</label><input type="text" name="from_place"></div><div class="fd"><label>To</label><input type="text" name="to_place"></div><div class="fd"><label>Mode</label><input type="text" name="mode"></div><div class="fd"><label>Purpose</label><input type="text" name="purpose"></div><div class="fd"><label>Amount (<span class="curLabel">{{ tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt"><input type="hidden" name="description" value="Travel"><input type="hidden" name="qty" value="1"><input type="hidden" name="rate" value="0"></div>
+{% elif tpl['kind']=='custom' %}
+<div class="fd"><label>Item</label><input type="text" name="description"></div><div class="fd"><label>Spec</label><input type="text" name="spec"></div><div class="fd"><label>Qty</label><input type="number" step="0.01" name="qty" value="1"></div><div class="fd"><label>Est. cost (<span class="curLabel">{{ tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt"><input type="hidden" name="rate" value="0"></div>
+{% elif tpl['kind']=='admin' %}
+<div class="fd"><label>Item</label><input type="text" name="description"></div><div class="fd"><label>Purpose</label><input type="text" name="purpose"></div><div class="fd"><label>Amount (<span class="curLabel">{{ tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt"><input type="hidden" name="qty" value="1"><input type="hidden" name="rate" value="0"></div>
+{% else %}
+<div class="fd"><label>Description</label><input type="text" name="description"></div><div class="fd"><label>Qty</label><input type="number" step="0.01" name="qty" class="qty" value="1"></div><div class="fd"><label>Rate (<span class="curLabel">{{ tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="rate" class="rate"></div><div class="fd"><label>Amount (<span class="curLabel">{{ tpl['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" readonly></div>
+{% endif %}
+</div>
+{% endif %}
+</div>
+<button class="b" type="button" onclick="addLine()">+ Add item</button>
+<div class="card" style="margin-top:16px">
+<div>Subtotal: <b id="subT">0.00</b> <span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span></div>
+<div>VAT {{ tpl['vat_percent'] }}%: <b id="vatT">0.00</b> <span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span></div>
+<div>Grand total: <b id="grandT">0.00</b> <span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span></div>
+<div class="sub" id="wordsT"></div>
+</div>
+<h2 style="margin-top:16px">Notes / terms</h2><textarea name="notes">{{ inv['notes'] if inv else tpl['notes'] }}</textarea>
+<h2 style="margin-top:16px">Signatures (set by dept admin, shown here)</h2>
+<p class="hint">Authorized signatures from the template are shown on the PDF. Employee signature is added automatically.</p>
+{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm"><div class="fd"><label>Signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Authorized by"></div><div class="fd"><label>Person</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save draft</button><a class="b" href="{{ url_for('invoices.list_invoices') }}">Cancel</a></div>
+</form>
+<script>
+var vatPct = {{ tpl['vat_percent'] or 0 }};
+function fmt(n){return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function words(n){var o=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"],t=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];function w(x){if(x==0)return "Zero";if(x<20)return o[x];if(x<100)return t[Math.floor(x/10)]+(x%10?"-"+o[x%10]:"");if(x<1000)return o[Math.floor(x/100)]+" Hundred"+(x%100?" "+w(x%100):"");if(x<1000000)return w(Math.floor(x/1000))+" Thousand"+(x%1000?" "+w(x%1000):"");return w(Math.floor(x/1000000))+" Million"+(x%1000000?" "+w(x%1000000):"");}return w(Math.floor(n));}
+function recalc(){
+  var sub=0;
+  document.querySelectorAll('#lines .line').forEach(function(row){
+    var q=row.querySelector('.qty'), r=row.querySelector('.rate'), a=row.querySelector('.amt');
+    if(q && r && a){var v=(parseFloat(q.value)||0)*(parseFloat(r.value)||0); a.value=v.toFixed(2); sub+=v;}
+    else if(a){sub+=parseFloat(a.value)||0;}
+  });
+  var vat=sub*vatPct/100, grand=sub+vat;
+  document.getElementById('subT').textContent=fmt(sub); document.getElementById('vatT').textContent=fmt(vat); document.getElementById('grandT').textContent=fmt(grand);
+  var cur=document.getElementById('curSel').value, word={BDT:'Taka',USD:'Dollars',EUR:'Euros',GBP:'Pounds',INR:'Rupees'}[cur]||cur;
+  document.getElementById('wordsT').textContent='In words: '+word+' '+words(grand)+' Only';
+  document.querySelectorAll('.curLabel').forEach(function(e){e.textContent=cur;});
+}
+document.getElementById('invForm').addEventListener('input', recalc);
+document.getElementById('curSel').addEventListener('change', recalc);
+function addLine(){var first=document.querySelector('#lines .line'); if(!first) return; var c=first.cloneNode(true); c.querySelectorAll('input').forEach(function(i){i.value='';}); document.getElementById('lines').appendChild(c); recalc();}
+recalc();
+</script>
+{% endif %}
+{% endblock %}

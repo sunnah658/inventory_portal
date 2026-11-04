@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Search QR{% endblock %}
+{% block content %}
+<div class="hd">
+  <div><h1>Search QR</h1>
+    <p class="hint">Type the unique code printed under a public QR (for example HRC-48392). You must be logged in to search a code — this page is login-only. You can view the shared information, download it as a PDF or print it. Invoice codes (HRC-#####) open the invoice page.</p></div>
+</div>
+
+<form class="tools" method="get" action="{{ url_for('public.search_qr') }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Unique code, for example HRC-48392" aria-label="Unique QR code" autofocus style="min-width:260px">
+  <button class="b p" type="submit">Search</button>
+  {% if q %}<a href="{{ url_for('public.search_qr') }}">Clear</a>{% endif %}
+</form>
+
+{% if status == 'ok' %}
+<div class="card" style="margin-bottom:14px">
+  <div class="hd" style="margin-bottom:10px;animation:none">
+    <div><div class="hrc" style="text-align:left;margin:0">{{ code }}</div>
+      <h2 style="margin:4px 0 0">{{ title or 'Public QR' }}</h2>
+      <p class="hint" style="margin:4px 0 0">
+        {% if link['kind'] == 'group' %}One QR for {{ items|length }} records{% else %}Single record{% endif %}
+        {% set depts = items|map(attribute='dept')|unique|list %}{% if depts %} · {{ depts|join(', ') }}{% endif %}
+      </p></div>
+    <div class="acts noprint">
+      <a class="b p" href="{{ url_for('public.code_page', code=code) }}">View record</a>
+      <a class="b" href="{{ url_for('public.code_pdf', code=code) }}">Download PDF</a>
+      <a class="b" href="{{ url_for('public.code_page', code=code, print=1) }}">Print</a>
+      {% if full_rid %}<a class="b" href="{{ url_for('records.detail', rid=full_rid) }}" title="You have access to the whole record">Open full record</a>{% endif %}
+    </div>
+  </div>
+  {% if items %}
+  <div class="sub" style="margin-bottom:6px">Preview of what is shared</div>
+  {% for it in items[:2] %}
+  <div class="ig" style="margin-bottom:10px">{% for label, value in it.rows[:6] %}<div><span class="k">{{ label }}</span>{{ value }}</div>{% else %}<p class="hint">Nothing to show.</p>{% endfor %}</div>
+  {% endfor %}
+  {% if items|length > 2 or (items|length == 1 and items[0].rows|length > 6) %}<p class="hint">Press <b>View record</b> to see everything that is shared.</p>{% endif %}
+  {% else %}<p class="hint">This record is not available any more.</p>{% endif %}
+</div>
+{% elif status == 'missing' %}
+<div class="alert">No QR code with the number <b>{{ code }}</b> exists. Check the code printed under the QR and try again.</div>
+{% elif status == 'off' %}
+<div class="alert">The code <b>{{ code }}</b> exists, but its owner switched the public QR off.</div>
+{% elif status == 'bad' %}
+<div class="alert">That does not look like a QR code. Type it like <b>HRC-48392</b>.</div>
+{% else %}
+<div class="tb"><div class="empty">Enter a code above to find a public QR.</div></div>
+{% endif %}
+{% endblock %}

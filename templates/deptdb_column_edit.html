@@ -9,6 +9,6 @@
     <label class="ck"><input type="checkbox" name="required" value="1" {{ 'checked' if col['required'] }}> Required</label>
     <label class="ck"><input type="checkbox" name="shown" value="1" {{ 'checked' if col['shown'] }}> Shown in forms, lists and exports</label>
     {% if col['col_type'] == 'date' %}<label class="ck"><input type="checkbox" name="has_time" value="1" {{ 'checked' if col['has_time'] }}> Also keep a time</label>{% endif %}
-    <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save column</button><a class="b" href="{{ url_for('ddb.columns', dept=dept['id']) }}">Cancel</a></div>
+    <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save column</button><a class="b" href="{{ url_for('ddb.columns', dept=dept['id'], tab=tab['id']) }}">Cancel</a></div>
   </form></div>
 {% endblock %}

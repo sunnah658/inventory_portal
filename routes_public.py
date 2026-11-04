@@ -20,8 +20,8 @@ from flask import (Blueprint, Response, abort, flash, g, redirect, render_templa
 import config
 from auth import login_required
 import exports
-from core import (MANAGE_LEVELS, access_level, create_public_link, format_code, get_record, names_for_records, new_token,
-                  parse_code, public_fields_of, public_view, rec_select)
+from core import (MANAGE_LEVELS, access_level, create_public_link, display_code, format_code, get_record, names_for_records, new_token,
+                  parse_code, parse_code_text, public_fields_of, public_view, rec_select)
 from models import get_db, log, setting_get
 from routes_records import _load as load_record
 
@@ -72,13 +72,25 @@ def view(token):
     db.execute("UPDATE public_links SET views=views+1 WHERE id=?", (link["id"],))
     db.commit()
     title = link["title"] or (items[0]["rows"][0][1] if items and items[0]["rows"] else "")
-    return render_template("public_view.html", link=link, items=items, title=title, code=format_code(link["code_no"]))
+    return render_template("public_view.html", link=link, items=items, title=title, code=display_code(link))
 
 
 # ---------------------------------------------------------------- find a QR by its code (people who are logged in)
 def _link_by_code(db, code):
+    """Find a public link by its shown code: random HRC-##### first, then old HRC-<n>."""
+    wanted = parse_code_text(code)
+    if wanted:
+        link = db.execute("SELECT * FROM public_links WHERE code_text=?", (wanted,)).fetchone()
+        if link is not None:
+            return link["code_no"], link
     number = parse_code(code)
     if number is None:
+        # a bare 5-digit number is a random code, e.g. 48392 -> HRC-48392
+        s = (code or "").strip()
+        if s.isdigit() and len(s) == 5:
+            link = db.execute("SELECT * FROM public_links WHERE code_text=?", (f"HRC-{s}",)).fetchone()
+            if link is not None:
+                return link["code_no"], link
         return None, None
     link = db.execute("SELECT * FROM public_links WHERE code_no=?", (number,)).fetchone()
     return number, link
@@ -98,9 +110,9 @@ def code_page(code):
     """Search result for a code such as HRC-12: the information the owner made public."""
     db = get_db()
     number, link = _link_by_code(db, code)
-    if number is None:
+    if number is None and link is None:
         abort(404)
-    wanted = format_code(number)
+    wanted = display_code(link) if link is not None else format_code(number) if number is not None else code
     if link is None:
         return render_template("code_page.html", code=wanted, status="missing", link=None, items=[]), 404
     if not link["enabled"]:
@@ -119,7 +131,7 @@ def code_pdf(code):
     if number is None or link is None or not link["enabled"]:
         abort(404)
     items = _link_items(db, link)
-    wanted = format_code(number)
+    wanted = display_code(link)
     sections = [((it["dept"] if len(items) > 1 else ""), ["Field", "Value"], [list(r) for r in it["rows"]] or [["", "Nothing to show"]])
                 for it in items] or [("", ["Field", "Value"], [["", "This record is not available."]])]
     data = exports.document_pdf(f"{wanted}" + (f" · {link['title']}" if link["title"] else ""),
@@ -130,6 +142,56 @@ def code_pdf(code):
     resp = Response(data, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = f'attachment; filename="{wanted}.pdf"'
     return resp
+
+
+# ---------------------------------------------------------------- the "Search QR" tab (every logged-in person)
+@bp.route("/search-qr")
+@login_required
+def search_qr():
+    """A search box for the unique code (HRC-12, hrc 12 or just 12). Shows the match with the buttons
+    View record, Download PDF and Print. People only see what the owner made public for that code."""
+    db = get_db()
+    q = (request.args.get("q") or "").strip()
+    status, link, items, number, full_rid = None, None, [], None, None
+    if q:
+        number = parse_code(q)
+        if number is None and q.isdigit() and len(q) <= 12:
+            number = int(q)                                   # "12" is accepted as HRC-12
+        if number is None:
+            status = "bad"
+        else:
+            link = None
+            _wanted = parse_code_text(q)
+            if _wanted:
+                link = db.execute("SELECT * FROM public_links WHERE code_text=?", (_wanted,)).fetchone()
+            if link is None and q.strip().isdigit() and len(q.strip()) == 5:
+                link = db.execute("SELECT * FROM public_links WHERE code_text=?", (f"HRC-{q.strip()}",)).fetchone()
+            if link is None:
+                # invoice public code (login-only): HRC-##### -> invoice code page
+                try:
+                    _inv = db.execute("SELECT public_code FROM invoices WHERE public_code=?", (_wanted or f"HRC-{q.strip()}",)).fetchone()
+                except Exception:
+                    _inv = None
+                if _inv is not None:
+                    return redirect(url_for("invoices.code_page", code=_inv["public_code"]))
+            if link is None:
+                link = db.execute("SELECT * FROM public_links WHERE code_no=?", (number,)).fetchone()
+            if link is None:
+                status = "missing"
+            elif not link["enabled"]:
+                status = "off"
+            else:
+                status = "ok"
+                items = _link_items(db, link)
+                # a person who may open the whole record also gets a button for it
+                if link["kind"] == "single" and items:
+                    rec = get_record(db, items[0]["rid"])
+                    if rec and access_level(db, g.user, rec):
+                        full_rid = rec["id"]
+    return render_template("search_qr.html", q=q, status=status, link=link, items=items,
+                           code=display_code(link) if link is not None else (format_code(number) if number is not None else ""), full_rid=full_rid,
+                           title=(link["title"] if link and link["title"] else
+                                  (items[0]["rows"][0][1] if items and items[0]["rows"] else "")))
 
 
 # ---------------------------------------------------------------- one record: switch on the record page
@@ -150,11 +212,11 @@ def record_public(rid):
         if link is None:
             lid = create_public_link(db, rec["owner_id"], "single", fields, full)
             db.execute("INSERT INTO public_link_records(link_id,record_id) VALUES (?,?)", (lid, rid))
-            code = format_code(db.execute("SELECT code_no FROM public_links WHERE id=?", (lid,)).fetchone()[0])
+            _row = db.execute("SELECT * FROM public_links WHERE id=?", (lid,)).fetchone(); code = display_code(_row)
         else:
             db.execute("UPDATE public_links SET fields=?, full_record=?, enabled=1 WHERE id=?",
                        ("\n".join(fields), 1 if full else 0, link["id"]))
-            code = format_code(link["code_no"])
+            code = display_code(link)
         log(db, "public_qr_on", f"record {rid} {code}: " + ("full record" if full else ", ".join(fields)))
         flash(f"The public QR is on. Its code is {code}. Anyone with the link sees only "
               + ("the full record." if full else "the ticked fields."), "ok")
@@ -216,8 +278,9 @@ def link_new():
                 db.execute("INSERT INTO public_link_records(link_id,record_id) VALUES (?,?)", (lid, rid))
             log(db, "public_qr_group", f"{len(ids)} records: {title}")
             db.commit()
+            _row = db.execute("SELECT * FROM public_links WHERE id=?", (lid,)).fetchone()
             flash("One public QR was created for the selected records. Its code is "
-                  + format_code(db.execute("SELECT code_no FROM public_links WHERE id=?", (lid,)).fetchone()[0]) + ".", "ok")
+                  + display_code(_row) + ".", "ok")
             return redirect(url_for("public.link_qr", lid=lid))
     return render_template("public_link_form.html", link=None, ids=",".join(map(str, ids)), count=len(ids),
                            names=names_for_records(db, ids), chosen=set(), title=request.form.get("title", ""), full=False)
@@ -283,5 +346,5 @@ def link_qr(lid):
     link = _own_link(lid)
     url = url_for("public.view", token=link["token"], _external=True)
     item = {"id": "", "title": link["title"] or "Public record", "dept": "Public QR", "svg": _qr_svg(url), "url": url,
-            "code": format_code(link["code_no"])}
+            "code": display_code(link)}
     return render_template("qr_label.html", items=[item], many=False)

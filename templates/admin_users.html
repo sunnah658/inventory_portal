@@ -3,7 +3,7 @@
 {% block title %}Users{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Users</h1><p class="hint">Create accounts, change departments, reset passwords or disable a user.</p></div>
-  <div class="acts"><a class="b" href="{{ url_for('admin.import_page') }}">Import from CSV</a><a class="b p" href="{{ url_for('admin.user_add') }}">+ Add user</a></div></div>
+  <div class="acts"><a class="b" href="{{ url_for('admin.ddb_attachment_access') }}">DeptDB attachment access</a><a class="b" href="{{ url_for('admin.import_page') }}">Import from CSV</a><a class="b p" href="{{ url_for('admin.user_add') }}">+ Add user</a></div></div>
 <form class="tools" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search name, username or department" aria-label="Search"><button class="b" type="submit">Search</button>{% if q %}<a href="{{ url_for('admin.users') }}" style="align-self:center">Clear</a>{% endif %}</form>
 <div class="tb">{% if rows %}<table><thead><tr><th>Full name</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Records</th><th></th></tr></thead><tbody>
 {% for u in rows %}<tr class="r"><td>{{ u['full_name'] }}</td><td>{{ u['username'] }}</td><td><span class="dp">{{ u['department_name'] or '' }}</span></td>

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Department database tabs{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ dept['name'] }} database: tabs</h1>
+  <p class="hint">Create the tabs users will switch between. Pick a template and its starter columns are added — you can then customise the columns on the Columns page. <a href="{{ url_for('ddb.index', dept=dept['id']) }}">Back to the database</a> · <a href="{{ url_for('ddb.delegates', dept=dept['id']) }}">Delegates</a></p></div></div>
+<div class="tw" style="grid-template-columns:1fr 330px">
+  <div class="tb"><table><thead><tr><th>Tab</th><th>Template</th><th>Meeting notices</th><th>Rows</th><th></th></tr></thead><tbody>
+  {% for tb in tabs %}<tr class="r"><td><b>{{ tb['name'] }}</b>{% if tb['removed_at'] %} <span class="pill">deleted</span>{% endif %}</td>
+    <td>{{ tb['template'] or '—' }}</td><td>{{ 'Yes' if tb['meeting_notify'] else 'No' }}</td><td>{{ tb['rows'] }}</td>
+    <td class="actcell">
+      {% if not tb['removed_at'] %}
+      <a class="b sm" href="{{ url_for('ddb.columns', dept=dept['id'], tab=tb['id']) }}">Columns</a>
+      <a class="b sm" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">Open</a>
+      <details class="dt"><summary class="b sm">Rename</summary><div class="pop"><form method="post" action="{{ url_for('ddb.tab_edit', tab_id=tb['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}">
+        <div class="fd"><label>Tab name</label><input name="name" type="text" maxlength="60" required value="{{ tb['name'] }}"></div>
+        <label class="ck"><input type="checkbox" name="meeting_notify" value="1" {{ 'checked' if tb['meeting_notify'] }}> Meeting notifications (7, 3, 1 days before + morning of)</label>
+        <button class="b sm p" type="submit" style="margin-top:8px">Save</button></form></div></details>
+      <form method="post" action="{{ url_for('ddb.tab_delete', tab_id=tb['id']) }}" onsubmit="return confirm('Delete this tab? Its rows are hidden until the tab is restored.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}"><button class="b sm dg" type="submit">Delete</button></form>
+      {% else %}
+      <form method="post" action="{{ url_for('ddb.tab_restore', tab_id=tb['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}"><button class="b sm" type="submit">Restore</button></form>
+      {% endif %}</td></tr>
+  {% else %}<tr><td colspan="5" class="empty">No tabs yet. Create the first one on the right.</td></tr>{% endfor %}</tbody></table></div>
+  <aside class="stack"><div class="card"><h2>Create a tab</h2>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}">
+      <div class="fd"><label for="tname">Tab name</label><input id="tname" name="name" type="text" maxlength="60" required></div>
+      <div class="fd"><label for="ttpl">Template</label><select id="ttpl" name="template">{% for k, label, cols in templates %}<option value="{{ k }}">{{ label }}{% if cols %} — {{ cols|map(attribute=0)|join(', ') }}{% endif %}</option>{% endfor %}</select></div>
+      <label class="ck"><input type="checkbox" name="meeting_notify" value="1"> Meeting notifications for this tab (the Meetings template already turns this on)</label>
+      <button class="b p" type="submit" style="margin-top:12px">Create tab</button></form></div></aside></div>
+{% endblock %}
