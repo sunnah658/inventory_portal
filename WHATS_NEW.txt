@@ -1,4 +1,18 @@
 ==============================================================================
+ UPDATE: PER-TEMPLATE INVOICE HEADER, LOWER SIGNATURES, RECYCLE BIN PURGE
+ RULE, MY SUB-TABS, USERNAME CHANGE (2026-11-05)
+==============================================================================
+ A dept admin can now choose the company name and address shown at the
+ top of invoices made from each template, in the template builder. No
+ email is shown in the invoice header any more. The signature line sits
+ lower, with the same room to sign on every invoice, with or without
+ Terms. Only the true portal admin can erase from the Recycle Bin a
+ deletion made by a permission user. The portal admin no longer sees
+ "My rows" or "My invoices" sub-tabs in the Department Database, and a
+ permission user sees them only in his own department. The portal admin
+ and a permission user can now change another user's username.
+
+==============================================================================
  UPDATE: APPROVAL NOTIFICATIONS, MY INVOICES TAB, PRINT WITHOUT HISTORY,
  PROFESSIONAL ROW HIGHLIGHT, NOTIFICATION LINKS (2026-11-05)
 ==============================================================================

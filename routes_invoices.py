@@ -291,20 +291,21 @@ def template_new():
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
         if not name:
-            flash("Write a template name.", "error"); return render_template("invoice_template_form.html", tpl=None, currencies=CURRENCIES)
+            flash("Write a template name.", "error"); return render_template("invoice_template_form.html", tpl=None, currencies=CURRENCIES, default_company_name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME), default_company_address=config.DEFAULT_COMPANY_ADDRESS)
         left = _save_logo(request.files.get("logo_left")); right = _save_logo(request.files.get("logo_right"))
         sigs = _sigs(request.form)
-        tid = db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,show_amount_in_words,notes,show_company_logo,show_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        tid = db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,show_amount_in_words,notes,show_company_logo,show_address,company_name,company_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                          (g.user["department_id"], g.user["id"], name, request.form.get("kind") or "billing", (request.form.get("title") or "INVOICE").strip(), (request.form.get("subtitle") or "").strip(),
                           (request.form.get("number_prefix") or "BIL").strip().upper()[:10], request.form.get("currency") or "BDT", float(request.form.get("vat") or 0),
                           1 if request.form.get("show_tax") else 0,
                           1 if request.form.get("amount_in_words") else 0, request.form.get("notes") or "",
-                          1 if request.form.get("show_company_logo") else 0, 1 if request.form.get("show_address") else 0, left, right,
+                          1 if request.form.get("show_company_logo") else 0, 1 if request.form.get("show_address") else 0,
+                          (request.form.get("company_name") or "").strip(), (request.form.get("company_address") or "").strip(), left, right,
                           1 if request.form.get("watermark_on") else 0, (request.form.get("watermark_text") or "").strip()[:50],
                           json.dumps(sigs), request.form.get("item_columns") or "", request.form.get("top_fields") or "", "active" if request.form.get("status") != "draft" else "draft")).lastrowid
         log(db, "invoice_template_new", name); db.commit(); flash("Template saved.", "ok")
         return redirect(url_for("invoices.templates"))
-    return render_template("invoice_template_form.html", tpl=None, sigs=[], currencies=CURRENCIES)
+    return render_template("invoice_template_form.html", tpl=None, sigs=[], currencies=CURRENCIES, default_company_name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME), default_company_address=config.DEFAULT_COMPANY_ADDRESS)
 
 @bp.route("/invoices/templates/<int:tid>/edit", methods=["GET", "POST"])
 @login_required
@@ -316,18 +317,19 @@ def template_edit(tid):
     if request.method == "POST":
         left = _save_logo(request.files.get("logo_left")) or tpl["logo_left"]
         right = _save_logo(request.files.get("logo_right")) or tpl["logo_right"]
-        db.execute("UPDATE invoice_templates SET name=?,kind=?,title=?,subtitle=?,number_prefix=?,default_currency=?,vat_percent=?,show_tax=?,show_amount_in_words=?,notes=?,show_company_logo=?,show_address=?,logo_left=?,logo_right=?,watermark_on=?,watermark_text=?,signatures_json=?,item_columns_json=?,top_fields_json=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
+        db.execute("UPDATE invoice_templates SET name=?,kind=?,title=?,subtitle=?,number_prefix=?,default_currency=?,vat_percent=?,show_tax=?,show_amount_in_words=?,notes=?,show_company_logo=?,show_address=?,company_name=?,company_address=?,logo_left=?,logo_right=?,watermark_on=?,watermark_text=?,signatures_json=?,item_columns_json=?,top_fields_json=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
                    ((request.form.get("name") or tpl["name"]).strip(), request.form.get("kind") or tpl["kind"], (request.form.get("title") or "INVOICE").strip(), (request.form.get("subtitle") or "").strip(),
                     (request.form.get("number_prefix") or tpl["number_prefix"]).strip().upper()[:10], request.form.get("currency") or tpl["default_currency"], float(request.form.get("vat") or 0),
                     1 if request.form.get("show_tax") else 0,
                     1 if request.form.get("amount_in_words") else 0, request.form.get("notes") or "",
-                    1 if request.form.get("show_company_logo") else 0, 1 if request.form.get("show_address") else 0, left, right,
+                    1 if request.form.get("show_company_logo") else 0, 1 if request.form.get("show_address") else 0,
+                    (request.form.get("company_name") or "").strip(), (request.form.get("company_address") or "").strip(), left, right,
                     1 if request.form.get("watermark_on") else 0, (request.form.get("watermark_text") or "").strip()[:50],
                     json.dumps(_sigs(request.form, tpl)), request.form.get("item_columns") or "", request.form.get("top_fields") or "",
                     "active" if request.form.get("status") != "draft" else "draft", tid))
         log(db, "invoice_template_edit", tpl["name"]); db.commit(); flash("Template saved. Changes apply to new invoices only; issued invoices keep their old format.", "ok")
         return redirect(url_for("invoices.templates"))
-    return render_template("invoice_template_form.html", tpl=tpl, sigs=json.loads(tpl["signatures_json"] or "[]") if tpl["signatures_json"] else [], currencies=CURRENCIES)
+    return render_template("invoice_template_form.html", tpl=tpl, sigs=json.loads(tpl["signatures_json"] or "[]") if tpl["signatures_json"] else [], currencies=CURRENCIES, default_company_name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME), default_company_address=config.DEFAULT_COMPANY_ADDRESS)
 
 @bp.route("/invoices/templates/<int:tid>/share", methods=["GET", "POST"])
 @login_required
@@ -366,8 +368,8 @@ def template_share_use(sid):
     if share is None:
         abort(404)
     tpl = _template(db, share["template_id"])
-    db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,show_amount_in_words,notes,show_company_logo,show_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status,shared_from_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-               (g.user["department_id"], g.user["id"], tpl["name"], tpl["kind"], tpl["title"], tpl["subtitle"], tpl["number_prefix"], tpl["default_currency"], tpl["vat_percent"], tpl["show_tax"], tpl["show_amount_in_words"], tpl["notes"], tpl["show_company_logo"], tpl["show_address"], tpl["logo_left"], tpl["logo_right"], tpl["watermark_on"], tpl["watermark_text"], tpl["signatures_json"], tpl["item_columns_json"], tpl["top_fields_json"], "active", tpl["id"]))
+    db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,show_amount_in_words,notes,show_company_logo,show_address,company_name,company_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status,shared_from_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+               (g.user["department_id"], g.user["id"], tpl["name"], tpl["kind"], tpl["title"], tpl["subtitle"], tpl["number_prefix"], tpl["default_currency"], tpl["vat_percent"], tpl["show_tax"], tpl["show_amount_in_words"], tpl["notes"], tpl["show_company_logo"], tpl["show_address"], tpl["company_name"], tpl["company_address"], tpl["logo_left"], tpl["logo_right"], tpl["watermark_on"], tpl["watermark_text"], tpl["signatures_json"], tpl["item_columns_json"], tpl["top_fields_json"], "active", tpl["id"]))
     # next_number for the copy starts at 1 (the INSERT above does not set it, default is 1)
     log(db, "invoice_template_use", tpl["name"]); db.commit(); flash("Template copied to your department. You can now use it and edit your own copy.", "ok")
     return redirect(url_for("invoices.templates"))
@@ -425,7 +427,7 @@ def invoice_new():
                               (request.form.get("customer_name") or "").strip(), request.form.get("customer_address") or "", (request.form.get("reference") or "").strip(),
                               request.form.get("invoice_date") or date.today().isoformat(), "draft", float(sub), float(vat), float(total), words,
                               request.form.get("notes") or tpl["notes"], json.dumps(sigs),
-                              json.dumps({"name": tpl["name"], "kind": tpl["kind"], "title": tpl["title"], "subtitle": tpl["subtitle"], "vat_percent": tpl["vat_percent"], "show_tax": tpl["show_tax"], "logo_left": tpl["logo_left"], "logo_right": tpl["logo_right"], "watermark_on": tpl["watermark_on"], "watermark_text": tpl["watermark_text"]}))).lastrowid
+                              json.dumps({"name": tpl["name"], "kind": tpl["kind"], "title": tpl["title"], "subtitle": tpl["subtitle"], "vat_percent": tpl["vat_percent"], "show_tax": tpl["show_tax"], "logo_left": tpl["logo_left"], "logo_right": tpl["logo_right"], "watermark_on": tpl["watermark_on"], "watermark_text": tpl["watermark_text"], "company_name": tpl["company_name"], "company_address": tpl["company_address"], "show_address": tpl["show_address"]}))).lastrowid
             for i, l in enumerate(lines):
                 db.execute("INSERT INTO invoice_lines(invoice_id,position,description,qty,rate,amount,line_date,from_place,to_place,mode,purpose,spec) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (iid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"]), l["line_date"], l["from_place"], l["to_place"], l["mode"], l["purpose"], l["spec"]))
@@ -593,7 +595,13 @@ def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True):
         snap = {}
     kind = snap.get("kind") or "billing"
     colour = KIND_COLOURS.get(kind, "#0F7CA6")
-    company = setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME)
+    company = snap.get("company_name") or setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME)
+    # Per-template header: an invoice keeps the header it was made with (from
+    # its snapshot). Older invoices have no header in their snapshot, so they
+    # fall back to the portal name and the default address — the same look as
+    # before, except the email no longer appears.
+    address = snap.get("company_address") or config.DEFAULT_COMPANY_ADDRESS
+    show_address = snap.get("show_address", 1)
     # meta
     meta = []
     if inv["number"]:
@@ -609,7 +617,8 @@ def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True):
         cols=_pdf_cols(kind), rows=_pdf_rows(lines, kind, inv["currency"], show_amounts, show_lines),
         totals=_pdf_totals(inv, show_amounts), words=(inv["amount_in_words"] if show_amounts else ""),
         terms=inv["notes"] or "", sigs=_pdf_sigs(inv), code=inv["public_code"] or "",
-        company=company, logo_left=_logo_path(snap.get("logo_left")), logo_right=_logo_path(snap.get("logo_right")),
+        company=company, company_address=address, show_address=bool(show_address),
+        logo_left=_logo_path(snap.get("logo_left")), logo_right=_logo_path(snap.get("logo_right")),
         watermark_on=bool(snap.get("watermark_on")), watermark_text=snap.get("watermark_text") or "")
 
 def _pdf_cols(kind):

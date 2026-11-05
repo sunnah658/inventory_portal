@@ -1620,3 +1620,57 @@
    users.created_by column is added automatically on first
    start). Apply only this latest zip, not the older ones in
    order.
+
+==============================================================================
+ 33. PER-TEMPLATE INVOICE HEADER, LOWER SIGNATURES, RECYCLE BIN PURGE RULE,
+     MY SUB-TABS, USERNAME CHANGE (2026-11-05)
+==============================================================================
+ 1. Per-template invoice header. When a dept admin creates or edits an
+    invoice template, section 2 Heading has two new boxes: Company name
+    and Address. Whatever is typed there appears at the top of invoices
+    made from that template, next to the logo, in place of the fixed
+    address line. There is no email box and no email is ever shown in
+    the header (accounts@hrctech.net is gone from invoice PDFs). The
+    phone number is part of the address line the admin types. New
+    templates start filled with the portal's company name and address,
+    and so do existing templates when the admin opens them; until then
+    their invoices look as before, minus the email. The "Show company
+    address and contact" tick box now actually hides or shows the
+    address line (it was saved before but the PDF ignored it). A
+    template shared with another department carries its header with
+    it. An invoice keeps the header it was made with, even if the
+    template is changed later; on invoices made before this update,
+    only the email disappears if the PDF is downloaded again.
+ 2. Signatures lower. The space above the signature line is now the
+    same on every invoice, 88 points, whether the invoice has Terms
+    or not. Before, the gap only existed when Terms were written, so
+    invoices without Terms had almost no room to sign. The gap is the
+    same for every invoice type and custom format.
+ 3. Recycle Bin purge rule. A permission user can no longer erase
+    from the Recycle Bin a deletion made by a permission user -- only
+    the true portal admin can. That covers user accounts (a permission
+    user can no longer erase any user account at all, since accounts
+    are only ever deleted by the portal admin or a permission user)
+    and records (including erasing a user's work with "Yes, delete
+    all their work too" when purging their account). A permission
+    user can still erase records a regular user deleted himself, and
+    can still restore any deletion.
+ 4. "My" sub-tabs in the Department Database. The portal admin no
+    longer gets a "My rows" or "My invoices" sub-tab on any
+    Department Database tab, in any department. A permission user
+    gets them only in his own department, not in other departments.
+    Dept admins and regular users are unchanged. A bookmarked link
+    with the "my" filter now simply shows All.
+ 5. Username change. The portal admin and a permission user can now
+    change another user's username on the Edit user page. The new
+    name must not already be used by someone else, and the user logs
+    in with the new name afterwards.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (the new
+   invoice_templates.company_name and company_address columns are
+   added automatically on first start). Apply only this latest zip,
+   not the older ones in order.

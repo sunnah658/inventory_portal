@@ -14,7 +14,10 @@
 <h2>2 · Heading</h2><div class="fm">
 <div class="fd"><label>Title (invoice type)</label><input type="text" name="title" value="{{ tpl['title'] if tpl else 'INVOICE' }}"></div>
 <div class="fd"><label>Subtitle (optional)</label><input type="text" name="subtitle" value="{{ tpl['subtitle'] if tpl else '' }}"></div>
+<div class="fd"><label>Company name (top of the invoice)</label><input type="text" name="company_name" value="{{ tpl['company_name'] if tpl and tpl['company_name'] else default_company_name }}" placeholder="HRC Technologies Limited"></div>
+<div class="fd"><label>Address (under the company name)</label><input type="text" name="company_address" value="{{ tpl['company_address'] if tpl and tpl['company_address'] else default_company_address }}" placeholder="Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100"></div>
 </div>
+<p class="hint">Whatever is typed here appears at the top of invoices made from this template, next to the logo. Type the phone number in the address if you want it shown. No email is ever shown. Leave a box empty to use the portal's company name and address.</p>
 <label class="ck"><input type="checkbox" name="show_company_logo" {{ 'checked' if not tpl or tpl['show_company_logo'] }}> Show company logo</label>
 <label class="ck"><input type="checkbox" name="show_address" {{ 'checked' if not tpl or tpl['show_address'] }}> Show company address and contact</label>
 <h2>Logos — optional, two top corners</h2><p class="hint">Left logo: company. Right logo: department / branch. Leave empty = text only. If a right logo is uploaded, it sits in the right top corner; the invoice type then moves to just on top of the table.</p>

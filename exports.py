@@ -223,6 +223,7 @@ def sheets_file(fmt, title, sheets, company="", filename="report", subtitle=""):
 
 # ------------------------------------------------------------------ Invoice PDF (v4 layout)
 def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals, words, terms, sigs, code, company="",
+                company_address="", show_address=True,
                 logo_left=None, logo_right=None, watermark_on=False, watermark_text=""):
     """Invoice PDF, layout v4:
     Top row: left logo + company (single-line address), right second logo in the top right corner.
@@ -252,8 +253,14 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
             return ""
     left_logo = _img(logo_left) if logo_left else _img(custom_logo_path() or os.path.join(current_app.static_folder, "logo.png"))
     right_logo = _img(logo_right, w=2.2 * cm, h=1.4 * cm) if logo_right else ""
-    company_para = Paragraph(f"<b>{_pdf_text(company)}</b><br/><font color='#506A7B'>Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100 · accounts@hrctech.net</font>",
-                             ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
+    # Top row: the company name and address come from the template that made
+    # this invoice (chosen by the dept admin); no email is ever shown here.
+    if show_address and company_address:
+        company_para = Paragraph(f"<b>{_pdf_text(company)}</b><br/><font color='#506A7B'>{_pdf_text(company_address)}</font>",
+                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
+    else:
+        company_para = Paragraph(f"<b>{_pdf_text(company)}</b>",
+                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
     banner = Table([[left_logo, company_para, right_logo]], colWidths=[3 * cm, None, 3 * cm],
                    style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent)])
     story += [banner, Spacer(1, 10)]
@@ -284,7 +291,11 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
         story.append(Table([[Paragraph(_pdf_text("In words: " + words), small)]], colWidths=[usable], style=[("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F2F6F9")), ("LINEBEFORE", (0, 0), (0, 0), 3, accent)]))
         story.append(Spacer(1, 8))
     if terms:
-        story.append(Paragraph(_pdf_text("Terms: " + terms), small)); story.append(Spacer(1, 64))
+        story.append(Paragraph(_pdf_text("Terms: " + terms), small))
+    # Signature gap (2026-11-05): the same space on every invoice, whether it
+    # has Terms or not — the old gap only existed when Terms were present, so
+    # invoices without Terms had almost no room to sign. 88 points.
+    story.append(Spacer(1, 88))
     # signatures, horizontal
     sig_cells = []
     for _script, name, role in sigs:

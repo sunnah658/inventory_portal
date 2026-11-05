@@ -40,9 +40,23 @@ from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, ddb_attachment_info,
                   ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
                   notify, parse_code_text, parse_form, show_when)
 from models import get_db, log, setting_get
-from utils import csv_response, is_portal_admin, like_pattern, page_info
+from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
 
 bp = Blueprint("ddb", __name__, url_prefix="/deptdb")
+
+
+def _show_mine(dept):
+    """Whether the 'My rows' / 'My invoices' sub-tab is shown for this viewer
+    in this department (2026-11-05): the true portal admin never gets one —
+    he has no rows or invoices of his own to filter to — and a permission user
+    gets one only in his own department, not in other departments. Dept
+    admins and regular users only ever see their own department, so for them
+    it is always shown."""
+    if is_true_admin(g.user):
+        return False
+    if is_portal_admin(g.user) and g.user["department_id"] != dept["id"]:
+        return False
+    return True
 
 # Template tabs: (key, label, starter columns)
 # column: (name, type, options, required, has_time)
@@ -308,16 +322,21 @@ def index():
         return redirect(url_for("public.code_page", code=_wanted))
     if request.args.get("tab") == "invoices":
         return _invoice_tab_view(db, dept, is_admin, request.args)
-    tab, tabs = _get_tab(db, dept, request.args.get("tab", type=int))
+    show_mine = _show_mine(dept)
+    args = request.args.copy()
+    if not show_mine:
+        args.pop("mine", None)   # a bookmarked mine=1 just shows All
+    tab, tabs = _get_tab(db, dept, args.get("tab", type=int))
     if tab is None:
         return render_template("deptdb.html", dept=dept, tab=None, tabs=[], level="manager" if is_admin else "own",
                                cols=[], rows=[], vmap={}, attach_urls={}, info={"sort": "updated", "dir": "desc", "fcol": "", "fval": ""},
                                q="", mine=False, deleted=False, total=0, page=1, pages=1,
                                counts={"all": 0, "mine": 0, "deleted": 0}, keep={}, can_add=False, names=[],
+                               show_mine=show_mine,
                                depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                                if is_portal_admin(g.user) else [],
                                is_admin=is_admin, can_edit_row=lambda r: False, can_delete_row=lambda r: False)
-    where, params, order, op, info, q, mine, deleted = _filters(db, dept, tab, is_admin, request.args)
+    where, params, order, op, info, q, mine, deleted = _filters(db, dept, tab, is_admin, args)
     total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
     page, pages, offset = page_info(total, request.args.get("page", 1, type=int), config.PER_PAGE)
     rows = db.execute("SELECT r.*, u.full_name AS owner_name, u.is_active AS owner_is_active, u.is_deleted AS owner_is_deleted FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
@@ -331,7 +350,7 @@ def index():
                            "AND owner_id=?", (dept["id"], tab["id"], g.user["id"])).fetchone()[0],
         "deleted": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NOT NULL",
                               (dept["id"], tab["id"])).fetchone()[0] if is_admin else 0}
-    keep = {k: v for k, v in request.args.items() if k not in ("page",)}
+    keep = {k: v for k, v in args.items() if k not in ("page",)}
     if is_portal_admin(g.user):
         keep["dept"] = dept["id"]
     _vmap, _urls = _display_map(db, rows, cols)
@@ -339,7 +358,7 @@ def index():
     return render_template(
         "deptdb.html", dept=dept, tab=tab, tabs=tabs, level="manager" if is_admin else "own", cols=cols, rows=rows,
         vmap=_vmap, attach_urls=_urls, info=info, q=q, mine=mine, deleted=deleted,
-        total=total, page=page, pages=pages, counts=counts, keep=keep,
+        total=total, page=page, pages=pages, counts=counts, keep=keep, show_mine=show_mine,
         can_add=can_add_here, names=[c["name"] for c in cols], is_admin=is_admin,
         depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
         if is_portal_admin(g.user) else [],
@@ -416,7 +435,10 @@ def _invoice_tab_view(db, dept, is_admin, args):
         counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
+    show_mine = _show_mine(dept)
     user_filter = args.get("user") or ""
+    if not show_mine and user_filter == "mine":
+        user_filter = ""   # a bookmarked user=mine just shows All
     status = args.get("status") or ""
     q = (args.get("q") or "").strip()
     sort = args.get("sort") or "newest"
@@ -444,7 +466,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
                       "FROM invoices i LEFT JOIN invoice_templates t ON t.id=i.template_id "
                       "LEFT JOIN users u ON u.id=i.owner_id LEFT JOIN departments d ON d.id=i.department_id "
                       + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
-    keep = {k: v for k, v in args.items() if k not in ("page",)}
+    keep = {k: v for k, v in args.items() if k not in ("page",) and not (k == "user" and v == "mine" and not show_mine)}
     if is_portal_admin(g.user):
         keep["dept"] = dept["id"]
     keep["tab"] = "invoices"
@@ -457,6 +479,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
                            invtype=invtype, invtype_id=invtype_id, counts=counts, rows=rows,
                            users=users, user_filter=user_filter, status=status, q=q, sort=sort,
                            total=total, page=page, pages=pages, keep=keep, create_templates=create_templates,
+                           show_mine=show_mine,
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                            if is_portal_admin(g.user) else [],
                            can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] == "draft")

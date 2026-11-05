@@ -26,6 +26,7 @@ DEFAULT_ADMIN_PASSWORD = "ChangeMe@123"      # must be changed at first login
 DEFAULT_ADMIN_NAME = "Portal Admin"
 DEFAULT_DEPARTMENT = "IT"
 DEFAULT_COMPANY_NAME = "HRC Technologies Limited"   # can be changed in Admin > Settings
+DEFAULT_COMPANY_ADDRESS = "Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100"  # top of invoice PDFs; no email is ever shown there
 
 # ---- Login and sessions ----------------------------------------------------
 SESSION_HOURS = 8                                    # absolute limit: logout after this time

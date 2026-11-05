@@ -266,12 +266,15 @@ def user_edit(user_id):
         abort(403)
     if request.method == "POST":
         full_name = (request.form.get("full_name") or "").strip()
+        username = (request.form.get("username") or "").strip()
         dept = request.form.get("department_id") or ""
         role = request.form.get("role") or "user"
         active = 1 if request.form.get("is_active") else 0
         error = None
-        if not full_name or not dept.isdigit():
-            error = "Full name and department are required."
+        if not full_name or not username or not dept.isdigit():
+            error = "Full name, username and department are required."
+        elif db.execute("SELECT 1 FROM users WHERE username=? AND id != ?", (username, user_id)).fetchone():
+            error = f"The username '{username}' is already used."
         elif role not in ("user", "admin"):
             error = "Role must be user or admin."
         elif role == "admin" and not is_true_admin(g.user):
@@ -295,12 +298,12 @@ def user_edit(user_id):
             # admin; anyone else editing a user leaves the existing value untouched.
             new_permission = (1 if request.form.get("can_portal_admin") else 0) if is_true_admin(g.user) else row["can_portal_admin"]
             # Records stay in the department they were created in.
-            db.execute("UPDATE users SET full_name=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=?, can_portal_admin=? WHERE id=?",
-                       (full_name, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, new_permission, user_id))
+            db.execute("UPDATE users SET full_name=?, username=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=?, can_portal_admin=? WHERE id=?",
+                       (full_name, username, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, new_permission, user_id))
             _save_view_departments(db, user_id, request.form.getlist("view_dept"), int(dept))
             if not active:
                 revoke_user_sessions(db, user_id)             # a disabled user is logged out at once
-            log(db, "user_edit", row["username"])
+            log(db, "user_edit", username)
             db.commit()
             flash("User updated.", "ok")
             return redirect(url_for("admin.users"))

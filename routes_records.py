@@ -761,11 +761,13 @@ def bin_purge(rid):
     if not rec["deleted_at"]:
         abort(400)
     db = get_db()
-    # A permission user cannot erase for good a record he deleted himself, or a
-    # record the portal admin deleted. Only the portal admin can erase those.
+    # A permission user cannot erase for good a record he deleted himself, a
+    # record the portal admin deleted, or a record any permission user deleted.
+    # Only the portal admin can erase those. He can still erase a record a
+    # regular user deleted himself.
     if not is_true_admin(g.user) and rec["deleted_by"]:
-        deleter = db.execute("SELECT role FROM users WHERE id=?", (rec["deleted_by"],)).fetchone()
-        if rec["deleted_by"] == g.user["id"] or (deleter and deleter["role"] == "admin"):
+        deleter = db.execute("SELECT role, can_portal_admin FROM users WHERE id=?", (rec["deleted_by"],)).fetchone()
+        if rec["deleted_by"] == g.user["id"] or (deleter and (deleter["role"] == "admin" or deleter["can_portal_admin"])):
             flash("Only the portal admin can erase this record for good.", "error")
             return redirect(url_for("records.bin_page"))
     purge_record(db, rid)
@@ -827,13 +829,22 @@ def bin_user_purge(user_id):
     Yes (delete_work=1): his work is deleted immediately, then the account.
     No (delete_work=0): the account leaves the bin list, his work stays (name in
     red) until the 30 days end, when it vanishes with the account.
-    A permission user cannot erase a true portal admin's account, or his own."""
+    A permission user cannot erase a true portal admin's account, or his own,
+    or an account deleted by any permission user (including himself). Only the
+    portal admin can erase those. In practice a permission user cannot erase
+    any user account from the Recycle Bin, since accounts are only ever
+    deleted by the portal admin or a permission user."""
     db = get_db()
     row = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
     if row is None or not row["is_deleted"] or row["bin_purged"]:
         abort(404)
     if not is_true_admin(g.user) and (is_true_admin(row) or user_id == g.user["id"]):
         abort(403)
+    if not is_true_admin(g.user) and row["deleted_by"]:
+        deleter = db.execute("SELECT role, can_portal_admin FROM users WHERE id=?", (row["deleted_by"],)).fetchone()
+        if row["deleted_by"] == g.user["id"] or (deleter and (deleter["role"] == "admin" or deleter["can_portal_admin"])):
+            flash("Only the portal admin can erase this user for good.", "error")
+            return redirect(url_for("records.bin_page", tab="users"))
     delete_work = request.form.get("delete_work") == "1"
     purge_user_account(db, user_id, delete_work=delete_work)
     log(db, "user_purge" if delete_work else "user_purge_keep_work", row["username"])

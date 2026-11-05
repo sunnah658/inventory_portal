@@ -16,7 +16,7 @@
   <input type="hidden" name="tab" value="invoices">{% if depts %}<input type="hidden" name="dept" value="{{ dept['id'] }}">{% endif %}
   {% if invtype_id %}<input type="hidden" name="invtype" value="{{ invtype_id }}">{% endif %}
   <input type="search" name="q" value="{{ q }}" placeholder="Search customer, invoice number or share code like HRC-48392" aria-label="Search invoices">
-  <select name="user" aria-label="Filter by user"><option value="">All users</option><option value="mine" {{ 'selected' if user_filter == 'mine' }}>My invoices</option>
+  <select name="user" aria-label="Filter by user"><option value="">All users</option>{% if show_mine %}<option value="mine" {{ 'selected' if user_filter == 'mine' }}>My invoices</option>{% endif %}
     {% for u in users %}<option value="{{ u['id'] }}" {{ 'selected' if user_filter == u['id']|string }}>{{ u['full_name'] }}</option>{% endfor %}</select>
   <select name="status" aria-label="Filter by status"><option value="">All statuses</option>
     {% for s in ['draft','issued','paid','void'] %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s|title }}</option>{% endfor %}</select>
@@ -30,7 +30,7 @@
 </div>
 <div class="tabs" style="margin-top:8px">
   <a class="tab {{ 'on' if invtype == 'all' and user_filter != 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user=user_filter, status=status, q=q, sort=sort) }}">All · {{ counts.all }}</a>
-  <a class="tab {{ 'on' if invtype == 'all' and user_filter == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='mine', status=status, q=q, sort=sort) }}">My invoices · {{ counts.mine }}</a>
+  {% if show_mine %}<a class="tab {{ 'on' if invtype == 'all' and user_filter == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='mine', status=status, q=q, sort=sort) }}">My invoices · {{ counts.mine }}</a>{% endif %}
   {% for st in sub_tabs %}<a class="tab {{ 'on' if invtype_id == st['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', invtype=st['id'], user=user_filter, status=status, q=q, sort=sort) }}">{{ st['name'] }} · {{ counts[st['id']] }}</a>{% endfor %}
 </div>
 {% if create_templates %}

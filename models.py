@@ -385,6 +385,8 @@ CREATE TABLE IF NOT EXISTS invoice_templates (
     notes         TEXT,
     show_company_logo INTEGER NOT NULL DEFAULT 1,
     show_address  INTEGER NOT NULL DEFAULT 1,
+    company_name  TEXT NOT NULL DEFAULT '',
+    company_address TEXT NOT NULL DEFAULT '',
     logo_left     TEXT,
     logo_right    TEXT,
     watermark_on  INTEGER NOT NULL DEFAULT 0,
@@ -605,6 +607,20 @@ def _upgrade_invoice_tax_tick(conn):
         conn.execute("UPDATE invoice_templates SET show_tax = CASE WHEN vat_percent > 0 THEN 1 ELSE 0 END")
 
 
+def _upgrade_invoice_header(conn):
+    """Per-template invoice header (2026-11-05): invoice_templates.company_name
+    and company_address let a dept admin choose what appears at the top of
+    invoices made from the template. Empty means 'use the portal defaults'
+    (portal company name + the default address line, no email), so existing
+    templates keep looking as they did, minus the email, until an admin edits
+    them. No backfill: nothing is overwritten."""
+    have = [r["name"] for r in conn.execute("PRAGMA table_info(invoice_templates)")]
+    if "company_name" not in have:
+        conn.execute("ALTER TABLE invoice_templates ADD COLUMN company_name TEXT NOT NULL DEFAULT ''")
+    if "company_address" not in have:
+        conn.execute("ALTER TABLE invoice_templates ADD COLUMN company_address TEXT NOT NULL DEFAULT ''")
+
+
 def _upgrade_ddb_tabs(conn):
     """Turn the old one-table-per-department database into tabs. Old columns and
     rows (tab_id NULL) go into the department's first admin-created tab when
@@ -711,6 +727,7 @@ def init_db():
         _upgrade_ddb_attachment_type(conn)
         _upgrade_ddb_tabs(conn)
         _upgrade_invoice_tax_tick(conn)
+        _upgrade_invoice_header(conn)
         conn.execute("DROP INDEX IF EXISTS ux_column_reminder")   # several reminder columns are allowed now
         _ensure_column(conn, "activity_log", "ip", "TEXT")
         _ensure_column(conn, "attachments", "scan_status", "TEXT")

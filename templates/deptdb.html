@@ -25,7 +25,7 @@
 </div>
 <div class="tabs" style="margin-top:8px">
   <a class="tab {{ 'on' if not mine and not deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id']) }}">All rows · {{ counts.all }}</a>
-  <a class="tab {{ 'on' if mine }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], mine=1) }}">My rows · {{ counts.mine }}</a>
+  {% if show_mine %}<a class="tab {{ 'on' if mine }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], mine=1) }}">My rows · {{ counts.mine }}</a>{% endif %}
   {% if is_admin %}<a class="tab {{ 'on' if deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], deleted=1) }}">Deleted · {{ counts.deleted }}</a>{% endif %}
 </div>
 {% if not cols %}
