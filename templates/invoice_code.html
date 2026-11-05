@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ code }}{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>{{ code }}{% if inv %} · {{ inv['title'] }} {{ inv['number'] or '' }}{% endif %}</h1><p class="hint">Login is required to search a code, view it and download its PDF. Without login, no view.</p></div>
+<div class="hd"><div><h1>Share code {{ code }}{% if inv %} · {{ inv['title'] }}{% if inv['number'] %} · Invoice No. {{ inv['number'] }}{% endif %}{% endif %}</h1><p class="hint">This share code is only for scanning and searching — it is not the invoice number. Quote the invoice number for payment and accounts. Login is required to search a share code, view it and download its PDF. Without login, no view.</p></div>
 <div class="acts noprint">{% if status=='ok' %}<a class="b p" href="{{ url_for('invoices.code_pdf', code=code) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>{% endif %}<a class="b" href="{{ url_for('invoices.list_invoices') }}">Back to Invoices</a></div></div>
-{% if status=='missing' %}<div class="alert">No invoice with the code <b>{{ code }}</b> exists.</div>
-{% elif status=='off' %}<div class="alert">The code <b>{{ code }}</b> exists, but its public QR is off, expired, or the invoice is Draft / Void.</div>
+{% if status=='missing' %}<div class="alert">No invoice with the share code <b>{{ code }}</b> exists.</div>
+{% elif status=='off' %}<div class="alert">The share code <b>{{ code }}</b> exists, but its public QR is off, expired, or the invoice is Draft / Void.</div>
 {% else %}
 <div class="card">
 {% if inv['public_show_customer'] %}<p><b>Customer:</b> {{ inv['customer_name'] or '—' }}<br>{{ inv['customer_address'] or '' }}</p>{% endif %}

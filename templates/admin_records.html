@@ -28,7 +28,7 @@
 {% elif rows %}
   {{ bulkbar(departments) }}
   <div class="tb"><table><thead><tr><th class="chk"><input type="checkbox" class="selall" aria-label="Select all"></th><th>Department</th><th>Record</th><th>Owner</th><th>Last changed</th><th class="noprint"></th></tr></thead><tbody>
-  {% for r in rows %}<tr class="r"><td class="chk"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" form="bulkform" aria-label="Select"></td><td><span class="dp">{{ r['department_name'] }}</span></td><td>{{ sums[r['id']] }}</td><td>{{ r['owner_name'] }}</td><td>{{ r['updated_at'] }}</td>
+  {% for r in rows %}<tr class="r"><td class="chk"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" form="bulkform" aria-label="Select"></td><td><span class="dp">{{ r['department_name'] }}</span></td><td>{{ sums[r['id']] }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td><td>{{ r['updated_at'] }}</td>
   <td class="actcell noprint"><a class="b sm" href="{{ url_for('records.detail', rid=r['id']) }}">Open</a> <a class="b sm" href="{{ url_for('records.edit_record', rid=r['id']) }}">Edit</a></td></tr>{% endfor %}</tbody></table></div>
 {% else %}<div class="tb"><div class="empty">No records found.</div></div>{% endif %}
 {{ pager(page, pages, 'admin.all_records', keep) }}

@@ -4,11 +4,12 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ rec['department_name'] }} record #{{ rec['id'] }}</h1>
-    <p class="hint keepprint">Owner: {{ rec['owner_name'] }} · last changed {{ rec['updated_at'] }}<span class="noprint">{% if level == 'shared' %} · shared with you (you can edit){% elif level == 'shared_view' %} · shared with you (view only){% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</span></p></div>
+    <p class="hint keepprint">Owner: <span class="{{ user_name_class(rec) }}">{{ rec['owner_name'] }}</span> · last changed {{ rec['updated_at'] }}<span class="noprint">{% if level == 'shared' %} · shared with you (you can edit){% elif level == 'shared_view' %} · shared with you (view only){% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</span></p></div>
   <div class="acts noprint">
     {% if can_edit %}<a class="b p" href="{{ url_for('records.edit_record', rid=rec['id']) }}">Edit</a>{% endif %}
     <details class="dt"><summary class="b">PDF</summary>
       <form class="pop" method="get" action="{{ url_for('bulk.record_pdf', rid=rec['id']) }}">
+        <input type="hidden" name="pdf_form" value="1">
         <div class="sub" style="margin-bottom:6px">Choose the fields to put in the PDF. Edit history and repair log are never included.</div>
         {% for c in cols %}<label class="ck"><input type="checkbox" name="col" value="{{ c['id'] }}" checked>{{ c['name'] }}</label>{% endfor %}
         <button class="b p sm wide" type="submit" style="margin-top:10px">Download PDF</button></form></details>
@@ -51,7 +52,7 @@
     {% endif %}
 
     {% if rec['attachments_enabled'] %}
-    <div class="card"><h2>Attachments</h2>
+    <div class="card noprint"><h2>Attachments</h2>
       {% for a in attachments %}<div class="ck"><span style="flex:1"><a href="{{ url_for('records.download_attachment', aid=a['id']) }}">{{ a['original_name'] }}</a>
         <span class="pill">{{ (a['size'] / 1024)|round(0)|int }} KB</span>{% if a['scan_status'] == 'clean' %} <span class="pill b2 noprint">Virus checked</span>{% endif %} <span class="sub noprint">{{ a['by_name'] or '' }}, {{ a['uploaded_at'] }}</span></span>
         {% if can_edit %}<form method="post" enctype="multipart/form-data" action="{{ url_for('records.replace_attachment', aid=a['id']) }}" class="noprint"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -93,7 +94,7 @@
         <button class="b p sm" type="submit" style="margin-top:10px">{{ 'Save' if link else 'Generate public QR' }}</button></form>
       {% if link %}<div class="acts" style="margin-top:10px">
         {% if link['enabled'] %}<form method="post" action="{{ url_for('public.record_public', rid=rec['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="off"><button class="b sm dg" type="submit">Turn off</button></form>{% endif %}
-        <form method="post" action="{{ url_for('public.record_public', rid=rec['id']) }}" onsubmit="return confirm('The scan link changes: old printed QR images stop working. The code (HRC number) stays the same. Continue?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New scan link</button></form></div>{% endif %}
+        <form method="post" action="{{ url_for('public.record_public', rid=rec['id']) }}" onsubmit="return confirm('The scan link and the code change: old printed QR images and the old code stop working. Continue?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New scan link</button></form></div>{% endif %}
     </div>
 
     <div class="card"><h2>Shared with</h2>

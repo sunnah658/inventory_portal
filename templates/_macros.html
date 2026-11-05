@@ -31,7 +31,7 @@
     <tr class="r">
       {% if bulk %}<td class="chk"><input type="checkbox" class="rowck" name="ids" value="{{ r.id }}" form="bulkform" aria-label="Select"></td>{% endif %}
       {% for c in grp.columns[:7] %}<td>{{ cell(c, vals.get(c.id)) }}</td>{% endfor %}
-      <td>{% if mode == 'shared' %}{{ r.owner_name }}{% else %}{% for n in ctx.shares[r.id] %}<span class="dp">{{ n }}</span>{% endfor %}{% endif %}</td>
+      <td>{% if mode == 'shared' %}<span class="{{ user_name_class(r) }}">{{ r.owner_name }}</span>{% else %}{% for n in ctx.shares[r.id] %}<span class="dp">{{ n }}</span>{% endfor %}{% endif %}</td>
       <td class="actcell noprint">
         <a class="b sm" href="{{ url_for('records.detail', rid=r.id) }}">Open</a>
         {% if lvl in ('admin', 'owner', 'shared') %}<a class="b sm" href="{{ url_for('records.edit_record', rid=r.id) }}">Edit</a>{% endif %}

@@ -8,6 +8,7 @@ import config
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 from auth import login_required
+from utils import is_portal_admin
 from core import EDIT_LEVELS, MANAGE_LEVELS, notify
 from models import get_db, log
 from routes_records import _load as load_record
@@ -19,15 +20,25 @@ bp = Blueprint("flow", __name__)
 @bp.route("/notifications")
 @login_required
 def notifications():
+    # Opening this page must NOT mark anything read: a user who only glances
+    # at the list would lose the "New" badge and the bell count. Read state
+    # changes only through the "Mark all as read" button below.
     db = get_db()
     rows = db.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100",
                       (g.user["id"],)).fetchall()
     shown = [dict(r) for r in rows]
+    return render_template("notifications.html", rows=shown, warn_days=g.user["warn_days"],
+                           choices=config.WARN_DAY_CHOICES, hour=config.REMINDER_HOUR)
+
+
+@bp.route("/notifications/mark-read", methods=["POST"])
+@login_required
+def notifications_mark_read():
+    db = get_db()
     db.execute("UPDATE notifications SET read_at=datetime('now','localtime') WHERE user_id=? AND read_at IS NULL",
                (g.user["id"],))
     db.commit()
-    return render_template("notifications.html", rows=shown, warn_days=g.user["warn_days"],
-                           choices=config.WARN_DAY_CHOICES, hour=config.REMINDER_HOUR)
+    return redirect(url_for("flow.notifications"))
 
 
 @bp.route("/notifications/settings", methods=["POST"])
@@ -85,7 +96,7 @@ def delete_comment(cid):
     row = db.execute("SELECT * FROM comments WHERE id=?", (cid,)).fetchone()
     if row is None:
         abort(404)
-    if row["user_id"] != g.user["id"] and g.user["role"] != "admin":
+    if row["user_id"] != g.user["id"] and not is_portal_admin(g.user):
         abort(403)
     db.execute("DELETE FROM comments WHERE id=?", (cid,))
     db.commit()

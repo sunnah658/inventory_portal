@@ -17,7 +17,8 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
 from werkzeug.security import generate_password_hash
 
 import config
-from auth import admin_required
+from auth import admin_required, login_required
+from utils import is_portal_admin, is_true_admin
 from backup import make_backup
 from core import (COLUMN_TYPES, TYPE_LABEL, build_csv, column_names, create_department, get_columns,
                   rec_select, reminder_rows, search_clause, summaries_for, table_context)
@@ -35,6 +36,16 @@ DONUT_COLORS = ["#17a05d", "#0b6e99", "#e8a317", "#d9534f", "#7b61c4", "#9db3c1"
 
 def _departments():
     return get_db().execute("SELECT id, name FROM departments ORDER BY name").fetchall()
+
+
+def _save_view_departments(db, uid, view_dept, own_dept):
+    """Save the extra departments a user may view (besides his own). Needed by
+    user_add / user_edit; the view_dept checkboxes on the user form feed it."""
+    db.execute("DELETE FROM user_view_departments WHERE user_id=?", (uid,))
+    for did in view_dept or []:
+        if str(did).isdigit() and int(did) != own_dept:
+            db.execute("INSERT OR IGNORE INTO user_view_departments(user_id, department_id) VALUES (?,?)",
+                       (uid, int(did)))
 
 
 def _confirmed():
@@ -59,7 +70,7 @@ def dashboard():
         "new_week": db.execute("SELECT COUNT(*) FROM records WHERE deleted_at IS NULL AND "
                                "created_at >= datetime('now','localtime','-7 days')").fetchone()[0],
         "users": db.execute("SELECT COUNT(*) FROM users WHERE is_active=1").fetchone()[0],
-        "disabled": db.execute("SELECT COUNT(*) FROM users WHERE is_active=0").fetchone()[0],
+        "disabled": db.execute("SELECT COUNT(*) FROM users WHERE is_active=0 AND is_deleted=0").fetchone()[0],
         "repairs": db.execute("SELECT COUNT(*) FROM repairs p JOIN records r ON r.id=p.record_id "
                               "WHERE p.date_back IS NULL AND r.deleted_at IS NULL").fetchone()[0],
         "soon": len(soon),
@@ -154,17 +165,49 @@ def all_records_download():
 @bp.route("/users")
 @admin_required
 def users():
+    """All users (not deleted ones: those live in the Recycle Bin Users tab).
+    Filters, all combinable with the search: department, one specific user,
+    role (Admin / Department admin / User) and status (Active / Locked / Pending approval)."""
+    db = get_db()
     q = (request.args.get("q") or "").strip()
+    dept = request.args.get("department", "")
+    user_filter = request.args.get("user", "")
+    role_filter = request.args.get("role", "")
+    status_filter = request.args.get("status", "")
     sql = ("SELECT u.*, d.name AS department_name, (SELECT COUNT(*) FROM records r "
            "WHERE r.owner_id=u.id AND r.deleted_at IS NULL) AS item_count "
            "FROM users u LEFT JOIN departments d ON d.id=u.department_id")
+    where = ["u.is_deleted=0"]
     params = []
     if q:
-        sql += (" WHERE u.full_name LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\'"
-                " OR d.name LIKE ? ESCAPE '\\'")
-        params = [like_pattern(q)] * 3
-    rows = get_db().execute(sql + " ORDER BY u.full_name", params).fetchall()
-    return render_template("admin_users.html", rows=rows, q=q)
+        where.append("(u.full_name LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\'"
+                     " OR d.name LIKE ? ESCAPE '\\')")
+        params += [like_pattern(q)] * 3
+    if dept.isdigit():
+        where.append("u.department_id=?")
+        params.append(int(dept))
+    if user_filter.isdigit():
+        where.append("u.id=?")
+        params.append(int(user_filter))
+    if role_filter == "admin":
+        where.append("u.role='admin'")
+    elif role_filter == "dept_admin":
+        where.append("u.is_dept_admin=1")
+    elif role_filter == "user":
+        where.append("u.role='user' AND u.is_dept_admin=0")
+    if status_filter == "active":
+        where.append("u.is_active=1 AND u.approval_status != 'pending'")
+    elif status_filter == "locked":
+        where.append("u.is_active=0 AND u.approval_status != 'pending'")
+    elif status_filter == "pending":
+        where.append("u.approval_status='pending'")
+    rows = db.execute(sql + " WHERE " + " AND ".join(where) + " ORDER BY u.full_name", params).fetchall()
+    return render_template("admin_users.html", rows=rows, q=q, dept=dept, user_filter=user_filter,
+                           role_filter=role_filter, status_filter=status_filter,
+                           departments=_departments(),
+                           people=db.execute("SELECT id, full_name, username FROM users "
+                                             "WHERE is_deleted=0 ORDER BY full_name").fetchall(),
+                           keep={k: v for k, v in request.args.items()})
 
 
 @bp.route("/users/add", methods=["GET", "POST"])
@@ -187,6 +230,8 @@ def user_add():
             error = "Full name, username and department are required."
         elif role not in ("user", "admin"):
             error = "Role must be user or admin."
+        elif role == "admin" and not is_true_admin(g.user):
+            error = "Only the original portal admin can create an admin account."
         elif password and password_problem(password, username):
             error = password_problem(password, username)
         elif db.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
@@ -196,16 +241,17 @@ def user_add():
         else:
             password = password or generate_password()
             uid = db.execute("INSERT INTO users(full_name,username,password_hash,department_id,role,"
-                             "must_change_password,is_dept_admin,can_ddb_attachment) VALUES (?,?,?,?,?,1,?,?)",
+                             "must_change_password,is_dept_admin,can_ddb_attachment,can_portal_admin) VALUES (?,?,?,?,?,1,?,?,?)",
                              (full_name, username, generate_password_hash(password), int(dept), role,
-                              1 if form.get("is_dept_admin") else 0, 1 if form.get("can_ddb_attachment") else 0)).lastrowid
+                              1 if form.get("is_dept_admin") else 0, 1 if form.get("can_ddb_attachment") else 0,
+                              1 if (is_true_admin(g.user) and form.get("can_portal_admin")) else 0)).lastrowid
             _save_view_departments(db, uid, form.getlist("view_dept"), int(dept))
             log(db, "user_add", username)
             db.commit()
             flash(f"User created. Temporary password for {username}: {password}", "secret")
             return redirect(url_for("admin.users"))
     return render_template("admin_user_form.html", item=form, departments=departments, editing=False,
-                           view_ids=set())
+                           view_ids=set(), can_grant_portal_admin=is_true_admin(g.user))
 
 
 @bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
@@ -213,8 +259,11 @@ def user_add():
 def user_edit(user_id):
     db = get_db()
     row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    if row is None:
+    if row is None or row["is_deleted"]:
         abort(404)
+    # A permission user cannot edit (and so cannot disable or remove) a true portal admin.
+    if not is_true_admin(g.user) and is_true_admin(row):
+        abort(403)
     if request.method == "POST":
         full_name = (request.form.get("full_name") or "").strip()
         dept = request.form.get("department_id") or ""
@@ -225,16 +274,29 @@ def user_edit(user_id):
             error = "Full name and department are required."
         elif role not in ("user", "admin"):
             error = "Role must be user or admin."
-        elif row["id"] == g.user["id"] and (role != "admin" or not active):
+        elif role == "admin" and not is_true_admin(g.user):
+            error = "Only the original portal admin can make someone an admin."
+        elif row["id"] == g.user["id"] and (not active or (is_true_admin(g.user) and role != "admin")):
+            # A true admin cannot remove his own admin role or disable himself.
+            # A permission user has role "user" with can_portal_admin kept
+            # separately (see new_permission below), so editing himself with
+            # role "user" and active on must not be blocked here.
             error = "You cannot remove your own admin access or disable yourself."
         elif (role != row["role"] or (row["is_active"] and not active)) and not _confirmed():
             error = "Changing a role or disabling an account needs your password."
         if error:
             flash(error, "error")
         else:
+            # A pending (dept-admin-created) account stays pending until it is approved
+            # on the Users page; editing it here must not activate it by accident.
+            if row["approval_status"] == "pending":
+                active = 0
+            # Portal administrative permission is granted only by the original portal
+            # admin; anyone else editing a user leaves the existing value untouched.
+            new_permission = (1 if request.form.get("can_portal_admin") else 0) if is_true_admin(g.user) else row["can_portal_admin"]
             # Records stay in the department they were created in.
-            db.execute("UPDATE users SET full_name=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=? WHERE id=?",
-                       (full_name, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, user_id))
+            db.execute("UPDATE users SET full_name=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=?, can_portal_admin=? WHERE id=?",
+                       (full_name, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, new_permission, user_id))
             _save_view_departments(db, user_id, request.form.getlist("view_dept"), int(dept))
             if not active:
                 revoke_user_sessions(db, user_id)             # a disabled user is logged out at once
@@ -244,16 +306,19 @@ def user_edit(user_id):
             return redirect(url_for("admin.users"))
     return render_template("admin_user_form.html", item=dict(row), departments=_departments(), editing=True,
                            view_ids={r[0] for r in db.execute(
-                               "SELECT department_id FROM user_view_departments WHERE user_id=?", (user_id,))})
+                               "SELECT department_id FROM user_view_departments WHERE user_id=?", (user_id,))},
+                           can_grant_portal_admin=is_true_admin(g.user))
 
 
 @bp.route("/users/<int:user_id>/reset", methods=["POST"])
 @admin_required
 def user_reset(user_id):
     db = get_db()
-    row = db.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
-    if row is None:
+    row = db.execute("SELECT username, role, is_deleted FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is None or row["is_deleted"]:
         abort(404)
+    if not is_true_admin(g.user) and is_true_admin(row):
+        abort(403)
     if not _confirmed():
         return redirect(url_for("admin.users"))
     password = generate_password()
@@ -702,3 +767,134 @@ def settings():
         return redirect(url_for("admin.settings"))
     return render_template("admin_settings.html",
                            name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
+
+
+# ================================================================ delete / approve / reject a user
+@bp.route("/users/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def user_delete(user_id):
+    """Soft-delete an account: it goes to the Recycle Bin Users tab for 30 days,
+    its work stays (name in red) and can be restored. Only the portal admin and
+    a portal-administrative-permission user can delete an account at all, and a
+    permission user cannot delete a true portal admin (or himself)."""
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is None or row["is_deleted"]:
+        abort(404)
+    if user_id == g.user["id"]:
+        flash("You cannot delete your own account.", "error")
+        return redirect(url_for("admin.users"))
+    if not is_true_admin(g.user) and is_true_admin(row):
+        abort(403)
+    if not _confirmed():
+        return redirect(url_for("admin.users"))
+    db.execute("UPDATE users SET is_deleted=1, deleted_at=datetime('now','localtime'), deleted_by=?, "
+               "is_active=0, bin_purged=0 WHERE id=?", (g.user["id"], user_id))
+    revoke_user_sessions(db, user_id)
+    log(db, "user_delete", row["username"])
+    db.commit()
+    flash(f"{row['full_name']} was moved to the Recycle Bin (Users tab). Their work stays for 30 days and can be restored.", "ok")
+    return redirect(url_for("admin.users"))
+
+
+@bp.route("/users/<int:user_id>/approve", methods=["POST"])
+@admin_required
+def user_approve(user_id):
+    """Approve a dept-admin-created account: it becomes functional at once."""
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is None or row["is_deleted"] or row["approval_status"] != "pending":
+        abort(404)
+    db.execute("UPDATE users SET approval_status='approved', is_active=1 WHERE id=?", (user_id,))
+    log(db, "user_approve", row["username"])
+    db.commit()
+    flash(f"{row['full_name']} is approved and can now log in.", "ok")
+    return redirect(url_for("admin.users"))
+
+
+@bp.route("/users/<int:user_id>/reject", methods=["POST"])
+@admin_required
+def user_reject(user_id):
+    """Reject a dept-admin-created account: it never became functional, so it is
+    removed outright (it never appears in the Recycle Bin)."""
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is None or row["is_deleted"] or row["approval_status"] != "pending":
+        abort(404)
+    db.execute("DELETE FROM users WHERE id=?", (user_id,))
+    log(db, "user_reject", row["username"])
+    db.commit()
+    flash(f"The pending account for {row['full_name']} was rejected and removed.", "ok")
+    return redirect(url_for("admin.users"))
+
+
+# ================================================================ department admin Users page
+def _dept_users_dept():
+    """The department a dept-admin Users page covers: a dept admin's own
+    department only; a portal admin may pick one with ?dept=."""
+    db = get_db()
+    if is_portal_admin(g.user):
+        dept_id = request.args.get("dept", type=int) or g.user["department_id"]
+    else:
+        dept_id = g.user["department_id"]
+    dept = db.execute("SELECT * FROM departments WHERE id=?", (dept_id,)).fetchone() if dept_id else None
+    if dept is None:
+        abort(403)
+    return db, dept
+
+
+@bp.route("/dept-users")
+@login_required
+def dept_users():
+    """Department admin Users page: view the accounts of his own department and
+    create an account for his own department. No reset, lock, disable, edit or
+    delete buttons exist here at all — those are portal-admin actions."""
+    db, dept = _dept_users_dept()
+    if not (g.user["is_dept_admin"] or is_portal_admin(g.user)):
+        abort(403)
+    rows = db.execute("SELECT u.*, (SELECT COUNT(*) FROM records r WHERE r.owner_id=u.id AND r.deleted_at IS NULL) AS item_count "
+                      "FROM users u WHERE u.department_id=? AND u.is_deleted=0 ORDER BY u.full_name", (dept["id"],)).fetchall()
+    return render_template("dept_users.html", dept=dept, rows=rows,
+                           departments=_departments() if is_portal_admin(g.user) else [])
+
+
+@bp.route("/dept-users/add", methods=["GET", "POST"])
+@login_required
+def dept_user_add():
+    """Create an account for the dept admin's own department. It stays pending
+    (not functional, cannot log in) until the portal admin or a permission user
+    approves it on the All Users page. A portal admin creating here is approved
+    at once, as on the main Add user page."""
+    db, dept = _dept_users_dept()
+    if not (g.user["is_dept_admin"] or is_portal_admin(g.user)):
+        abort(403)
+    form = request.form if request.method == "POST" else {}
+    if request.method == "POST":
+        full_name = (form.get("full_name") or "").strip()
+        username = (form.get("username") or "").strip()
+        password = (form.get("password") or "").strip()
+        error = None
+        if not full_name or not username:
+            error = "Full name and username are required."
+        elif password and password_problem(password, username):
+            error = password_problem(password, username)
+        elif db.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+            error = f"The username '{username}' is already used."
+        if error:
+            flash(error, "error")
+        else:
+            password = password or generate_password()
+            approved = is_portal_admin(g.user)
+            db.execute("INSERT INTO users(full_name,username,password_hash,department_id,role,"
+                       "must_change_password,is_dept_admin,can_ddb_attachment,approval_status,is_active) "
+                       "VALUES (?,?,?,?,'user',1,0,0,?,?)",
+                       (full_name, username, generate_password_hash(password), dept["id"],
+                        "approved" if approved else "pending", 1 if approved else 0))
+            log(db, "user_add_pending" if not approved else "user_add", username)
+            db.commit()
+            if approved:
+                flash(f"User created. Temporary password for {username}: {password}", "secret")
+            else:
+                flash(f"User created for {dept['name']}. It is waiting for portal admin approval and cannot log in yet. Temporary password for {username}: {password}", "secret")
+            return redirect(url_for("admin.dept_users"))
+    return render_template("dept_user_form.html", item=form, dept=dept)

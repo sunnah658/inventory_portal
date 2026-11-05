@@ -1152,3 +1152,311 @@
  UPGRADE: ./backup.sh, unzip over the old folder (keep your .env values),
    docker compose up -d --build. No database change is needed for this
    feature; the tab is built from the existing invoice tables.
+
+==============================================================================
+ 24. PORTAL ADMINISTRATIVE PERMISSION, DEPARTMENT-ADMIN USERS PAGE,
+     LOCKED / DELETED USER NAMES, AND RECYCLE BIN USERS TAB
+==============================================================================
+ PORTAL ADMIN ALL USERS PAGE — FILTERS:
+   The Users page (portal admin) keeps its search box and adds filters
+   that can all be combined: Department (All departments / one
+   department), User (All users / one specific user), Role (Admin /
+   Department admin / User) and Status (Active / Locked / Pending
+   approval). Deleted users are NOT on this page; they are in the
+   Recycle Bin, Users tab (below).
+
+ PORTAL ADMINISTRATIVE PERMISSION:
+   The portal admin can give a user portal administrative permission:
+   Users > Edit user > "Portal administrative permission" (only the
+   original portal admin sees this tick box). That user can then do
+   every task the portal admin can do: Users, Departments, columns,
+   All records, Reports, Activity, Sessions, Settings, Department DB
+   attachment access, and the Recycle Bin tabs below.
+   Limits, enforced in the code, not just in the page:
+   - A permission user cannot give portal administrative permission to
+     anyone else, and cannot create a true admin account.
+   - A permission user cannot edit, disable, reset or delete a true
+     portal admin account, and cannot delete his own account.
+   - Only the original portal admin can give or remove the permission,
+     and can disable or remove the permission user.
+   - The portal admin can restore everything a permission user deleted
+     (records and users, from the Recycle Bin), because a permission
+     user cannot erase for good his own deletions or the portal admin's
+     deletions from the Recycle Bin (Records tab, below).
+
+ DEPARTMENT ADMIN USERS PAGE:
+   Department admins get a Users page in the menu (Users). On it they
+   can VIEW the accounts of their own department only, and CREATE an
+   account for their own department only (as a regular user; the
+   department is fixed to theirs).
+   - An account created by a department admin is NOT functional until
+     it is approved: it shows as "Pending approval" on the portal admin
+     Users page, cannot log in, and is approved (Approve button) or
+     rejected (Reject button, removes the pending account outright) by
+     the portal admin or a permission user. A portal admin creating an
+     account on the main Add user page is approved at once, as before.
+   - A department admin CANNOT reset a password, lock, disable, edit or
+     delete any user. His Users page has no Reset, Lock, Disable, Edit
+     or Delete buttons at all, and those routes refuse a department
+     admin even if the address is typed directly.
+   - Only the portal admin and a permission user can delete a user
+     account at all. No other user can delete any account.
+
+ LOCKED, DELETED AND RESTORED NAMES (colours, with words too):
+   A person's name is coloured wherever it appears with his work
+   (Users lists, record lists and detail pages, Department Database
+   rows, invoice lists, Recycle Bin):
+   - Green = active. A restored user is green again.
+   - Yellow = locked (disabled, "Locked" in the Status column). A locked
+     user cannot log in, but all his records and work stay in the
+     portal, visible only to the people who normally had access to
+     them (same department, shared access, and so on).
+   - Red = deleted (soft-deleted, see below). His work stays visible
+     for 30 days, only to the people who normally had access, with his
+     name in red.
+   The colour is never the only signal: the Status column also says
+   Active / Locked / Pending approval, and a deleted user is listed in
+   the Recycle Bin Users tab.
+
+ DELETING A USER (soft delete, 30 days):
+   Users > Delete account (portal admin or permission user only, with
+   the admin's password to confirm) does NOT erase the account at once.
+   The account goes to the Recycle Bin, Users tab: it cannot log in,
+   its work stays in the portal for 30 days (name in red), and it can
+   be restored from the Users tab (Restore button, portal admin or
+   permission user) — then it works as before, name green again.
+   After 30 days the account AND all his work vanish from the portal
+   automatically (records, Department Database rows, invoices and
+   public QR links). This hourly clean-up also erases old records in
+   the Records tab, as before.
+
+ RECYCLE BIN — TWO TABS (portal admin and permission user only):
+   Recycle bin now has two tabs at the top:
+   - Records: deleted records, as before (owner, deleted by, erase date).
+   - Users: deleted user accounts, with deleted date, deleted by and
+     erase date. Other users do not see the Users tab at all; their
+     Recycle Bin shows only their own deleted records, as before.
+   In the Records tab, a permission user can restore any deletion and
+   can erase for good other users' deletions, but cannot erase for
+   good his own deletions or the portal admin's deletions — only the
+   portal admin can erase those.
+   In the Users tab, a permission user can restore any deleted user,
+   and can erase for good other users' deleted accounts, but cannot
+   erase a true portal admin's account or his own account.
+
+   ERASING A DELETED USER FOR GOOD — THE POPUP:
+   "Delete forever" on a user in the Users tab shows a popup:
+     "You want to delete this user all work from the portal too?"
+   - Yes: the user's work is deleted from the portal immediately, then
+     the account is deleted for good.
+   - No: the account leaves the Recycle Bin list, but his work stays in
+     the portal (name in red) until the 30 days end, when it vanishes
+     with the account, as above.
+
+ RENAMED BUTTON:
+   The button on the Users page (and the page it opens, and the menu
+   link under More) now reads "Department DB attachment access" in
+   full, instead of the "DeptDB" abbreviation. The access rule itself
+   is unchanged.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in the
+   zip), unzip over the old folder, compare and restore your live .env
+   if it differs, then docker compose up -d --build. The database
+   upgrades itself: new user fields (portal permission, soft-delete,
+   pending approval) are added to existing accounts without losing data.
+   Apply only this latest zip, not the older ones in order.
+
+
+==============================================================================
+ 25. SECURITY AND BUG FIXES (SCAN OF 2026-11-04, .env UNTOUCHED)
+==============================================================================
+ This build fixes the errors found in the scan of the users-admin
+ build, except one: the .env file is left exactly as it was in that
+ zip, untouched, as instructed. Nothing else in this list changes
+ .env, and the upgrade step above (back up your live .env first)
+ still applies.
+
+ 1. SEQUENTIAL PUBLIC CODES NO LONGER OPEN A LINK. Only the random
+    HRC-##### code printed under a QR is accepted in code search,
+    /code/<code>, and search bars. Old sequential numbers (HRC-0,
+    HRC-1, ...) no longer open anything, and they are no longer shown
+    anywhere. Every existing link already has a random code; the
+    database upgrade gives one to any link missing it, so no link is
+    left without a working code. The token link (/p/<token>) is
+    unchanged.
+ 2. REGENERATING A RECORD QR NOW ROTATES THE CODE TOO. "New scan
+    link" on a record and "New code" on the Public QR links page now
+    give a new random HRC-##### code as well as a new token, so the
+    old code typed in search stops working, exactly like invoices
+    already did. Print the new QR after regenerating.
+ 3. EXCEL FORMULA INJECTION FIXED. A text cell starting with =, +,
+    -, @, tab or carriage return is now written to Excel as plain
+    text, not as a formula, so a value like =2+2 stays =2+2 instead of
+    calculating to 4. CSV export already did the same with a leading
+    apostrophe; Excel now uses a text cell instead, so the visible
+    value is unchanged. Number cells are untouched.
+ 4. RECORD PDF, UNTICK ALL. The PDF form on a record page now sends
+    a marker, so submitting it with every box unticked gives an empty
+    PDF ("No information to show") instead of the full record. A
+    direct PDF link with no form marker still gives all columns, as
+    before.
+ 5. .env: LEFT AS IT IS. No change was made to .env in this build.
+ 6. DEPENDENCIES PINNED. requirements.txt now pins the exact versions
+    this build was tested with (Flask 3.1.3, waitress 3.0.2,
+    segno 1.6.6, openpyxl 3.1.5, reportlab 5.1.0), so a rebuild cannot
+    silently pull newer versions.
+ 7. NOTIFICATIONS READ STATE. Opening the Notifications page no
+    longer marks everything read. Use the new "Mark all as read"
+    button on that page; until then the "New" badges and the bell
+    count stay.
+ 8. SORTING BY A COLUMN NAME IS NOW PER-DEPARTMENT. Sorting a list
+    by a column now checks the column type in each record's own
+    department, so a number column with the same name in another
+    department no longer makes this department's text values sort as
+    numbers.
+ 9. LEGACY TABLES, LEFT ALONE. The old handovers (transfers),
+    requests and saved views tables are still in the database, with
+    no pages for them, exactly as before. They were deliberately NOT
+    deleted (that would lose old data) and NOT rebuilt (that would be
+    a new feature, not a bug fix). They are documented here as legacy
+    only; purging a user's work still clears his entries in them, as
+    before.
+ 10. SMALLER FIXES. Code search and /code/<code> now give one
+     generic "not available" answer whether a code does not exist or
+     its owner switched it off, so existence cannot be probed. The
+     Attachments card on a record page no longer prints. A permission
+     user can now edit his own name and department on the Users page
+     (he still cannot make himself a true admin, remove his own
+     permission, or disable himself).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in the
+   zip), unzip over the old folder, compare and restore your live .env
+   if it differs, then docker compose up -d --build. The database
+   upgrades itself; no new database change is needed for these fixes.
+   Apply only this latest zip, not the older ones in order.
+
+ 26. INVOICE HRC CODE LABELLED "SHARE CODE" (2026-11-05, LABELS ONLY)
+    The invoice number and the public QR code are two different
+    numbers, and they are now labelled so they cannot be mixed up.
+    The invoice number (for example BIL-0001) is the official
+    number: quote it for payment and accounts. The HRC-##### code
+    is now called the "Share code" everywhere an invoice shows it:
+    it is only for scanning the QR and searching for the invoice,
+    it is not the invoice number, and it changes when a new scan
+    link is generated. No number, code, permission or behaviour
+    was changed except for this one correction found while testing
+    the labelled search (below).
+    - Department Database > Invoices tab: the table columns are
+      now "Share code" and "Invoice number", and the search box
+      says "Search customer, invoice number or share code".
+    - Invoice detail page, Public QR panel: "Share code:
+      HRC-##### (not the invoice number)", with the note that
+      the invoice number is the one to quote for payment.
+    - Invoice code page: heading "Share code HRC-##### ...
+      Invoice No. BIL-0001", with the same not-the-invoice-number
+      note.
+    - Invoice PDF footer: under the QR it now reads "Share code:
+      HRC-#####", and the footer text says the share code is only
+      for scanning and searching, and to quote the invoice number
+      above for payment. The PDF meta still shows "INVOICE NO.".
+      A draft PDF (no QR yet) now just says "Generated by HRC
+      Portal" in the footer instead of referring to a share code
+      that does not exist yet.
+    - Printed QR label: the code under the QR now reads
+      "Share code: HRC-#####" (this label template is shared, so
+      record QR labels get the same clearer label).
+    - CORRECTION FOUND IN TESTING: searching the Invoices tab by
+      a share code used to be hijacked by the Department Database
+      record-code redirect and land on a 404 record code page.
+      The Invoices tab is now exempt from that redirect, so its
+      own search filters by share code as labelled. Searching a
+      code from any other Department Database tab still redirects
+      to the record code page, as before.
+    No separate invoice-only QR search button was added, as
+    requested for now; the existing routes are the Invoices tab
+    search (invoices only) and top-menu Search QR (records and
+    invoices together).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 27. INVOICE PDF SHARE CODE IN THE BOTTOM RIGHT CORNER (2026-11-05)
+    In the invoice PDF only, the share code is now flush-right in
+    the bottom right corner: the QR is flush-right in its column
+    and the "Share code: HRC-#####" text under it is right-aligned
+    (it was centred under the QR before), as the last line of the
+    footer. The footer text on the left now reads "Share code at
+    the bottom right is only for scanning and searching — it is
+    not the invoice number. Quote the invoice number above for
+    payment." Nothing else in the PDF layout changed: top row,
+    INVOICE NO., table position, totals and signatures are as in
+    layout v4. The detail page, code page, Invoices tab and printed
+    QR label are unchanged by this update.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 28. INVOICE PDF SHARE CODE AT THE BOTTOM LEFT CORNER OF THE PAGE
+    (2026-11-05, CORRECTION TO SECTION 27)
+    The previous bottom-right change put the share code under the
+    QR inside the footer block, which on a short invoice sits in
+    the middle of the page, not at the bottom. That was wrong.
+    Now, in the invoice PDF only, the share code is drawn in the
+    page footer itself, at the bottom left corner of the page
+    (left margin, same baseline as "Page 1" on the right), on
+    every page of the invoice. It no longer appears under the QR:
+    there is exactly one "Share code: HRC-#####" in the PDF, at
+    the bottom left. The QR stays in the footer block, on the
+    right. The footer text on the left now reads "Share code at
+    the bottom left of this page is only for scanning and
+    searching — it is not the invoice number. Quote the invoice
+    number above for payment." A draft invoice with no QR yet
+    shows no share code at the bottom. Nothing else in the PDF
+    layout changed, and the detail page, code page, Invoices tab
+    and printed QR label are unchanged by this update.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 29. INVOICE PDF: SMALLER QR AT BOTTOM LEFT ABOVE SHARE CODE, SAME
+    SIGN GAP FOR ALL INVOICE TYPES (2026-11-05, APPROVED LOOK)
+    Built exactly as approved in the JPG preview of 2026-11-05
+    (sign-lower-2). In the invoice PDF, for every invoice type
+    and every custom format, because they all use the one shared
+    invoice_pdf builder:
+    - The QR is no longer in the footer block on the right. It is
+      drawn in the page footer, at the bottom left corner, at
+      1.9 cm (was 2.8 cm), directly on top of the share code.
+    - Under it, at the very bottom left, is "Share code:
+      HRC-#####", with "Page 1" still at the bottom right. The
+      QR and code appear on every page of the invoice.
+    - The signature gap is the same for all types: the space
+      after the Terms line before the signature blocks is now
+      64 points (was 16), so Prepared / Authorized / Approved
+      sit the same amount lower in Billing, Admin Expense
+      Voucher, Conveyance Bill, Purchase Request and custom
+      formats. No other PDF layout changed.
+    A draft invoice with no QR yet shows no QR and no share
+    code at the bottom. The detail page, code page, Invoices
+    tab and printed QR label are unchanged by this update.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.

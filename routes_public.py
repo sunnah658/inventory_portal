@@ -19,9 +19,10 @@ from flask import (Blueprint, Response, abort, flash, g, redirect, render_templa
 
 import config
 from auth import login_required
+from utils import is_portal_admin
 import exports
-from core import (MANAGE_LEVELS, access_level, create_public_link, display_code, format_code, get_record, names_for_records, new_token,
-                  parse_code, parse_code_text, public_fields_of, public_view, rec_select)
+from core import (MANAGE_LEVELS, access_level, create_public_link, display_code, get_record, names_for_records, new_random_code_text, new_token,
+                  parse_code_text, public_fields_of, public_view, rec_select)
 from models import get_db, log, setting_get
 from routes_records import _load as load_record
 
@@ -77,23 +78,24 @@ def view(token):
 
 # ---------------------------------------------------------------- find a QR by its code (people who are logged in)
 def _link_by_code(db, code):
-    """Find a public link by its shown code: random HRC-##### first, then old HRC-<n>."""
+    """Find a public link by its shown code: ONLY the random HRC-##### code_text.
+
+    The old sequential code_no is never accepted any more: it was guessable
+    (HRC-0, HRC-1, ...), so a link whose random code is not known must not
+    open through its sequential number. Every link already has a random
+    code_text (the upgrade in models.py backfills any link missing one),
+    and the token link (/p/<token>) is unaffected.
+    Returns (wanted_code, link) with link None when nothing matches."""
     wanted = parse_code_text(code)
-    if wanted:
-        link = db.execute("SELECT * FROM public_links WHERE code_text=?", (wanted,)).fetchone()
-        if link is not None:
-            return link["code_no"], link
-    number = parse_code(code)
-    if number is None:
+    if not wanted:
         # a bare 5-digit number is a random code, e.g. 48392 -> HRC-48392
         s = (code or "").strip()
         if s.isdigit() and len(s) == 5:
-            link = db.execute("SELECT * FROM public_links WHERE code_text=?", (f"HRC-{s}",)).fetchone()
-            if link is not None:
-                return link["code_no"], link
+            wanted = f"HRC-{s}"
+    if not wanted:
         return None, None
-    link = db.execute("SELECT * FROM public_links WHERE code_no=?", (number,)).fetchone()
-    return number, link
+    link = db.execute("SELECT * FROM public_links WHERE code_text=?", (wanted,)).fetchone()
+    return wanted, link
 
 
 def _link_items(db, link):
@@ -107,18 +109,16 @@ def _link_items(db, link):
 @bp.route("/code/<code>")
 @login_required
 def code_page(code):
-    """Search result for a code such as HRC-12: the information the owner made public."""
+    """Search result for a code such as HRC-48392: the information the owner made public."""
     db = get_db()
-    number, link = _link_by_code(db, code)
-    if number is None and link is None:
-        abort(404)
-    wanted = display_code(link) if link is not None else format_code(number) if number is not None else code
-    if link is None:
-        return render_template("code_page.html", code=wanted, status="missing", link=None, items=[]), 404
-    if not link["enabled"]:
-        return render_template("code_page.html", code=wanted, status="off", link=link, items=[]), 410
+    wanted, link = _link_by_code(db, code)
+    if link is None or not link["enabled"]:
+        # One generic "not available" answer for a code that does not exist
+        # and for a code whose owner switched it off: the two must not be
+        # distinguishable, or a logged-in user could probe which codes exist.
+        return render_template("code_page.html", code=wanted or code, status="unavailable", link=None, items=[]), 404
     items = _link_items(db, link)
-    return render_template("code_page.html", code=wanted, status="ok", link=link, items=items,
+    return render_template("code_page.html", code=display_code(link), status="ok", link=link, items=items,
                            title=link["title"] or (items[0]["rows"][0][1] if items and items[0]["rows"] else ""))
 
 
@@ -127,8 +127,8 @@ def code_page(code):
 def code_pdf(code):
     """The same information as a clean PDF: the shared fields only, no history."""
     db = get_db()
-    number, link = _link_by_code(db, code)
-    if number is None or link is None or not link["enabled"]:
+    _wanted, link = _link_by_code(db, code)
+    if link is None or not link["enabled"]:
         abort(404)
     items = _link_items(db, link)
     wanted = display_code(link)
@@ -148,38 +148,33 @@ def code_pdf(code):
 @bp.route("/search-qr")
 @login_required
 def search_qr():
-    """A search box for the unique code (HRC-12, hrc 12 or just 12). Shows the match with the buttons
-    View record, Download PDF and Print. People only see what the owner made public for that code."""
+    """A search box for the unique code (HRC-48392, hrc 48392 or just 48392). Shows the match with the buttons
+    View record, Download PDF and Print. People only see what the owner made public for that code.
+    Only the random 5-digit code is accepted; old sequential numbers are not."""
     db = get_db()
     q = (request.args.get("q") or "").strip()
-    status, link, items, number, full_rid = None, None, [], None, None
+    status, link, items, full_rid = None, None, [], None
+    _wanted = None
     if q:
-        number = parse_code(q)
-        if number is None and q.isdigit() and len(q) <= 12:
-            number = int(q)                                   # "12" is accepted as HRC-12
-        if number is None:
+        _wanted = parse_code_text(q)
+        if _wanted is None and q.isdigit() and len(q) == 5:
+            _wanted = f"HRC-{q}"
+        if _wanted is None:
             status = "bad"
         else:
-            link = None
-            _wanted = parse_code_text(q)
-            if _wanted:
-                link = db.execute("SELECT * FROM public_links WHERE code_text=?", (_wanted,)).fetchone()
-            if link is None and q.strip().isdigit() and len(q.strip()) == 5:
-                link = db.execute("SELECT * FROM public_links WHERE code_text=?", (f"HRC-{q.strip()}",)).fetchone()
+            link = db.execute("SELECT * FROM public_links WHERE code_text=?", (_wanted,)).fetchone()
             if link is None:
                 # invoice public code (login-only): HRC-##### -> invoice code page
                 try:
-                    _inv = db.execute("SELECT public_code FROM invoices WHERE public_code=?", (_wanted or f"HRC-{q.strip()}",)).fetchone()
+                    _inv = db.execute("SELECT public_code FROM invoices WHERE public_code=?", (_wanted,)).fetchone()
                 except Exception:
                     _inv = None
                 if _inv is not None:
                     return redirect(url_for("invoices.code_page", code=_inv["public_code"]))
-            if link is None:
-                link = db.execute("SELECT * FROM public_links WHERE code_no=?", (number,)).fetchone()
-            if link is None:
-                status = "missing"
-            elif not link["enabled"]:
-                status = "off"
+            if link is None or not link["enabled"]:
+                # Same generic answer whether the code does not exist or is off.
+                status = "unavailable"
+                link = None
             else:
                 status = "ok"
                 items = _link_items(db, link)
@@ -189,7 +184,7 @@ def search_qr():
                     if rec and access_level(db, g.user, rec):
                         full_rid = rec["id"]
     return render_template("search_qr.html", q=q, status=status, link=link, items=items,
-                           code=display_code(link) if link is not None else (format_code(number) if number is not None else ""), full_rid=full_rid,
+                           code=display_code(link) if link is not None else (_wanted or ""), full_rid=full_rid,
                            title=(link["title"] if link and link["title"] else
                                   (items[0]["rows"][0][1] if items and items[0]["rows"] else "")))
 
@@ -225,10 +220,13 @@ def record_public(rid):
         log(db, "public_qr_off", f"record {rid}")
         flash("The public QR is off. Scanning it shows nothing.", "ok")
     elif link is not None and action == "regenerate":
-        db.execute("UPDATE public_links SET token=?, regenerated_at=datetime('now','localtime') WHERE id=?",
-                   (new_token(), link["id"]))
-        log(db, "public_qr_new_code", f"record {rid}")
-        flash("New code created. Old printed QR codes no longer work, print the new one.", "ok")
+        # Rotating the scan link must also rotate the HRC code itself:
+        # otherwise the old code typed in search would still open the link.
+        _new_code = new_random_code_text(db) or link["code_text"]
+        db.execute("UPDATE public_links SET token=?, code_text=?, regenerated_at=datetime('now','localtime') WHERE id=?",
+                   (new_token(), _new_code, link["id"]))
+        log(db, "public_qr_new_code", f"record {rid} {_new_code}")
+        flash(f"New code created: {_new_code}. Old printed QR codes and the old code no longer work, print the new one.", "ok")
     db.commit()
     return redirect(url_for("records.detail", rid=rid) + "#public")
 
@@ -248,7 +246,7 @@ def _manageable(db, ids):
 @login_required
 def links():
     db = get_db()
-    where, params = ("", []) if g.user["role"] == "admin" else ("WHERE pl.owner_id=?", [g.user["id"]])
+    where, params = ("", []) if is_portal_admin(g.user) else ("WHERE pl.owner_id=?", [g.user["id"]])
     rows = db.execute("SELECT pl.*, u.full_name AS owner_name, "
                       "(SELECT COUNT(*) FROM public_link_records WHERE link_id=pl.id) AS n "
                       "FROM public_links pl JOIN users u ON u.id=pl.owner_id " + where + " ORDER BY pl.id DESC",
@@ -289,7 +287,7 @@ def link_new():
 def _own_link(lid):
     db = get_db()
     link = db.execute("SELECT * FROM public_links WHERE id=?", (lid,)).fetchone()
-    if link is None or (link["owner_id"] != g.user["id"] and g.user["role"] != "admin"):
+    if link is None or (link["owner_id"] != g.user["id"] and not is_portal_admin(g.user)):
         abort(404)
     return link
 
@@ -328,8 +326,13 @@ def link_action(lid, action):
     elif action == "off":
         db.execute("UPDATE public_links SET enabled=0 WHERE id=?", (lid,))
     elif action == "regenerate":
-        db.execute("UPDATE public_links SET token=?, regenerated_at=datetime('now','localtime') WHERE id=?",
-                   (new_token(), lid))
+        _new_code = new_random_code_text(db) or link["code_text"]
+        db.execute("UPDATE public_links SET token=?, code_text=?, regenerated_at=datetime('now','localtime') WHERE id=?",
+                   (new_token(), _new_code, lid))
+        log(db, "public_qr_regenerate", f"link {lid} {_new_code}")
+        db.commit()
+        flash(f"New code created: {_new_code}. The old code no longer works.", "ok")
+        return redirect(url_for("public.links"))
     elif action == "delete":
         db.execute("DELETE FROM public_links WHERE id=?", (lid,))
     else:

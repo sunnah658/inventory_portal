@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 import config
 from models import log
 from templates_data import TEMPLATES
-from utils import like_pattern
+from utils import is_portal_admin, like_pattern
 
 COLUMN_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                 ("date", "Date"), ("dropdown", "Dropdown list"), ("yesno", "Yes / No")]
@@ -66,6 +66,7 @@ def create_department(db, name, template_key=None, selected=None):
 def rec_select(extra=""):
     """Base SELECT for records with owner and department names."""
     return ("SELECT r.*, u.full_name AS owner_name, u.username AS owner_username, "
+            "u.is_active AS owner_is_active, u.is_deleted AS owner_is_deleted, "
             "d.name AS department_name, d.attachments_enabled, d.attachment_max_mb, d.repairs_enabled" + extra +
             " FROM records r JOIN users u ON u.id=r.owner_id "
             "JOIN departments d ON d.id=r.department_id")
@@ -103,7 +104,7 @@ def access_level(db, user, rec):
     None           - no access
     Edit rights win: one edit share is enough even if another share is view only.
     """
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return "admin"
     if rec["owner_id"] == user["id"]:
         return "owner"
@@ -133,7 +134,7 @@ def clean_permission(value):
 
 def visible_clause(db, user):
     """SQL (and params) for every record this user is allowed to see."""
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return "1=1", []
     parts = ["r.owner_id=?",
              "EXISTS (SELECT 1 FROM record_shares s WHERE s.record_id=r.id AND s.department_id=?)",
@@ -328,6 +329,59 @@ def purge_record(db, rid):
     db.execute("DELETE FROM records WHERE id=?", (rid,))      # children are deleted by CASCADE
 
 
+def purge_user_work(db, uid):
+    """Erase one user's work: his records (with attachment files), his Department
+    Database rows (with attachment files), his invoices and his public QR links.
+    Used when a deleted user is erased for good and the admin chose 'yes, delete
+    his work too', and when a deleted user reaches the end of his 30 days."""
+    for rid in [r[0] for r in db.execute("SELECT id FROM records WHERE owner_id=?", (uid,))]:
+        purge_record(db, rid)
+    for _rid in [r[0] for r in db.execute("SELECT id FROM ddb_rows WHERE owner_id=?", (uid,))]:
+        for _v in db.execute("SELECT v.value FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id "
+                             "WHERE v.row_id=? AND c.col_type='attachment'", (_rid,)):
+            try:
+                import json as _json
+                _info = _json.loads(_v[0] or "")
+                if isinstance(_info, dict) and _info.get("stored"):
+                    os.remove(os.path.join(config.UPLOAD_DIR, "ddb_attachments", _info["stored"]))
+            except Exception:
+                pass
+        db.execute("DELETE FROM ddb_rows WHERE id=?", (_rid,))
+    db.execute("DELETE FROM invoices WHERE owner_id=?", (uid,))
+    db.execute("DELETE FROM public_links WHERE owner_id=?", (uid,))
+
+
+def purge_user_account(db, uid, delete_work):
+    """Erase a deleted user account for good.
+    delete_work=True: his work goes at once, then the account row is removed
+    (references that would block the delete are cleared first).
+    delete_work=False: the account only leaves the Recycle Bin list; the account
+    row and his work stay until the 30 days end, when purge_expired removes both."""
+    if not delete_work:
+        db.execute("UPDATE users SET bin_purged=1 WHERE id=?", (uid,))
+        return
+    purge_user_work(db, uid)
+    db.execute("UPDATE records SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("UPDATE record_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
+    db.execute("UPDATE record_user_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
+    db.execute("UPDATE repairs SET created_by=NULL WHERE created_by=?", (uid,))
+    db.execute("UPDATE attachments SET uploaded_by=NULL WHERE uploaded_by=?", (uid,))
+    db.execute("UPDATE record_history SET user_id=NULL WHERE user_id=?", (uid,))
+    db.execute("UPDATE ddb_history SET user_id=NULL WHERE user_id=?", (uid,))
+    db.execute("UPDATE invoice_template_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
+    db.execute("UPDATE invoice_dept_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
+    db.execute("UPDATE ddb_row_shares SET created_by=NULL WHERE created_by=?", (uid,))
+    db.execute("UPDATE invoice_templates SET created_by=NULL WHERE created_by=?", (uid,))
+    db.execute("UPDATE ddb_tabs SET created_by=NULL WHERE created_by=?", (uid,))
+    db.execute("UPDATE ddb_delegates SET granted_by=NULL WHERE granted_by=?", (uid,))
+    db.execute("UPDATE users SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("DELETE FROM transfers WHERE from_user=? OR to_user=?", (uid, uid))
+    db.execute("DELETE FROM requests WHERE requester_id=?", (uid,))
+    db.execute("UPDATE requests SET decided_by=NULL WHERE decided_by=?", (uid,))
+    db.execute("DELETE FROM comments WHERE user_id=?", (uid,))
+    db.execute("DELETE FROM users WHERE id=?", (uid,))
+
+
 def purge_expired(db):
     """Erase records that stayed in the bin too long and trim the old activity log."""
     ids = [r[0] for r in db.execute(
@@ -352,6 +406,11 @@ def purge_expired(db):
                 pass
     db.execute("DELETE FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
                (f"-{config.BIN_DAYS} days",))
+    # Deleted users: after 30 days the account AND all his work go, together.
+    for _uid in [r[0] for r in db.execute(
+            "SELECT id FROM users WHERE is_deleted=1 AND deleted_at IS NOT NULL "
+            "AND deleted_at < datetime('now','localtime',?)", (f"-{config.BIN_DAYS} days",))]:
+        purge_user_account(db, _uid, delete_work=True)
     db.commit()
     return len(ids)
 
@@ -600,7 +659,7 @@ def dept_member_ids(db, dept_id):
 
 
 def admin_ids(db):
-    return [r[0] for r in db.execute("SELECT id FROM users WHERE role='admin' AND is_active=1")]
+    return [r[0] for r in db.execute("SELECT id FROM users WHERE (role='admin' OR can_portal_admin=1) AND is_active=1")]
 
 
 # ---------------------------------------------------------------- sharing
@@ -664,12 +723,21 @@ def sort_clause(db, sort, direction):
         return f"r.created_at {d}, r.id {d}", []
     if (sort or "").startswith("col:"):
         name = sort[4:]
-        numeric = db.execute("SELECT 1 FROM columns WHERE lower(name)=lower(?) AND col_type='number' "
-                             "AND removed_at IS NULL LIMIT 1", (name,)).fetchone()
+        # Per-record department, not global: a column named e.g. "Amount"
+        # may be a number column in one department and a text column in
+        # another. The value lookup and the number check both use the
+        # record's own department (r.department_id), so sorting a list
+        # that spans departments no longer casts text values as numbers
+        # just because some other department has a number column of the
+        # same name. Params, in order: sub in IS NULL, number check,
+        # sub in CAST, sub in ELSE.
         sub = ("(SELECT v.value FROM record_values v JOIN columns c ON c.id=v.column_id "
-               "AND c.removed_at IS NULL WHERE v.record_id=r.id AND lower(c.name)=lower(?) LIMIT 1)")
-        expr = f"CAST({sub} AS REAL)" if numeric else f"{sub} COLLATE NOCASE"
-        return f"({sub} IS NULL), {expr} {d}, r.id DESC", [name, name]
+               "AND c.removed_at IS NULL AND c.department_id=r.department_id "
+               "WHERE v.record_id=r.id AND lower(c.name)=lower(?) LIMIT 1)")
+        is_number = ("(SELECT 1 FROM columns WHERE department_id=r.department_id "
+                     "AND lower(name)=lower(?) AND col_type='number' AND removed_at IS NULL LIMIT 1)")
+        expr = f"CASE WHEN {is_number} IS NOT NULL THEN CAST({sub} AS REAL) ELSE {sub} COLLATE NOCASE END"
+        return f"({sub} IS NULL), {expr} {d}, r.id DESC", [name, name, name, name]
     return f"r.updated_at {d}, r.id {d}", []
 
 
@@ -684,7 +752,7 @@ def filter_clause(name, value):
 
 def column_names(db, user):
     """Column names the user can sort/filter by (from the departments they can see)."""
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         rows = db.execute("SELECT DISTINCT name FROM columns WHERE removed_at IS NULL AND shown=1 "
                           "ORDER BY name COLLATE NOCASE").fetchall()
     else:
@@ -747,18 +815,15 @@ def format_code(n):
 
 
 def display_code(link):
-    """The code shown under a public QR: the random HRC-##### code_text if present,
-    otherwise the old sequential HRC-<code_no>."""
+    """The code shown under a public QR: only the random HRC-##### code_text.
+
+    The old sequential code_no is never shown any more, because showing it
+    would make it searchable again. A link missing code_text (it should not
+    happen: the upgrade backfills one) shows no code, not a sequential one."""
     if link is None:
         return ""
     try:
-        ct = link["code_text"]
-    except Exception:
-        ct = None
-    if ct:
-        return ct
-    try:
-        return format_code(link["code_no"]) if link["code_no"] is not None else ""
+        return link["code_text"] or ""
     except Exception:
         return ""
 
@@ -808,7 +873,7 @@ def create_public_link(db, owner_id, kind, fields, full_record=False, title=None
 # ---------------------------------------------------------------- change of owner
 def may_change_owner(user, rec):
     """The portal admin, and the department admin of the record's department."""
-    return user["role"] == "admin" or bool(user["is_dept_admin"] and user["department_id"] == rec["department_id"])
+    return is_portal_admin(user) or bool(user["is_dept_admin"] and user["department_id"] == rec["department_id"])
 
 
 def owner_candidates(db, user, rec):
@@ -816,7 +881,7 @@ def owner_candidates(db, user, rec):
     the members of the record's department."""
     sql = "SELECT id, full_name, username FROM users WHERE is_active=1 AND id != ?"
     params = [rec["owner_id"]]
-    if user["role"] != "admin":
+    if not is_portal_admin(user):
         sql += " AND department_id=?"
         params.append(rec["department_id"])
     return db.execute(sql + " ORDER BY full_name", params).fetchall()
@@ -831,7 +896,7 @@ def change_owner(db, user, rec, new_owner_id):
         return "Choose a person."
     if target["id"] == rec["owner_id"]:
         return "That person already owns this record."
-    if user["role"] != "admin" and target["department_id"] != rec["department_id"]:
+    if not is_portal_admin(user) and target["department_id"] != rec["department_id"]:
         return "A department admin can only give a record to a member of the same department."
     old = db.execute("SELECT full_name FROM users WHERE id=?", (rec["owner_id"],)).fetchone()
     db.execute("UPDATE records SET owner_id=?, version=version+1, updated_at=datetime('now','localtime') WHERE id=?",
@@ -860,7 +925,7 @@ def ddb_level(db, user, dept_id):
     """This user's level in the department database of dept_id: manager / edit / own / view / None.
     The portal admin and the department admin are always managers. Everybody else in the
     department is 'own' (add and manage own rows) unless a manager chose another level."""
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return "manager"
     if user["department_id"] != dept_id:
         return None
@@ -890,7 +955,7 @@ def ddb_tabs(db, dept_id):
 def ddb_is_tab_admin(db, user, dept_id):
     """Portal admin, dept admin, or a user the dept admin chose as a delegate
     for the Department Database — all may manage tabs, columns and any row."""
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return True
     if user["department_id"] == dept_id and user["is_dept_admin"]:
         return True
@@ -903,7 +968,7 @@ def ddb_is_tab_admin(db, user, dept_id):
 def ddb_can_view_row(db, user, row):
     """Every user in the same department can see every row in a tab. A row
     shared with another department or a specific user is also visible there."""
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return True
     if user["department_id"] == row["department_id"]:
         return True

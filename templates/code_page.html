@@ -8,8 +8,9 @@
     {% if status == 'ok' %}<a class="b p" href="{{ url_for('public.code_pdf', code=code) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>{% endif %}
     <a class="b" href="javascript:history.back()">Back</a></div>
 </div>
-{% if status == 'missing' %}<div class="alert">No QR code with the number <b>{{ code }}</b> exists.</div>
-{% elif status == 'off' %}<div class="alert">The code <b>{{ code }}</b> exists, but its owner switched the public QR off.</div>
+{% if status == 'unavailable' %}<div class="alert">This QR code is not available.</div>
+{% elif status == 'missing' %}<div class="alert">This QR code is not available.</div>
+{% elif status == 'off' %}<div class="alert">This QR code is not available.</div>
 {% else %}
   {% for it in items %}<div class="card" style="margin-bottom:14px">
     {% if items|length > 1 %}<div class="sub" style="margin:0 0 8px">{{ it.dept }}</div>{% endif %}

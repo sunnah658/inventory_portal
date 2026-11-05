@@ -21,6 +21,19 @@ import config
 from models import get_db, log
 from security import (blocked_reason, create_session, password_problem, record_attempt,
                       revoke_session)
+from utils import is_portal_admin, is_true_admin
+
+
+def true_admin_required(view):
+    """Page needs the original portal admin account (not a delegated one)."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if g.user is None:
+            return redirect(url_for("auth.login"))
+        if not is_true_admin(g.user):
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
 
 bp = Blueprint("auth", __name__)
 
@@ -38,12 +51,13 @@ def login_required(view):
 
 
 def admin_required(view):
-    """Page needs a logged-in admin."""
+    """Page needs a logged-in portal admin: the original admin, or a user with
+    portal administrative permission (see section 24 in README)."""
     @wraps(view)
     def wrapped(*args, **kwargs):
         if g.user is None:
             return redirect(url_for("auth.login"))
-        if g.user["role"] != "admin":
+        if not is_portal_admin(g.user):
             abort(403)
         return view(*args, **kwargs)
     return wrapped
@@ -70,10 +84,19 @@ def login():
             return render_template("login.html", departments=departments, username=username)
 
         user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-        ok = bool(user and user["is_active"] and check_password_hash(user["password_hash"], password))
-        if ok and user["role"] != "admin":
+        password_ok = bool(user and check_password_hash(user["password_hash"], password))
+        if password_ok and user is not None and "approval_status" in user.keys() and user["approval_status"] == "pending":
+            # A dept-admin-created account is not functional until a portal admin
+            # (or a portal-administrative-permission user) approves it. Pending
+            # accounts are inactive, so this check must come before is_active.
+            record_attempt(db, username, ip, False)
+            db.commit()
+            flash("Your account is waiting for approval by the portal admin. Please try again later.", "error")
+            return render_template("login.html", departments=departments, username=username)
+        ok = bool(user and user["is_active"] and password_ok)
+        if ok and not is_portal_admin(user):
             ok = dept.isdigit() and int(dept) == user["department_id"]
-        if ok and user["role"] == "admin":
+        if ok and is_portal_admin(user):
             ok = dept == "all" or dept.isdigit()
 
         if not ok:

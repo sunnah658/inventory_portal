@@ -19,7 +19,7 @@ from core import (MANAGE_LEVELS, show_when, PERM_WORDS, clean_permission, share_
 from models import get_db, log, setting_get
 from routes_admin import _record_filters
 from routes_records import (_load as load_record, available_tabs, list_options, tab_clause)
-from utils import csv_response
+from utils import csv_response, is_portal_admin
 
 bp = Blueprint("bulk", __name__)
 
@@ -130,13 +130,19 @@ def export_admin():
 @bp.route("/records/<int:rid>/pdf")
 @login_required
 def record_pdf(rid):
-    """PDF of one record: ONLY the columns' values the person ticked (all, if none were ticked).
+    """PDF of one record: ONLY the columns' values the person ticked.
+    The PDF form on the record page sends pdf_form=1, so a form submitted
+    with every box unticked gives an empty PDF ("No information to show"),
+    not the full record. A direct link with no pdf_form marker still gives
+    all columns, as before, so old links and bookmarks keep working.
     Edit history and repair log are never part of the PDF."""
     rec, _level = load_record(rid, "view")
     db = get_db()
     cols = get_columns(db, rec["department_id"])
     chosen = {int(x) for x in request.args.getlist("col") if x.isdigit()}
-    if chosen:
+    if request.args.get("pdf_form"):
+        cols = [c for c in cols if c["id"] in chosen]
+    elif chosen:
         cols = [c for c in cols if c["id"] in chosen]
     vals = values_for(db, [rid])[rid]
     details = [[c["name"], show_when(vals[c["id"]]) if c["col_type"] == "date" else vals[c["id"]]]
@@ -155,7 +161,7 @@ def record_pdf(rid):
 # ---------------------------------------------------------------- reports
 def _scope(user):
     """Admins report on everything, department admins on their own department."""
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return "1=1", []
     if user["is_dept_admin"]:
         return "r.department_id=?", [user["department_id"]]
@@ -187,7 +193,7 @@ def report(name, fmt):
     elif name == "reminders":
         title = "Reminders (passed and next 90 days)"
         found = [r for r in reminder_rows(db, g.user, "0000-01-01", (today + timedelta(days=90)).isoformat(), limit=3000)
-                 if (g.user["role"] == "admin" or r["department_id"] == g.user["department_id"])]
+                 if (is_portal_admin(g.user) or r["department_id"] == g.user["department_id"])]
         sums = summaries_for(db, found)
         out = []
         for r in found:
@@ -221,7 +227,7 @@ def report(name, fmt):
                    "kinds": ["text", "number"]},
                   {"title": "By status", "header": ["Status", "Records"], "rows": [[r["label"], r["n"]] for r in by_status],
                    "kinds": ["text", "number"]}]
-    elif name == "activity" and g.user["role"] == "admin":
+    elif name == "activity" and is_portal_admin(g.user):
         title = "Activity log (last 2000)"
         rows = db.execute("SELECT created_at, username, action, details, ip FROM activity_log ORDER BY id DESC LIMIT 2000").fetchall()
         sheets = [{"title": "Activity", "header": ["Time", "User", "Action", "Details", "IP address"],

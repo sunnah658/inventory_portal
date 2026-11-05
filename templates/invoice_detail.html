@@ -20,13 +20,13 @@
 {% if inv['notes'] %}<p class="hint" style="margin-top:10px">Terms: {{ inv['notes'] }}</p>{% endif %}
 </div>
 <div class="card" style="margin-top:16px"><h2>Public QR</h2>
-<p class="hint">Generate a public QR to share this invoice. Public QR uses a unique code: HRC- + random 5-digit code, for example HRC-48392. Searching that code, viewing it and downloading its PDF all need a login.</p>
+<p class="hint">Generate a public QR to share this invoice. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the invoice number. Quote the invoice number for payment and accounts. Searching the share code, viewing it and downloading its PDF all need a login.</p>
 {% if inv['status'] not in ('issued','paid') %}<div class="alert">Draft and Void invoices do not get a live QR.</div>
 {% else %}
-{% if inv['public_code'] and inv['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ inv['public_views'] }} views · Code: <b>{{ inv['public_code'] }}</b></div>
-{% if qr_svg %}<div>{{ qr_svg|safe }}</div><div class="hrc">{{ inv['public_code'] }}</div>{% endif %}
+{% if inv['public_code'] and inv['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ inv['public_views'] }} views · Share code: <b>{{ inv['public_code'] }}</b> (not the invoice number)</div>
+{% if qr_svg %}<div>{{ qr_svg|safe }}</div><div class="hint">Share code (not the invoice number)</div><div class="hrc">{{ inv['public_code'] }}</div>{% endif %}
 <a class="b sm" href="{{ url_for('invoices.invoice_qr', iid=inv['id']) }}">Print this QR</a>
-{% else %}<div class="msg error">Public QR is OFF{% if inv['public_code'] %} · Code was {{ inv['public_code'] }}{% endif %}</div>{% endif %}
+{% else %}<div class="msg error">Public QR is OFF{% if inv['public_code'] %} · Share code was {{ inv['public_code'] }}{% endif %}</div>{% endif %}
 {% if can_manage %}<form method="post" action="{{ url_for('invoices.invoice_public', iid=inv['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
 <label class="ck"><input type="checkbox" name="show_amounts" {{ 'checked' if inv['public_show_amounts'] }}> Show amounts to a stranger</label>
 <label class="ck"><input type="checkbox" name="show_customer" {{ 'checked' if inv['public_show_customer'] }}> Show customer name</label>

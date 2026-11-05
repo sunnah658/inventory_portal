@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS users (
     is_active            INTEGER NOT NULL DEFAULT 1,
     is_dept_admin        INTEGER NOT NULL DEFAULT 0,   -- sees every record of own department (view + suggest)
     can_ddb_attachment   INTEGER NOT NULL DEFAULT 0,   -- portal admin allows this dept admin to create attachment columns in the dept database
+    can_portal_admin     INTEGER NOT NULL DEFAULT 0,   -- portal administrative permission: may do every portal-admin task (see section 24)
+    is_deleted           INTEGER NOT NULL DEFAULT 0,   -- soft-deleted: in the Recycle Bin Users tab, work kept 30 days
+    deleted_at           TEXT,                         -- when the account was deleted (soft delete)
+    deleted_by           INTEGER REFERENCES users(id), -- who deleted the account
+    bin_purged           INTEGER NOT NULL DEFAULT 0,   -- removed from the Recycle Bin list, work kept until the 30 days end
+    approval_status      TEXT NOT NULL DEFAULT 'approved', -- approved, or pending (dept-admin-created, not functional yet)
     theme                TEXT NOT NULL DEFAULT 'auto', -- light, dark or auto
     warn_days            INTEGER NOT NULL DEFAULT 3,   -- reminder warning: 1, 3 or 7 days ahead
     created_at           TEXT NOT NULL DEFAULT (datetime('now','localtime'))
@@ -190,7 +196,10 @@ CREATE TABLE IF NOT EXISTS notifications (
     read_at    TEXT
 );
 
+-- LEGACY (kept, not deleted, not rebuilt — see README section 25):
 -- Handover of a record to another user (the receiver must accept).
+-- There are no pages or routes for transfers, requests or saved_views
+-- in this build; their rows are kept so old data is not lost.
 CREATE TABLE IF NOT EXISTS transfers (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     record_id   INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
@@ -229,8 +238,8 @@ CREATE TABLE IF NOT EXISTS public_links (
     views        INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     regenerated_at TEXT,
-    code_no      INTEGER,                   -- the number in the code HRC-<n>; never reused, never changes
-    code_text    TEXT,                      -- NEW: random code HRC-##### (5 digits), shown under the QR
+    code_no      INTEGER,                   -- internal sequential number; never reused, never changes, never shown or searched
+    code_text    TEXT,                      -- random code HRC-##### (5 digits), shown under the QR and the only code that opens a link
     full_record  INTEGER NOT NULL DEFAULT 0 -- 1 = show every column instead of chosen fields
 );
 CREATE TABLE IF NOT EXISTS public_link_records (
@@ -530,7 +539,8 @@ def _new_random_code_text(conn):
 def _upgrade_public_codes(conn):
     """Public QR links get a unique code HRC-0, HRC-1 ... in the order they were created.
     NEW: every link also gets a random HRC-##### code_text, which is what is shown and searched.
-    Old code_no values are kept for backward compatibility; they are not changed."""
+    Old code_no values are kept internally only and are never shown or searched any more;
+    a link missing code_text is given a random one here, so no link is left code-less."""
     have = [r["name"] for r in conn.execute("PRAGMA table_info(public_links)")]
     if "code_no" not in have:
         conn.execute("ALTER TABLE public_links ADD COLUMN code_no INTEGER")
@@ -667,6 +677,12 @@ def init_db():
         _ensure_column(conn, "departments", "attachment_max_mb", "INTEGER NOT NULL DEFAULT 10")
         _ensure_column(conn, "users", "is_dept_admin", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "can_portal_admin", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "is_deleted", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "deleted_at", "TEXT")
+        _ensure_column(conn, "users", "deleted_by", "INTEGER REFERENCES users(id)")
+        _ensure_column(conn, "users", "bin_purged", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "approval_status", "TEXT NOT NULL DEFAULT 'approved'")
         _ensure_column(conn, "users", "theme", "TEXT NOT NULL DEFAULT 'auto'")
         _ensure_column(conn, "users", "warn_days", "INTEGER NOT NULL DEFAULT 3")
         _ensure_column(conn, "columns", "has_time", "INTEGER NOT NULL DEFAULT 0")

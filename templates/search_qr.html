@@ -36,10 +36,12 @@
   {% if items|length > 2 or (items|length == 1 and items[0].rows|length > 6) %}<p class="hint">Press <b>View record</b> to see everything that is shared.</p>{% endif %}
   {% else %}<p class="hint">This record is not available any more.</p>{% endif %}
 </div>
+{% elif status == 'unavailable' %}
+<div class="alert">This QR code is not available. Check the code printed under the QR and try again.</div>
 {% elif status == 'missing' %}
-<div class="alert">No QR code with the number <b>{{ code }}</b> exists. Check the code printed under the QR and try again.</div>
+<div class="alert">This QR code is not available. Check the code printed under the QR and try again.</div>
 {% elif status == 'off' %}
-<div class="alert">The code <b>{{ code }}</b> exists, but its owner switched the public QR off.</div>
+<div class="alert">This QR code is not available. Check the code printed under the QR and try again.</div>
 {% elif status == 'bad' %}
 <div class="alert">That does not look like a QR code. Type it like <b>HRC-48392</b>.</div>
 {% else %}

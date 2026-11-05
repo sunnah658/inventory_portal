@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Add user — {{ dept['name'] }}{% endblock %}
+{% block content %}
+<div class="card medium"><h1>Add user — {{ dept['name'] }}</h1>
+  <p class="hint" style="margin-bottom:18px">This account is for your department only, as a regular user. It cannot log in until the portal admin (or a user with portal administrative permission) approves it. The user must change the temporary password at first login.</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fm">
+      <div class="fd"><label for="full_name">Full name</label><input id="full_name" name="full_name" type="text" maxlength="150" required value="{{ item.get('full_name') or '' }}"></div>
+      <div class="fd"><label for="username">Username</label><input id="username" name="username" type="text" maxlength="60" required value="{{ item.get('username') or '' }}"></div>
+    </div>
+    <div class="fd"><label>Department</label><input type="text" value="{{ dept['name'] }}" disabled></div>
+    <div class="fd"><label for="password">Temporary password</label><input id="password" name="password" type="text" minlength="8" autocomplete="off"><div class="sub">Leave empty and the portal creates a random one.</div></div>
+    <div class="acts" style="margin-top:14px"><button class="b p" type="submit">Create user (waiting for approval)</button><a class="b" href="{{ url_for('admin.dept_users') }}">Cancel</a></div>
+  </form></div>
+{% endblock %}

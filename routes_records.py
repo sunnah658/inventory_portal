@@ -21,16 +21,17 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
                    send_file, url_for)
 
 import config
-from auth import login_required
+from auth import admin_required, login_required
+from utils import is_portal_admin, is_true_admin
 import scanner
-from core import (ddb_can_add, change_owner, may_change_owner, owner_candidates, display_code, format_code, parse_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+from core import (ddb_can_add, change_owner, may_change_owner, owner_candidates, display_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, create_record, dept_member_ids, filter_clause, get_columns, get_record,
-                  names_for_records, notify, parse_form, purge_record, rec_select, reminder_rows,
+                  names_for_records, notify, parse_code_text, parse_form, purge_record, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
                   update_record, values_for, viewable_departments)
 from models import get_db, log
-from utils import csv_response, page_info
+from utils import csv_response, is_portal_admin, page_info
 
 bp = Blueprint("records", __name__)
 TABS = ("mine", "shared_by_me", "shared_with_me", "department", "viewing")
@@ -98,18 +99,21 @@ def _load(rid, need="view"):
 
 
 def code_redirect(text):
-    """If the search text is a QR code such as 'HRC-12', the page of that code (else None)."""
-    number = parse_code(text)
-    if number is None:
+    """If the search text is a QR code such as 'HRC-48392', the page of that code (else None).
+
+    Only the random 5-digit code redirects; old sequential numbers do not,
+    so they are treated as ordinary search text instead of opening a link."""
+    wanted = parse_code_text(text)
+    if wanted is None:
         return None
-    return redirect(url_for("public.code_page", code=format_code(number)))
+    return redirect(url_for("public.code_page", code=wanted))
 
 
 # ---------------------------------------------------------------- lists
 @bp.route("/")
 @login_required
 def home():
-    if g.user["role"] == "admin":
+    if is_portal_admin(g.user):
         return redirect(url_for("admin.dashboard"))
     return redirect(url_for("records.list_records"))
 
@@ -573,9 +577,28 @@ def delete_attachment(aid):
 @bp.route("/bin")
 @login_required
 def bin_page():
+    """Recycle bin. Portal admin / permission user: two tabs, Records and Users.
+    Everyone else: only their own deleted records, no Users tab."""
     db = get_db()
-    where = "r.deleted_at IS NOT NULL" + ("" if g.user["role"] == "admin" else " AND r.owner_id=?")
-    params = [] if g.user["role"] == "admin" else [g.user["id"]]
+    portal = is_portal_admin(g.user)
+    tab = request.args.get("tab", "records")
+    if tab not in ("records", "users"):
+        tab = "records"
+    if tab == "users" and not portal:
+        tab = "records"
+    if tab == "users":
+        rows = db.execute("SELECT u.*, d.name AS department_name, "
+                          "(SELECT full_name FROM users WHERE id=u.deleted_by) AS deleted_by_name "
+                          "FROM users u LEFT JOIN departments d ON d.id=u.department_id "
+                          "WHERE u.is_deleted=1 AND u.bin_purged=0 ORDER BY u.deleted_at DESC").fetchall()
+        users = []
+        for r in rows:
+            erase = datetime.strptime(r["deleted_at"], "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS) if r["deleted_at"] else None
+            users.append(dict(r, erase_on=erase.strftime("%d %b %Y") if erase else "",
+                              days_left=(erase - datetime.now()).days if erase else 0))
+        return render_template("bin.html", items=[], users=users, tab=tab, portal=portal, days=config.BIN_DAYS)
+    where = "r.deleted_at IS NOT NULL" + ("" if portal else " AND r.owner_id=?")
+    params = [] if portal else [g.user["id"]]
     rows = db.execute(rec_select(", (SELECT full_name FROM users WHERE id=r.deleted_by) AS deleted_by_name")
                       + " WHERE " + where + " ORDER BY r.deleted_at DESC", params).fetchall()
     sums = summaries_for(db, rows)
@@ -584,7 +607,7 @@ def bin_page():
         erase = datetime.strptime(r["deleted_at"], "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS)
         items.append(dict(r, summary=sums[r["id"]], erase_on=erase.strftime("%d %b %Y"),
                           days_left=(erase - datetime.now()).days))
-    return render_template("bin.html", items=items, days=config.BIN_DAYS)
+    return render_template("bin.html", items=items, users=[], tab=tab, portal=portal, days=config.BIN_DAYS)
 
 
 @bp.route("/bin/<int:rid>/restore", methods=["POST"])
@@ -608,6 +631,13 @@ def bin_purge(rid):
     if not rec["deleted_at"]:
         abort(400)
     db = get_db()
+    # A permission user cannot erase for good a record he deleted himself, or a
+    # record the portal admin deleted. Only the portal admin can erase those.
+    if not is_true_admin(g.user) and rec["deleted_by"]:
+        deleter = db.execute("SELECT role FROM users WHERE id=?", (rec["deleted_by"],)).fetchone()
+        if rec["deleted_by"] == g.user["id"] or (deleter and deleter["role"] == "admin"):
+            flash("Only the portal admin can erase this record for good.", "error")
+            return redirect(url_for("records.bin_page"))
     purge_record(db, rid)
     log(db, "record_erase", f"record {rid} erased for good")
     db.commit()
@@ -640,3 +670,46 @@ def _valid_date(text):
         return True
     except (TypeError, ValueError):
         return False
+
+
+# ---------------------------------------------------------------- recycle bin: users tab
+@bp.route("/bin/users/<int:user_id>/restore", methods=["POST"])
+@admin_required
+def bin_user_restore(user_id):
+    """Restore a deleted user: he can work as before, name green again."""
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    if row is None or not row["is_deleted"] or row["bin_purged"]:
+        abort(404)
+    db.execute("UPDATE users SET is_deleted=0, deleted_at=NULL, deleted_by=NULL, bin_purged=0, "
+               "is_active=1, approval_status='approved' WHERE id=?", (user_id,))
+    log(db, "user_restore", row["username"])
+    db.commit()
+    flash(f"{row['full_name']} is restored and can work as before.", "ok")
+    return redirect(url_for("records.bin_page", tab="users"))
+
+
+@bp.route("/bin/users/<int:user_id>/purge", methods=["POST"])
+@admin_required
+def bin_user_purge(user_id):
+    """Delete a deleted user from the Recycle Bin for good.
+    The popup asks: 'You want to delete this user all work from the portal too?'
+    Yes (delete_work=1): his work is deleted immediately, then the account.
+    No (delete_work=0): the account leaves the bin list, his work stays (name in
+    red) until the 30 days end, when it vanishes with the account.
+    A permission user cannot erase a true portal admin's account, or his own."""
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    if row is None or not row["is_deleted"] or row["bin_purged"]:
+        abort(404)
+    if not is_true_admin(g.user) and (is_true_admin(row) or user_id == g.user["id"]):
+        abort(403)
+    delete_work = request.form.get("delete_work") == "1"
+    purge_user_account(db, user_id, delete_work=delete_work)
+    log(db, "user_purge" if delete_work else "user_purge_keep_work", row["username"])
+    db.commit()
+    if delete_work:
+        flash(f"{row['full_name']} and all their work were deleted from the portal.", "ok")
+    else:
+        flash(f"{row['full_name']} was removed from the Recycle Bin. Their work stays in the portal (name in red) until the 30 days end.", "ok")
+    return redirect(url_for("records.bin_page", tab="users"))

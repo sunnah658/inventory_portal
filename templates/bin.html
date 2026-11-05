@@ -1,10 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Recycle bin{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records stay here for {{ days }} days, then are erased for good.</p></div></div>
+<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records stay here for {{ days }} days, then are erased for good. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
+{% if portal %}<div class="tabs"><a class="tab {{ 'on' if tab == 'records' }}" href="{{ url_for('records.bin_page', tab='records') }}">Records</a><a class="tab {{ 'on' if tab == 'users' }}" href="{{ url_for('records.bin_page', tab='users') }}">Users</a></div>{% endif %}
+{% if tab == 'users' %}
+<div class="tb">
+{% if users %}<table><thead><tr><th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
+{% for u in users %}<tr class="r"><td><span class="user-deleted">{{ u['full_name'] }}</span> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td>
+  <td>{{ u['deleted_at'] }}<div class="sub">by {{ u['deleted_by_name'] or '' }}</div></td>
+  <td>{{ u['erase_on'] }} {% if u['days_left'] <= 3 %}<span class="s r">{{ u['days_left'] if u['days_left'] > 0 else 0 }} days left</span>{% endif %}</td>
+  <td class="actcell">
+    <form method="post" action="{{ url_for('records.bin_user_restore', user_id=u['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Restore</button></form>
+    <form method="post" action="{{ url_for('records.bin_user_purge', user_id=u['id']) }}" onsubmit="return purgeUser(this);"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="delete_work" value="0"><button class="b dg sm" type="submit">Delete forever</button></form></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">No deleted users in the recycle bin.</div>{% endif %}
+</div>
+<script>
+function purgeUser(form){
+  var yes = confirm("You want to delete this user all work from the portal too?");
+  form.querySelector('input[name="delete_work"]').value = yes ? "1" : "0";
+  return true;
+}
+</script>
+{% else %}
 <div class="tb">
 {% if items %}<table><thead><tr><th>Record</th><th>Department</th><th>Owner</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
-{% for r in items %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></td><td>{{ r['department_name'] }}</td><td>{{ r['owner_name'] }}</td>
+{% for r in items %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></td><td>{{ r['department_name'] }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>
   <td>{{ r['deleted_at'] }}<div class="sub">by {{ r['deleted_by_name'] or '' }}</div></td>
   <td>{{ r['erase_on'] }} {% if r['days_left'] <= 3 %}<span class="s r">{{ r['days_left'] if r['days_left'] > 0 else 0 }} days left</span>{% endif %}</td>
   <td class="actcell">
@@ -12,4 +32,5 @@
     <form method="post" action="{{ url_for('records.bin_purge', rid=r['id']) }}" onsubmit="return confirm('Erase this record for good? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg sm" type="submit">Delete forever</button></form></td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="empty">The recycle bin is empty.</div>{% endif %}
 </div>
+{% endif %}
 {% endblock %}

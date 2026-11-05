@@ -1,4 +1,136 @@
 ==============================================================================
+ UPDATE: INVOICE PDF QR BOTTOM LEFT + SAME SIGN GAP, ALL TYPES (2026-11-05)
+==============================================================================
+ Built as approved in the sign-lower-2 JPG preview. Invoice PDF, for
+ every type (Billing, Admin Expense Voucher, Conveyance Bill, Purchase
+ Request) and every custom format, because they share one PDF builder:
+ smaller QR (1.9 cm, was 2.8 cm) at the bottom left, directly on top of
+ "Share code: HRC-#####" at the very bottom left, on every page; the old
+ QR in the footer block on the right is gone. Signature gap is the same
+ for all types: 64 points after the Terms line before the signature
+ blocks (was 16). Draft invoices with no QR show neither. .env
+ untouched. See README section 29. No database change. Upgrade:
+ ./backup.sh, copy live .env OUTSIDE the folder first, unzip only this
+ zip, restore live .env if it differs, docker compose up -d --build.
+ Apply only this latest zip.
+
+==============================================================================
+ UPDATE: INVOICE PDF SHARE CODE AT THE BOTTOM LEFT OF THE PAGE (2026-11-05)
+==============================================================================
+ Correction to the previous bottom-right change: that put the code under
+ the QR in the footer block, which on a short invoice sits mid-page, not
+ at the bottom. Now, in the invoice PDF only, "Share code: HRC-#####" is
+ drawn in the page footer at the bottom left corner (same baseline as
+ "Page 1" on the right), on every page, and it no longer appears under
+ the QR. The QR stays in the footer block on the right. Draft invoices
+ with no QR show no share code. .env untouched. See README section 28.
+ No database change. Upgrade: ./backup.sh, copy live .env OUTSIDE the
+ folder first, unzip only this zip, restore live .env if it differs,
+ docker compose up -d --build. Apply only this latest zip.
+
+==============================================================================
+ UPDATE: INVOICE PDF SHARE CODE IN THE BOTTOM RIGHT CORNER (2026-11-05)
+==============================================================================
+ Invoice PDF only: the QR and its "Share code: HRC-#####" text are now
+ flush-right in the bottom right corner (the code was centred under the
+ QR before), as the last footer line. Footer text now reads "Share code
+ at the bottom right is only for scanning and searching". No other PDF
+ layout, tab, detail, code page or QR label change. .env untouched.
+ See README section 27. No database change. Upgrade: ./backup.sh, copy
+ live .env OUTSIDE the folder first, unzip only this zip, restore live
+ .env if it differs, docker compose up -d --build. Apply only this
+ latest zip.
+
+==============================================================================
+ UPDATE: INVOICE HRC CODE LABELLED "SHARE CODE" (2026-11-05)
+==============================================================================
+ Labels only: the invoice number (e.g. BIL-0001) is the official number
+ to quote for payment and accounts; the HRC-##### code is now called the
+ "Share code" everywhere an invoice shows it, and is labelled as only
+ for scanning and searching, not the invoice number. Changed: Invoices
+ tab columns and search box, invoice detail Public QR panel, invoice
+ code page heading, invoice PDF footer, and the printed QR label.
+ One correction found while testing the labelled search: searching the
+ Invoices tab by a share code used to redirect to a 404 record code
+ page; the Invoices tab is now exempt from that record-code redirect,
+ so its search works as labelled. Other Department Database tabs still
+ redirect code searches to the record code page, as before.
+ No separate invoice-only QR search button was added, as requested
+ for now. .env untouched. See README section 26. No database change.
+ Upgrade: ./backup.sh, copy live .env OUTSIDE the folder first, unzip
+ only this zip, restore live .env if it differs, docker compose up -d
+ --build. Apply only this latest zip.
+
+==============================================================================
+ UPDATE: SECURITY AND BUG FIXES (SCAN OF 2026-11-04, .env UNTOUCHED)
+==============================================================================
+ .env was left exactly as it was in the users-admin zip, untouched.
+ All other scan errors are fixed in this build; see README section 25
+ for the full list.
+ 1. SEQUENTIAL CODES CLOSED: only the random HRC-##### code opens a
+    record link now. Old HRC-0, HRC-1, ... numbers return 404 and are
+    no longer shown anywhere. Existing links keep their random code;
+    any link missing one gets one on upgrade.
+ 2. RECORD QR REGENERATE: "New scan link" / "New code" now gives a
+    new random HRC code as well as a new token, so the old code stops
+    working, like invoices already did.
+ 3. EXCEL FORMULA INJECTION FIXED: text cells starting with =, +, -,
+    @, tab or carriage return are written as plain text in Excel,
+    not as formulas. CSV was already safe.
+ 4. RECORD PDF UNTICK-ALL: submitting the PDF form with nothing
+    ticked now gives an empty PDF instead of the full record. A
+    direct PDF link still gives all columns.
+ 5. DEPENDENCIES PINNED: Flask 3.1.3, waitress 3.0.2, segno 1.6.6,
+    openpyxl 3.1.5, reportlab 5.1.0.
+ 6. NOTIFICATIONS: opening the Notifications page no longer marks
+    everything read. Use the new "Mark all as read" button.
+ 7. SORTING BY COLUMN NAME is now per-department, so another
+    department's number column cannot change this department's
+    text sorting.
+ 8. CODE SEARCH: a missing code and a disabled code now give the
+    same generic "not available" answer, so existence cannot be
+    probed. Attachments card no longer prints. A permission user can
+    edit his own name/department on the Users page.
+ 9. LEGACY TABLES (transfers, requests, saved_views) are left alone
+    and documented as legacy only; no old data was deleted.
+
+==============================================================================
+ UPDATE: PORTAL ADMINISTRATIVE PERMISSION, DEPT-ADMIN USERS PAGE,
+         LOCKED / DELETED NAMES, RECYCLE BIN USERS TAB
+==============================================================================
+ 1. PORTAL ADMIN USERS PAGE FILTERS: Department, one specific User, Role
+    (Admin / Department admin / User) and Status (Active / Locked /
+    Pending approval), all combinable with the search box.
+ 2. PORTAL ADMINISTRATIVE PERMISSION: the portal admin can give a user
+    this permission (Users > Edit user). That user can do every portal
+    admin task, but cannot give the permission to anyone else, cannot
+    create a true admin, and cannot disable or remove the portal admin.
+    Only the original portal admin can give or remove the permission.
+ 3. DEPARTMENT ADMIN USERS PAGE: a dept admin can view his own
+    department's accounts and create an account for his own department
+    only. It stays "Pending approval" and cannot log in until the portal
+    admin or a permission user approves it. A dept admin cannot reset,
+    lock, disable, edit or delete any user.
+ 4. ONLY the portal admin and a permission user can delete an account.
+    Deleting sends it to the Recycle Bin Users tab for 30 days: its work
+    stays (name in red), it can be restored (name green again), and
+    after 30 days the account and all its work vanish.
+ 5. NAME COLOURS with their work: green = active, yellow = locked
+    (work stays, normal access only), red = deleted (work stays 30
+    days, normal access only).
+ 6. RECYCLE BIN has two tabs for portal admin / permission users:
+    Records and Users. A permission user can restore any deletion, can
+    erase other users' deletions, but cannot erase his own or the
+    portal admin's deletions (Records) or a portal admin's account.
+    "Delete forever" on a user asks "You want to delete this user all
+    work from the portal too?" — Yes deletes the work at once, No
+    leaves it until the 30 days end.
+ 7. The button now reads "Department DB attachment access" in full.
+ UPGRADE: ./backup.sh, copy your live .env outside the folder first,
+   unzip over the old folder, restore your .env if it differs,
+   docker compose up -d --build. Details: README.txt section 24.
+
+==============================================================================
  UPDATE: INVOICES AS A DEFAULT TAB INSIDE THE DEPARTMENT DATABASE
 ==============================================================================
  1. The invoice page is now a DEFAULT tab inside Department database

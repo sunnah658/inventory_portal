@@ -35,7 +35,7 @@
     <thead><tr>{% for c in cols[:7] %}<th>{{ c['name'] }}</th>{% endfor %}<th>Added by</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}{% set v = vmap[r['id']] %}
       <tr class="r">{% for c in cols[:7] %}<td>{% if c['col_type'] == 'attachment' %}{% if attach_urls and attach_urls.get(r['id'], {}).get(c['id']) %}<a href="{{ attach_urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
-        <td>{{ r['owner_name'] }}</td>
+        <td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.row_detail', rid=r['id']) }}">Open</a>
           {% if not deleted and can_edit_row(r) %}<a class="b sm" href="{{ url_for('ddb.edit_row', rid=r['id']) }}">Edit</a>{% endif %}
           {% if deleted %}<form method="post" action="{{ url_for('ddb.restore_row', rid=r['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm" type="submit">Restore</button></form>{% endif %}</td></tr>

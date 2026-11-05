@@ -2,15 +2,29 @@
 {% from "_macros.html" import reauth with context %}
 {% block title %}Users{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Users</h1><p class="hint">Create accounts, change departments, reset passwords or disable a user.</p></div>
-  <div class="acts"><a class="b" href="{{ url_for('admin.ddb_attachment_access') }}">DeptDB attachment access</a><a class="b" href="{{ url_for('admin.import_page') }}">Import from CSV</a><a class="b p" href="{{ url_for('admin.user_add') }}">+ Add user</a></div></div>
-<form class="tools" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search name, username or department" aria-label="Search"><button class="b" type="submit">Search</button>{% if q %}<a href="{{ url_for('admin.users') }}" style="align-self:center">Clear</a>{% endif %}</form>
+<div class="hd"><div><h1>Users</h1><p class="hint">Create accounts, change departments, reset passwords or disable a user. Deleted users are in the Recycle Bin, Users tab. A name in green is active, in yellow is locked (disabled), in red is deleted.</p></div>
+  <div class="acts"><a class="b" href="{{ url_for('admin.ddb_attachment_access') }}">Department DB attachment access</a><a class="b" href="{{ url_for('admin.import_page') }}">Import from CSV</a><a class="b p" href="{{ url_for('admin.user_add') }}">+ Add user</a></div></div>
+<form class="tools" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search name, username or department" aria-label="Search">
+  <select name="department" aria-label="Department filter"><option value="">All departments</option>{% for d in departments %}<option value="{{ d['id'] }}" {{ 'selected' if dept == d['id']|string }}>{{ d['name'] }}</option>{% endfor %}</select>
+  <select name="user" aria-label="User filter"><option value="">All users</option>{% for p in people %}<option value="{{ p['id'] }}" {{ 'selected' if user_filter == p['id']|string }}>{{ p['full_name'] }} ({{ p['username'] }})</option>{% endfor %}</select>
+  <select name="role" aria-label="Role filter"><option value="">All roles</option><option value="admin" {{ 'selected' if role_filter == 'admin' }}>Admin</option><option value="dept_admin" {{ 'selected' if role_filter == 'dept_admin' }}>Department admin</option><option value="user" {{ 'selected' if role_filter == 'user' }}>User</option></select>
+  <select name="status" aria-label="Status filter"><option value="">All statuses</option><option value="active" {{ 'selected' if status_filter == 'active' }}>Active</option><option value="locked" {{ 'selected' if status_filter == 'locked' }}>Locked</option><option value="pending" {{ 'selected' if status_filter == 'pending' }}>Pending approval</option></select>
+  <button class="b" type="submit">Search</button>{% if q or dept or user_filter or role_filter or status_filter %}<a href="{{ url_for('admin.users') }}" style="align-self:center">Clear</a>{% endif %}</form>
 <div class="tb">{% if rows %}<table><thead><tr><th>Full name</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Records</th><th></th></tr></thead><tbody>
-{% for u in rows %}<tr class="r"><td>{{ u['full_name'] }}</td><td>{{ u['username'] }}</td><td><span class="dp">{{ u['department_name'] or '' }}</span></td>
-<td>{% if u['role'] == 'admin' %}<span class="pill b2">Admin</span>{% elif u['is_dept_admin'] %}<span class="pill b2">Department admin</span>{% else %}User{% endif %}</td>
-<td>{% if u['is_active'] %}Active{% else %}<span class="s r">Disabled</span>{% endif %} {% if u['must_change_password'] %}<span class="pill">Temporary password</span>{% endif %}</td><td>{{ u['item_count'] }}</td>
-<td class="actcell"><a class="b sm" href="{{ url_for('admin.user_edit', user_id=u['id']) }}">Edit</a>
-<details class="dt"><summary class="b sm dg">Reset password</summary><form class="pop" method="post" action="{{ url_for('admin.user_reset', user_id=u['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="sub" style="margin:0 0 8px">A new temporary password is created and {{ u['username'] }} is logged out.</div>{{ reauth() }}<button class="b sm dg" type="submit" style="margin-top:8px">Reset password</button></form></details></td></tr>{% endfor %}
+{% for u in rows %}<tr class="r"><td><span class="{{ user_name_class(u) }}">{{ u['full_name'] }}</span></td><td>{{ u['username'] }}</td><td><span class="dp">{{ u['department_name'] or '' }}</span></td>
+<td>{% if u['role'] == 'admin' %}<span class="pill b2">Admin</span>{% elif u['is_dept_admin'] %}<span class="pill b2">Department admin</span>{% else %}User{% endif %}{% if u['can_portal_admin'] %} <span class="pill b2">Portal administrative permission</span>{% endif %}</td>
+<td>{% if u['approval_status'] == 'pending' %}<span class="s a">Pending approval</span>{% elif u['is_active'] %}Active{% else %}<span class="s a">Locked</span>{% endif %} {% if u['must_change_password'] %}<span class="pill">Temporary password</span>{% endif %}</td><td>{{ u['item_count'] }}</td>
+<td class="actcell">
+{% if u['approval_status'] == 'pending' %}
+  <form method="post" action="{{ url_for('admin.user_approve', user_id=u['id']) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Approve</button></form>
+  <form method="post" action="{{ url_for('admin.user_reject', user_id=u['id']) }}" style="display:inline" onsubmit="return confirm('Reject this pending account? It will be removed.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg sm" type="submit">Reject</button></form>
+{% else %}
+  <a class="b sm" href="{{ url_for('admin.user_edit', user_id=u['id']) }}">Edit</a>
+  <details class="dt"><summary class="b sm dg">Reset password</summary><form class="pop" method="post" action="{{ url_for('admin.user_reset', user_id=u['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="sub" style="margin:0 0 8px">A new temporary password is created and {{ u['username'] }} is logged out.</div>{{ reauth() }}<button class="b sm dg" type="submit" style="margin-top:8px">Reset password</button></form></details>
+  <details class="dt"><summary class="b sm dg">Delete account</summary><form class="pop" method="post" action="{{ url_for('admin.user_delete', user_id=u['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="sub" style="margin:0 0 8px">The account goes to the Recycle Bin, Users tab, for 30 days. Their work stays (name in red) and can be restored. Only the portal admin and a portal-administrative-permission user can delete an account.</div>{{ reauth() }}<button class="b sm dg" type="submit" style="margin-top:8px">Delete account</button></form></details>
+{% endif %}</td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="empty">No users found.</div>{% endif %}</div>
 {% endblock %}

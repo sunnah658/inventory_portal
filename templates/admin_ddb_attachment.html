@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}DeptDB attachment access{% endblock %}
+{% block title %}Department DB attachment access{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>DeptDB attachment access</h1><p class="hint">Portal admin only. Tick a dept admin to let them create an attachment column in their department's database, so users can add a file to a row. Unticked dept admins cannot create attachment columns (they can still create all other column types). The portal admin can always create attachment columns.</p></div></div>
+<div class="hd"><div><h1>Department DB attachment access</h1><p class="hint">Portal admin only. Tick a dept admin to let them create an attachment column in their department's database, so users can add a file to a row. Unticked dept admins cannot create attachment columns (they can still create all other column types). The portal admin can always create attachment columns.</p></div></div>
 <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="tb"><table><thead><tr><th>Dept admin</th><th>Department</th><th>Can create attachment columns</th></tr></thead><tbody>
 {% for u in rows %}<tr class="r"><td><b>{{ u['full_name'] }}</b> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td><td><label class="ck"><input type="checkbox" name="allow_{{ u['id'] }}" value="1" {{ 'checked' if u['can_ddb_attachment'] }}> Allow</label></td></tr>

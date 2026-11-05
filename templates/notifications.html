@@ -2,7 +2,7 @@
 {% block title %}Notifications{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Notifications</h1><p class="hint">Shares, comments, replaced files, owner changes and reminders.</p></div>
-  <div class="acts">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_clear') }}" onsubmit="return confirm('Clear all notifications?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg" type="submit">Clear all</button></form>{% endif %}</div></div>
+  <div class="acts">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_mark_read') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Mark all as read</button></form><form method="post" action="{{ url_for('flow.notifications_clear') }}" onsubmit="return confirm('Clear all notifications?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg" type="submit">Clear all</button></form>{% endif %}</div></div>
 <div class="card" style="margin-bottom:16px"><form method="post" action="{{ url_for('flow.notification_settings') }}" class="acts" style="align-items:flex-end"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="fd" style="margin:0;min-width:220px"><label for="wd">Warn me before a reminder date</label>
     <select id="wd" name="warn_days">{% for n in choices %}<option value="{{ n }}" {{ 'selected' if n == warn_days }}>{{ n }} day{{ '' if n == 1 else 's' }} ahead</option>{% endfor %}</select></div>

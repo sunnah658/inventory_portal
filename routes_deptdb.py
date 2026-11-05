@@ -38,9 +38,9 @@ from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, ddb_attachment_info,
                   ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
-                  format_code, notify, parse_code, parse_form, show_when)
+                  notify, parse_code_text, parse_form, show_when)
 from models import get_db, log, setting_get
-from utils import csv_response, like_pattern, page_info
+from utils import csv_response, is_portal_admin, like_pattern, page_info
 
 bp = Blueprint("ddb", __name__, url_prefix="/deptdb")
 
@@ -99,7 +99,7 @@ def _dept():
     department; the portal admin may pick any with ?dept=."""
     db = get_db()
     dept_id = g.user["department_id"]
-    if g.user["role"] == "admin":
+    if is_portal_admin(g.user):
         dept_id = request.values.get("dept", type=int) or dept_id
     dept = db.execute("SELECT * FROM departments WHERE id=?", (dept_id,)).fetchone() if dept_id else None
     if dept is None:
@@ -129,7 +129,7 @@ def _get_tab(db, dept, tab_id=None):
 
 def _back(dept, tab=None):
     out = {}
-    if g.user["role"] == "admin":
+    if is_portal_admin(g.user):
         out["dept"] = dept["id"]
     if tab is not None:
         out["tab"] = tab["id"]
@@ -138,7 +138,7 @@ def _back(dept, tab=None):
 
 def _row(rid):
     db = get_db()
-    row = db.execute("SELECT r.*, u.full_name AS owner_name, d.name AS department_name FROM ddb_rows r "
+    row = db.execute("SELECT r.*, u.full_name AS owner_name, u.is_active AS owner_is_active, u.is_deleted AS owner_is_deleted, d.name AS department_name FROM ddb_rows r "
                      "JOIN users u ON u.id=r.owner_id JOIN departments d ON d.id=r.department_id "
                      "WHERE r.id=?", (rid,)).fetchone()
     if row is None:
@@ -154,7 +154,7 @@ def _can_create_attachment(user, dept_id=None):
     """Portal admin always; a dept admin only if the portal admin gave them
     access. A delegate inherits it when a dept admin of his department has it."""
     db = get_db()
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return True
     try:
         if user["is_dept_admin"] and user["can_ddb_attachment"]:
@@ -300,9 +300,12 @@ def _filters(db, dept, tab, is_admin, args):
 @login_required
 def index():
     db, dept, is_admin = _dept()
-    number = parse_code(request.args.get("q"))
-    if number is not None:
-        return redirect(url_for("public.code_page", code=format_code(number)))
+    _wanted = parse_code_text(request.args.get("q"))
+    # The Invoices tab has its own share-code search (customer / invoice number /
+    # share code, filtered to that department's invoices). Do not hijack it with
+    # the record-code redirect, which would 404 for an invoice share code.
+    if _wanted is not None and request.args.get("tab") != "invoices":
+        return redirect(url_for("public.code_page", code=_wanted))
     if request.args.get("tab") == "invoices":
         return _invoice_tab_view(db, dept, is_admin, request.args)
     tab, tabs = _get_tab(db, dept, request.args.get("tab", type=int))
@@ -312,12 +315,12 @@ def index():
                                q="", mine=False, deleted=False, total=0, page=1, pages=1,
                                counts={"all": 0, "mine": 0, "deleted": 0}, keep={}, can_add=False, names=[],
                                depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
-                               if g.user["role"] == "admin" else [],
+                               if is_portal_admin(g.user) else [],
                                is_admin=is_admin, can_edit_row=lambda r: False, can_delete_row=lambda r: False)
     where, params, order, op, info, q, mine, deleted = _filters(db, dept, tab, is_admin, request.args)
     total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
     page, pages, offset = page_info(total, request.args.get("page", 1, type=int), config.PER_PAGE)
-    rows = db.execute("SELECT r.*, u.full_name AS owner_name FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
+    rows = db.execute("SELECT r.*, u.full_name AS owner_name, u.is_active AS owner_is_active, u.is_deleted AS owner_is_deleted FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
                       "WHERE " + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
                       params + op + [config.PER_PAGE, offset]).fetchall()
     cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
@@ -329,17 +332,17 @@ def index():
         "deleted": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NOT NULL",
                               (dept["id"], tab["id"])).fetchone()[0] if is_admin else 0}
     keep = {k: v for k, v in request.args.items() if k not in ("page",)}
-    if g.user["role"] == "admin":
+    if is_portal_admin(g.user):
         keep["dept"] = dept["id"]
     _vmap, _urls = _display_map(db, rows, cols)
-    can_add_here = bool(cols) and (g.user["role"] == "admin" or g.user["department_id"] == dept["id"])
+    can_add_here = bool(cols) and (is_portal_admin(g.user) or g.user["department_id"] == dept["id"])
     return render_template(
         "deptdb.html", dept=dept, tab=tab, tabs=tabs, level="manager" if is_admin else "own", cols=cols, rows=rows,
         vmap=_vmap, attach_urls=_urls, info=info, q=q, mine=mine, deleted=deleted,
         total=total, page=page, pages=pages, counts=counts, keep=keep,
         can_add=can_add_here, names=[c["name"] for c in cols], is_admin=is_admin,
         depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
-        if g.user["role"] == "admin" else [],
+        if is_portal_admin(g.user) else [],
         can_edit_row=lambda r: ddb_can_edit_row(db, g.user, r) and not r["deleted_at"],
         can_delete_row=lambda r: ddb_can_delete_row(db, g.user, r) and not r["deleted_at"])
 
@@ -386,7 +389,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
     dept-admin Invoice templates page."""
     from routes_invoices import _shared_dept_ids
     scope = [dept["id"]]
-    if is_admin and g.user["role"] != "admin" and g.user["department_id"] == dept["id"]:
+    if is_admin and not is_portal_admin(g.user) and g.user["department_id"] == dept["id"]:
         scope += [d for d in _shared_dept_ids(db, g.user) if d not in scope]
     # sub-tabs: active templates of this department, plus templates that already have invoices in scope
     sub = {}
@@ -439,7 +442,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
                       "LEFT JOIN users u ON u.id=i.owner_id LEFT JOIN departments d ON d.id=i.department_id "
                       + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
     keep = {k: v for k, v in args.items() if k not in ("page",)}
-    if g.user["role"] == "admin":
+    if is_portal_admin(g.user):
         keep["dept"] = dept["id"]
     keep["tab"] = "invoices"
     users = db.execute("SELECT id, full_name FROM users WHERE department_id=? AND is_active=1 ORDER BY full_name",
@@ -452,7 +455,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
                            users=users, user_filter=user_filter, status=status, q=q, sort=sort,
                            total=total, page=page, pages=pages, keep=keep, create_templates=create_templates,
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
-                           if g.user["role"] == "admin" else [],
+                           if is_portal_admin(g.user) else [],
                            can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] == "draft")
 
 
@@ -687,7 +690,7 @@ def _form(dept, tab, cols, values, row=None, version=None, conflict=None, source
 @login_required
 def new_row():
     db, dept, _is_admin = _dept()
-    if g.user["role"] != "admin" and g.user["department_id"] != dept["id"]:
+    if not is_portal_admin(g.user) and g.user["department_id"] != dept["id"]:
         abort(403)
     tab, _tabs = _get_tab(db, dept, request.values.get("tab", type=int))
     if tab is None:
@@ -774,7 +777,7 @@ def delete_row(rid):
     log(db, "ddb_delete", f"row {rid}")
     db.commit()
     flash("Row deleted. A department admin can restore it for %d days." % config.BIN_DAYS, "ok")
-    return redirect(url_for("ddb.index", dept=row["department_id"]) if g.user["role"] == "admin"
+    return redirect(url_for("ddb.index", dept=row["department_id"]) if is_portal_admin(g.user)
                     else url_for("ddb.index"))
 
 

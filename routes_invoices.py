@@ -36,6 +36,7 @@ from flask import (Blueprint, Response, abort, flash, g, redirect, render_templa
 import config
 import exports
 from auth import login_required
+from utils import is_portal_admin
 from core import display_code, new_random_code_text
 from models import get_db, log, setting_get
 
@@ -117,7 +118,7 @@ def _shared_dept_ids(db, user):
     return [r[0] for r in rows]
 
 def _can_view(db, user, inv):
-    if user["role"] == "admin":
+    if is_portal_admin(user):
         return True
     if inv["owner_id"] == user["id"]:
         return True
@@ -133,7 +134,7 @@ def _can_view(db, user, inv):
     return False
 
 def _can_manage_public(db, user, inv):
-    return user["role"] == "admin" or inv["owner_id"] == user["id"] or (_is_dept_admin(user) and inv["department_id"] == user["department_id"])
+    return is_portal_admin(user) or inv["owner_id"] == user["id"] or (_is_dept_admin(user) and inv["department_id"] == user["department_id"])
 
 def _lines(db, iid):
     return db.execute("SELECT * FROM invoice_lines WHERE invoice_id=? ORDER BY position, id", (iid,)).fetchall()
@@ -220,17 +221,17 @@ def list_invoices():
     # The invoice page now lives as a default tab inside Department Database.
     # Old links and bookmarks keep working through this redirect.
     args = {"tab": "invoices"}
-    if g.user["role"] == "admin":
+    if is_portal_admin(g.user):
         args["dept"] = g.user["department_id"]
     return redirect(url_for("ddb.index", **args))
 @bp.route("/invoices/dept")
 @login_required
 def dept_list():
-    if not (_is_dept_admin(g.user) or g.user["role"] == "admin"):
+    if not (_is_dept_admin(g.user) or is_portal_admin(g.user)):
         abort(403)
     db = get_db()
-    dept_id = g.user["department_id"] if g.user["role"] != "admin" else (request.args.get("dept", type=int) or g.user["department_id"])
-    rows = db.execute("SELECT i.*, t.name AS template_name, u.full_name AS owner_name FROM invoices i "
+    dept_id = g.user["department_id"] if not is_portal_admin(g.user) else (request.args.get("dept", type=int) or g.user["department_id"])
+    rows = db.execute("SELECT i.*, t.name AS template_name, u.full_name AS owner_name, u.is_active AS owner_is_active, u.is_deleted AS owner_is_deleted FROM invoices i "
                       "LEFT JOIN invoice_templates t ON t.id=i.template_id LEFT JOIN users u ON u.id=i.owner_id "
                       "WHERE i.department_id=? ORDER BY i.id DESC", (dept_id,)).fetchall()
     dept = db.execute("SELECT * FROM departments WHERE id=?", (dept_id,)).fetchone()
@@ -246,7 +247,7 @@ def shared_list():
     rows = []
     if ids:
         q = ",".join("?" * len(ids))
-        rows = db.execute(f"SELECT i.*, t.name AS template_name, u.full_name AS owner_name, d.name AS dept_name FROM invoices i "
+        rows = db.execute(f"SELECT i.*, t.name AS template_name, u.full_name AS owner_name, u.is_active AS owner_is_active, u.is_deleted AS owner_is_deleted, d.name AS dept_name FROM invoices i "
                           f"LEFT JOIN invoice_templates t ON t.id=i.template_id LEFT JOIN users u ON u.id=i.owner_id LEFT JOIN departments d ON d.id=i.department_id "
                           f"WHERE i.department_id IN ({q}) ORDER BY i.id DESC", ids).fetchall()
     return render_template("invoice_shared_list.html", rows=rows)
@@ -500,7 +501,7 @@ def detail(iid):
     return render_template("invoice_detail.html", inv=inv, lines=lines, tpl=tpl, owner_name=owner["full_name"] if owner else "",
                            qr_svg=qr_svg, qr_url=qr_url, colour=KIND_COLOURS.get((json.loads(inv["template_snapshot_json"] or "{}").get("kind") or "billing"), "#0F7CA6"),
                            can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] == "draft"),
-                           can_manage=(g.user["role"] == "admin" or inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])))
+                           can_manage=(is_portal_admin(g.user) or inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])))
 
 @bp.route("/invoices/<int:iid>/pdf")
 @login_required
