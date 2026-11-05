@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager with context %}
+{% block title %}My records{% endblock %}
+{% block content %}
+<div class="hd">
+  <div><h1>My records</h1><p class="hint">Your own rows in the Department Database. Nothing here can be edited — use Locate to open a row in the Department Database.</p></div>
+  <div class="acts">
+    <a class="b" href="{{ url_for('ddb.index', dept=dept_id) }}">Open Department Database</a>
+    <a class="b" href="{{ url_for('records.download', tab='department', q=q) }}">Download CSV</a>
+    <button class="b" type="button" onclick="window.print()">Print</button>
+  </div>
+</div>
+<div class="tabs">
+  {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for('records.list_records', tab=t) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
+</div>
+<form method="get" action="{{ url_for('records.list_records') }}" class="tools">
+  <input type="hidden" name="tab" value="department">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search your Department Database rows" aria-label="Search rows">
+  <button class="b" type="submit">Apply</button>
+</form>
+{% if groups %}
+  {% for g in groups %}
+  <h2 style="margin-top:16px">{{ g.tab_name }}</h2>
+  <div class="tb"><table>
+    <thead><tr>{% for c in g.cols[:7] %}<th>{{ c['name'] }}</th>{% endfor %}<th class="noprint"></th></tr></thead>
+    <tbody>{% for r in g.rows %}{% set v = g.vmap[r['id']] %}
+      <tr class="r">{% for c in g.cols[:7] %}<td>{% if c['col_type'] == 'attachment' %}{% if g.urls and g.urls.get(r['id'], {}).get(c['id']) %}<a href="{{ g.urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
+        <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.index', dept=dept_id, tab=g.tab_id, page=locate_pages[r['id']]) }}#row-{{ r['id'] }}">Locate</a></td></tr>
+    {% endfor %}</tbody></table>
+    {% if g.cols|length > 7 %}<div class="nt">The first 7 columns are shown. Locate the row to see all fields.</div>{% endif %}</div>
+  {% endfor %}
+  {{ pager(page, pages, 'records.list_records', keep) }}
+{% else %}
+  <div class="tb"><div class="empty">{% if q %}Nothing matches your search.{% else %}You have no rows in the Department Database yet. <a href="{{ url_for('ddb.index', dept=dept_id) }}">Open the Department Database</a> to add one.{% endif %}</div></div>
+{% endif %}
+{% endblock %}

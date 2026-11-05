@@ -1520,3 +1520,44 @@
    first start, and the General tab is deleted automatically on
    first start). Apply only this latest zip, not the older ones
    in order.
+
+ 31. MY DEPARTMENT TAB: OWN DEPARTMENT DATABASE WORK ONLY, WITH
+    LOCATE (2026-11-05)
+    The "My department" tab on the My records page used to be a
+    dept-admin-only list of every personal record in the
+    department. It now works differently, for every user:
+    - The tab is on every user's My records page (regular user,
+      dept admin, portal admin and portal administrative
+      permission user), next to Mine, Shared by me and Shared
+      with me. Those three tabs are unchanged.
+    - It shows only that user's own rows in the Department
+      Database: the rows they created in the department's
+      tabs (Client Info, Meetings, and so on), grouped under
+      the tab they belong to. No other user's rows, no personal
+      records, and no rows shared with them by someone else.
+      Invoices are not listed here; they stay in the
+      Department Database Invoices tab. The count beside the
+      tab is the number of that user's own Department Database
+      rows. A search box on the tab searches the values of
+      those rows, and Download CSV downloads them.
+    - Nothing can be edited from this tab. There are no edit,
+      delete or share buttons on it.
+    - Each row has a Locate button on its right side. Locate
+      is a plain link in the same browser tab (it does not open
+      a new tab or window). It opens the Department Database
+      page on the tab the row belongs to, on the page that row
+      sits on, scrolled to that row and highlighting it, so
+      the row can be seen in place and edited there if the user
+      is allowed to (owner, dept admin or delegate, as before).
+    - Because the tab no longer lists personal records, a dept
+      admin no longer sees other users' personal records on
+      the My records page at all. Department-wide viewing
+      happens in the Department Database page itself, where
+      every user in the department already sees every row.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.

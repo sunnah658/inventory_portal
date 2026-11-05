@@ -1,4 +1,20 @@
 ==============================================================================
+ UPDATE: MY DEPARTMENT TAB - OWN DEPTDB WORK ONLY, WITH LOCATE (2026-11-05)
+==============================================================================
+ The "My department" tab on the My records page is now on every user's
+ page and shows only that user's own rows in the Department Database
+ (their own rows in the department's tabs, grouped by tab). No other
+ user's rows, no personal records, no rows shared with them. Nothing
+ can be edited from the tab. Each row has a Locate button on its right
+ that opens the Department Database page in the same browser tab, on
+ the row's own tab and page, scrolled to and highlighting that exact
+ row. Mine, Shared by me and Shared with me are unchanged; a dept admin
+ no longer sees other users' personal records on the My records page.
+ .env untouched. See README section 31. Upgrade: ./backup.sh, copy live
+ .env OUTSIDE the folder first, unzip only this zip, restore live .env
+ if it differs, docker compose up -d --build. Apply only this latest zip.
+
+==============================================================================
  UPDATE: TAX TICK, SMALL INVOICE QR, GENERAL TAB DELETED, MY RECORDS FOR
  ALL ADMINS (2026-11-05)
 ==============================================================================

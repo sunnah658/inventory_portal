@@ -24,14 +24,14 @@ import config
 from auth import admin_required, login_required
 from utils import is_portal_admin, is_true_admin
 import scanner
-from core import (ddb_can_add, change_owner, may_change_owner, owner_candidates, display_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, create_record, dept_member_ids, filter_clause, get_columns, get_record,
                   names_for_records, notify, parse_code_text, parse_form, purge_record, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
                   update_record, values_for, viewable_departments)
 from models import get_db, log
-from utils import csv_response, is_portal_admin, page_info
+from utils import csv_response, is_portal_admin, like_pattern, page_info
 
 bp = Blueprint("records", __name__)
 TABS = ("mine", "shared_by_me", "shared_with_me", "department", "viewing")
@@ -40,7 +40,10 @@ TABS = ("mine", "shared_by_me", "shared_with_me", "department", "viewing")
 def available_tabs(db, user):
     """Tabs this user can use (department / viewing only appear when allowed)."""
     tabs = ["mine", "shared_by_me", "shared_with_me"]
-    if user["is_dept_admin"]:
+    if user["department_id"]:
+        # "My department" is on every user's My records page (2026-11-05):
+        # it lists that user's own rows in the Department Database, not
+        # personal records - see _department_tab_view.
         tabs.append("department")
     if viewable_departments(db, user):
         tabs.append("viewing")
@@ -57,8 +60,11 @@ def tab_clause(db, tab, user):
         return ("r.deleted_at IS NULL AND r.owner_id=? AND (EXISTS (SELECT 1 FROM record_shares s "
                 "WHERE s.record_id=r.id) OR EXISTS (SELECT 1 FROM record_user_shares us "
                 "WHERE us.record_id=r.id))", [user["id"]])
-    if tab == "department" and user["is_dept_admin"]:
-        return "r.deleted_at IS NULL AND r.department_id=?", [user["department_id"]]
+    # The "department" tab is no longer personal records (2026-11-05): it
+    # lists the user's own Department Database rows, handled by
+    # _department_tab_view. Any caller that still passes "department" here
+    # (for example a bulk export link) falls through to the user's own
+    # records only, never the whole department.
     if tab == "viewing":
         granted = viewable_departments(db, user)
         if granted:
@@ -76,6 +82,121 @@ def list_options(db, user, args):
     fq, fp = filter_clause(fcol, fval)
     order, op = sort_clause(db, sort, direction)
     return fq, order, fp, op, {"sort": sort, "dir": direction, "fcol": fcol, "fval": fval}
+
+
+# ---------------------------------------------------------------- "My department" tab
+# (2026-11-05) The "My department" tab on the My records page is on every
+# user's page and lists only that user's own rows in the Department
+# Database (their own ddb_rows in their own department, across the
+# department's tabs). Nothing here can be edited: each row has a Locate
+# button that opens the Department Database page on the row's own tab,
+# scrolled to and highlighting that exact row. Invoices are not listed
+# here; they stay in the Department Database Invoices tab.
+def _department_row_count(db, user):
+    """How many of the user's own Department Database rows exist."""
+    if not user["department_id"]:
+        return 0
+    return db.execute(
+        "SELECT COUNT(*) FROM ddb_rows r JOIN ddb_tabs t ON t.id=r.tab_id "
+        "WHERE r.department_id=? AND r.owner_id=? AND r.deleted_at IS NULL AND t.removed_at IS NULL",
+        (user["department_id"], user["id"])).fetchone()[0]
+
+
+def _department_rows_where(user, q):
+    """WHERE clause (and params) for the user's own Department Database rows."""
+    where = ["r.department_id=?", "r.owner_id=?", "r.deleted_at IS NULL",
+             "EXISTS (SELECT 1 FROM ddb_tabs t WHERE t.id=r.tab_id AND t.removed_at IS NULL)"]
+    params = [user["department_id"], user["id"]]
+    if q:
+        where.append("EXISTS (SELECT 1 FROM ddb_values v WHERE v.row_id=r.id AND v.value LIKE ? ESCAPE '\\')")
+        params.append(like_pattern(q))
+    return " AND ".join(where), params
+
+
+def _ddb_display_map(db, rows, cols):
+    """{row_id: {column_id: shown value}} plus attachment download links,
+    the same display the Department Database page itself uses."""
+    raw = ddb_values(db, [r["id"] for r in rows])
+    vmap, urls = {}, {}
+    for r in rows:
+        vmap[r["id"]] = {}
+        urls[r["id"]] = {}
+        for c in cols:
+            v = raw[r["id"]].get(c["id"])
+            if c["col_type"] == "attachment":
+                info = ddb_attachment_info(v)
+                vmap[r["id"]][c["id"]] = info["original"] if info else ""
+                if info:
+                    urls[r["id"]][c["id"]] = url_for("ddb.download_attachment", rid=r["id"], cid=c["id"])
+            else:
+                vmap[r["id"]][c["id"]] = v
+    return vmap, urls
+
+
+def _locate_pages(db, rows):
+    """For each row, the page it sits on in its own Department Database tab
+    under that page's default sort (updated_at DESC, id DESC), so a Locate
+    link opens the exact page the row is on. {row_id: page}."""
+    pages = {}
+    for tab_id in {r["tab_id"] for r in rows}:
+        ids = [x[0] for x in db.execute(
+            "SELECT id FROM ddb_rows WHERE tab_id=? AND deleted_at IS NULL "
+            "ORDER BY updated_at DESC, id DESC", (tab_id,))]
+        for i, rid in enumerate(ids):
+            pages[rid] = i // config.PER_PAGE + 1
+    return pages
+
+
+def _department_tab_view(db, user, tabs, counts, q, args):
+    dept_id = user["department_id"]
+    where, params = _department_rows_where(user, q)
+    total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
+    page, pages, offset = page_info(total, args.get("page", 1, type=int), config.PER_PAGE)
+    rows = db.execute(
+        "SELECT r.*, t.name AS tab_name, t.position AS tab_pos FROM ddb_rows r "
+        "JOIN ddb_tabs t ON t.id=r.tab_id WHERE " + where +
+        " ORDER BY t.position, t.id, r.updated_at DESC, r.id DESC LIMIT ? OFFSET ?",
+        params + [config.PER_PAGE, offset]).fetchall()
+    groups, by_tab = [], {}
+    for r in rows:
+        if r["tab_id"] not in by_tab:
+            by_tab[r["tab_id"]] = {"tab_id": r["tab_id"], "tab_name": r["tab_name"],
+                                   "cols": ddb_columns(db, dept_id, tab_id=r["tab_id"]), "rows": []}
+            groups.append(by_tab[r["tab_id"]])
+        by_tab[r["tab_id"]]["rows"].append(r)
+    for g in groups:
+        g["vmap"], g["urls"] = _ddb_display_map(db, g["rows"], g["cols"])
+    keep = {k: v for k, v in args.items() if k != "page"}
+    return render_template("records_department.html", tabs=tabs, tab="department",
+                           counts=counts, q=q, groups=groups, total=total,
+                           page=page, pages=pages, keep=keep, dept_id=dept_id,
+                           locate_pages=_locate_pages(db, rows))
+
+
+def _download_department_csv(db, user, q):
+    """CSV of the user's own Department Database rows (the "My department" tab)."""
+    where, params = _department_rows_where(user, q)
+    rows = db.execute(
+        "SELECT r.*, t.name AS tab_name, t.position AS tab_pos FROM ddb_rows r "
+        "JOIN ddb_tabs t ON t.id=r.tab_id WHERE " + where +
+        " ORDER BY t.position, t.id, r.updated_at DESC, r.id DESC", params).fetchall()
+    cols, seen = [], set()
+    for r in rows:
+        for c in ddb_columns(db, user["department_id"], tab_id=r["tab_id"]):
+            if c["name"] not in seen:
+                seen.add(c["name"])
+                cols.append(c["name"])
+    vmap = ddb_values(db, [r["id"] for r in rows])
+    out = []
+    for r in rows:
+        # Values live under this row's own tab's column ids (two tabs may
+        # share a column name with different ids).
+        by_name = {c["name"]: vmap[r["id"]].get(c["id"], "") or ""
+                   for c in ddb_columns(db, user["department_id"], tab_id=r["tab_id"])}
+        out.append([r["tab_name"]] + [by_name.get(name, "") for name in cols])
+    log(db, "download_csv", f"{len(rows)} department database rows (mine)")
+    db.commit()
+    return csv_response(["Department DB tab"] + cols, out, "my_department_rows_" + user["username"])
 
 
 def _load(rid, need="view"):
@@ -131,8 +252,15 @@ def list_records():
     q = (request.args.get("q") or "").strip()
     counts = {}
     for t in tabs:
-        where, params = tab_clause(db, t, g.user)
-        counts[t] = db.execute("SELECT COUNT(*) FROM records r WHERE " + where, params).fetchone()[0]
+        if t == "department":
+            counts[t] = _department_row_count(db, g.user)
+        else:
+            where, params = tab_clause(db, t, g.user)
+            counts[t] = db.execute("SELECT COUNT(*) FROM records r WHERE " + where, params).fetchone()[0]
+    if tab == "department":
+        # "My department" lists the user's own Department Database rows, not
+        # personal records (2026-11-05). Nothing can be edited from it.
+        return _department_tab_view(db, g.user, tabs, counts, q, request.args)
     where, params = tab_clause(db, tab, g.user)
     sq, sp = search_clause(q)
     fq, order, fp, op, info = list_options(db, g.user, request.args)
@@ -154,6 +282,8 @@ def download():
     tab = request.args.get("tab", "mine")
     tab = tab if tab in available_tabs(db, g.user) else "mine"
     q = (request.args.get("q") or "").strip()
+    if tab == "department":
+        return _download_department_csv(db, g.user, q)
     where, params = tab_clause(db, tab, g.user)
     sq, sp = search_clause(q)
     fq, order, fp, op, _info = list_options(db, g.user, request.args)
