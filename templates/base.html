@@ -20,9 +20,11 @@
   {% if can_portal_admin %}
     {{ nav_link('admin.dashboard', 'Dashboard', ['admin.dashboard']) }}
     {{ nav_link('admin.all_records', 'All records', ['admin.all_records']) }}
+    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}
     {{ nav_link('admin.users', 'Users', ['admin.users', 'admin.user_add', 'admin.user_edit']) }}
     {{ nav_link('admin.departments', 'Departments', ['admin.departments', 'admin.columns', 'admin.column_edit', 'admin.removed_columns']) }}
   {% elif g.user['is_dept_admin'] %}
+    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}
     {{ nav_link('admin.dept_users', 'Users', ['admin.dept_users', 'admin.dept_user_add']) }}
   {% else %}
     {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}

@@ -379,6 +379,7 @@ CREATE TABLE IF NOT EXISTS invoice_templates (
     next_number   INTEGER NOT NULL DEFAULT 1,
     default_currency TEXT NOT NULL DEFAULT 'BDT',
     vat_percent   REAL NOT NULL DEFAULT 0,
+    show_tax      INTEGER NOT NULL DEFAULT 1,
     show_amount_in_words INTEGER NOT NULL DEFAULT 1,
     notes         TEXT,
     show_company_logo INTEGER NOT NULL DEFAULT 1,
@@ -591,11 +592,30 @@ def _upgrade_ddb_attachment_type(conn):
         conn.execute("PRAGMA foreign_keys=ON")
 
 
+def _upgrade_invoice_tax_tick(conn):
+    """Per-template tax tick (2026-11-05): invoice_templates.show_tax decides
+    whether an invoice made from the template offers tax at all. Added only
+    once: existing templates are backfilled from their VAT % (a template with
+    a VAT % above 0 keeps tax on, the 0 % starters keep it off), and later
+    admin changes to the tick are never overwritten by this upgrade."""
+    have = [r["name"] for r in conn.execute("PRAGMA table_info(invoice_templates)")]
+    if "show_tax" not in have:
+        conn.execute("ALTER TABLE invoice_templates ADD COLUMN show_tax INTEGER NOT NULL DEFAULT 1")
+        conn.execute("UPDATE invoice_templates SET show_tax = CASE WHEN vat_percent > 0 THEN 1 ELSE 0 END")
+
+
 def _upgrade_ddb_tabs(conn):
     """Turn the old one-table-per-department database into tabs. Old columns and
-    rows (tab_id NULL) go into a first tab called 'General' for their department,
-    so nothing is lost. That tab keeps meeting notifications if the old table had
-    a date+time column. The column unique index becomes per-tab."""
+    rows (tab_id NULL) go into the department's first admin-created tab when
+    one exists; if none exists yet they keep tab_id NULL (data kept in the
+    database, not shown) instead of getting a system-made tab.
+
+    The 'General' tab is deleted for everyone (2026-11-05): it was created by
+    the upgrade, never by a dept admin, and normal users must only see tabs a
+    dept admin created. Any 'General' tab is soft-deleted (removed_at), the
+    same as a manual tab delete, so its rows stay in the database. No new
+    'General' tab is ever created here, and the DeptDB routes refuse to
+    create, rename to, or restore one."""
     _ensure_column(conn, "ddb_columns", "tab_id", "INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE")
     _ensure_column(conn, "ddb_rows", "tab_id", "INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE")
     # per-tab column unique index (old index was department-wide)
@@ -603,22 +623,19 @@ def _upgrade_ddb_tabs(conn):
     if idx and idx[0] and "tab_id" not in idx[0]:
         conn.execute("DROP INDEX ux_ddb_column_name")
         conn.execute("CREATE UNIQUE INDEX ux_ddb_column_name ON ddb_columns(department_id, tab_id, name COLLATE NOCASE) WHERE removed_at IS NULL")
+    # Delete the General tab everywhere (soft delete; rows stay in the database).
+    conn.execute("UPDATE ddb_tabs SET removed_at=datetime('now','localtime') "
+                 "WHERE LOWER(name)='general' AND removed_at IS NULL")
     depts = [r[0] for r in conn.execute(
         "SELECT DISTINCT department_id FROM ddb_columns WHERE tab_id IS NULL UNION "
         "SELECT DISTINCT department_id FROM ddb_rows WHERE tab_id IS NULL")]
     for dept_id in depts:
-        tab = conn.execute("SELECT id FROM ddb_tabs WHERE department_id=? AND name='General' AND removed_at IS NULL",
-                           (dept_id,)).fetchone()
-        if tab is None:
-            meeting = conn.execute("SELECT 1 FROM ddb_columns WHERE department_id=? AND col_type='date' AND has_time=1 "
-                                   "AND removed_at IS NULL LIMIT 1", (dept_id,)).fetchone()
-            pos = conn.execute("SELECT COALESCE(MAX(position),-1)+1 FROM ddb_tabs WHERE department_id=?", (dept_id,)).fetchone()[0]
-            tab_id = conn.execute("INSERT INTO ddb_tabs(department_id,name,template,meeting_notify,position) VALUES (?,?,?,?,?)",
-                                  (dept_id, "General", None, 1 if meeting else 0, pos)).lastrowid
-        else:
-            tab_id = tab[0]
-        conn.execute("UPDATE ddb_columns SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (tab_id, dept_id))
-        conn.execute("UPDATE ddb_rows SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (tab_id, dept_id))
+        first = conn.execute("SELECT id FROM ddb_tabs WHERE department_id=? AND removed_at IS NULL "
+                             "ORDER BY position, id LIMIT 1", (dept_id,)).fetchone()
+        if first is None:
+            continue
+        conn.execute("UPDATE ddb_columns SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (first[0], dept_id))
+        conn.execute("UPDATE ddb_rows SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (first[0], dept_id))
 
 
 def _ensure_column(conn, table, column, ddl):
@@ -691,6 +708,7 @@ def init_db():
         _upgrade_public_codes(conn)
         _upgrade_ddb_attachment_type(conn)
         _upgrade_ddb_tabs(conn)
+        _upgrade_invoice_tax_tick(conn)
         conn.execute("DROP INDEX IF EXISTS ux_column_reminder")   # several reminder columns are allowed now
         _ensure_column(conn, "activity_log", "ip", "TEXT")
         _ensure_column(conn, "attachments", "scan_status", "TEXT")

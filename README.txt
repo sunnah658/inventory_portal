@@ -1460,3 +1460,63 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 30. FOUR FIXES: TAX TICK, SMALL INVOICE QR, GENERAL TAB DELETED,
+    MY RECORDS FOR ALL ADMINS (2026-11-05)
+    1. Tax tick in the template builder. In Invoice templates >
+    New / Edit template, section 5 Totals, there is now a "Tax"
+    tick box on the left of the "VAT / tax %" box. It is per
+    template and set by the dept admin. Ticked: the employee
+    making an invoice gets the tax option as before (VAT % and
+    VAT amount on the form, the invoice detail and the PDF).
+    Unticked: the employee gets no tax option at all - no VAT
+    field on the form and no VAT line on the invoice detail or
+    the PDF, and the total is just the subtotal. The % typed in
+    the box is kept when the tick is off, so ticking it again
+    brings tax back with the same %. Existing templates were
+    set from their VAT % on upgrade (Billing, 5%, ticked; the
+    0% starters, unticked), and the upgrade never overwrites
+    the tick afterwards. A new template starts ticked. An
+    invoice already issued keeps the VAT it was issued with
+    even if the template is unticked later; only new invoices
+    follow the new tick. A template shared with another
+    department copies its tick with it.
+    2. Small invoice QR. The Public QR on the invoice detail
+    page was full-width because it had no size limit. It now
+    uses the same small 150 px box as the Public QR on a
+    record detail page, with the share code under it. The PDF
+    QR, the code page and the printed QR label are unchanged.
+    3. General tab deleted for all users. The "General" tab in
+    Department Database was created by the upgrade for old
+    single-table data, never by a dept admin, but it was shown
+    to every user. On upgrade every tab named "General" is now
+    deleted (soft-deleted, the same as pressing Delete on a
+    tab) in every department, for normal users, dept admins,
+    delegates and the portal admin alike. Its rows stay in the
+    database, they are only hidden. A dept admin can no longer
+    create a tab called "General", rename a tab to "General",
+    or restore a deleted "General" tab. Old single-table rows
+    from a database that has never had tabs are moved into the
+    department's first admin-created tab when one exists; if
+    the department has no tab yet they stay in the database
+    with no tab (not shown) instead of getting a system-made
+    tab. The Invoices default tab is not affected.
+    4. My records for all admins. The top menu showed "My
+    records" only to regular users: a portal admin got
+    Dashboard / All records / Users / Departments and a dept
+    admin got only Users, so neither had a way back to their
+    own records page. Both now get a "My records" link in the
+    top menu (portal admin: after All records; dept admin:
+    before Users), and so does a portal administrative
+    permission user. It opens the same My records page regular
+    users see. Nothing else about the menu changed.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (the new
+   invoice_templates.show_tax column is added automatically on
+   first start, and the General tab is deleted automatically on
+   first start). Apply only this latest zip, not the older ones
+   in order.

@@ -22,7 +22,8 @@
 <div class="fd"><label>Right logo</label><input type="file" name="logo_right" accept=".png,.jpg,.jpeg,.webp">{% if tpl and tpl['logo_right'] %}<div class="sub">Current: {{ tpl['logo_right'] }}</div>{% endif %}</div></div>
 <h2>3 · Top fields</h2><div class="fd"><label>Top fields (comma list)</label><input type="text" name="top_fields" value="{{ tpl['top_fields_json'] if tpl else '' }}" placeholder="Invoice date, Bill to, Customer address, Reference"></div>
 <h2>4 · Items table</h2><div class="fd"><label>Item columns (text)</label><input type="text" name="item_columns" value="{{ tpl['item_columns_json'] if tpl else '' }}" placeholder="Description · Qty · Rate · Amount"></div>
-<h2>5 · Totals</h2><div class="fm"><div class="fd"><label>VAT / tax %</label><input type="number" step="0.01" name="vat" value="{{ tpl['vat_percent'] if tpl else 0 }}"></div></div>
+<h2>5 · Totals</h2><div class="fm"><div class="fd"><label>VAT / tax %</label><div style="display:flex;gap:10px;align-items:center"><label class="ck" style="margin:0;white-space:nowrap"><input type="checkbox" name="show_tax" {{ 'checked' if not tpl or tpl['show_tax'] }}> Tax</label><input type="number" step="0.01" name="vat" value="{{ tpl['vat_percent'] if tpl else 0 }}"></div></div></div>
+<p class="hint">Tick to offer tax on invoices made from this template. Untick and the employee gets no tax option at all — no VAT % and no VAT line on the form, the invoice, or the PDF. The % above is kept, so ticking it again brings tax back.</p>
 <label class="ck"><input type="checkbox" name="amount_in_words" {{ 'checked' if not tpl or tpl['show_amount_in_words'] }}> Amount in words</label>
 <h2>6 · Notes and terms</h2><div class="fd"><textarea name="notes">{{ tpl['notes'] if tpl else '' }}</textarea></div>
 <h2>7 · Signatures</h2><p class="hint">How many authorized signatures, with title, person name and designation. Employee signature is added automatically.</p>

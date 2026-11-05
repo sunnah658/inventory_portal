@@ -16,7 +16,7 @@
 <div class="tb" style="margin-top:14px"><table><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
 {% for l in lines %}<tr><td>{{ l['description'] }}{% if l['spec'] %} · {{ l['spec'] }}{% endif %}{% if l['line_date'] %} · {{ l['line_date'] }} {{ l['from_place'] }} → {{ l['to_place'] }} ({{ l['mode'] }}, {{ l['purpose'] }}){% endif %}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) }} {{ inv['currency'] }}</td><td class="num">{{ '%.2f'|format(l['amount']) }} {{ inv['currency'] }}</td></tr>{% endfor %}
 </tbody></table></div>
-<div style="margin-top:14px;text-align:right">Subtotal: <b>{{ '%.2f'|format(inv['subtotal']) }} {{ inv['currency'] }}</b><br>VAT: <b>{{ '%.2f'|format(inv['vat_amount']) }} {{ inv['currency'] }}</b><br>Grand total: <b>{{ '%.2f'|format(inv['total']) }} {{ inv['currency'] }}</b><br><span class="hint">{{ inv['amount_in_words'] }}</span></div>
+<div style="margin-top:14px;text-align:right">Subtotal: <b>{{ '%.2f'|format(inv['subtotal']) }} {{ inv['currency'] }}</b><br>{% if inv['vat_amount'] %}VAT: <b>{{ '%.2f'|format(inv['vat_amount']) }} {{ inv['currency'] }}</b><br>{% endif %}Grand total: <b>{{ '%.2f'|format(inv['total']) }} {{ inv['currency'] }}</b><br><span class="hint">{{ inv['amount_in_words'] }}</span></div>
 {% if inv['notes'] %}<p class="hint" style="margin-top:10px">Terms: {{ inv['notes'] }}</p>{% endif %}
 </div>
 <div class="card" style="margin-top:16px"><h2>Public QR</h2>
@@ -24,7 +24,7 @@
 {% if inv['status'] not in ('issued','paid') %}<div class="alert">Draft and Void invoices do not get a live QR.</div>
 {% else %}
 {% if inv['public_code'] and inv['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ inv['public_views'] }} views · Share code: <b>{{ inv['public_code'] }}</b> (not the invoice number)</div>
-{% if qr_svg %}<div>{{ qr_svg|safe }}</div><div class="hint">Share code (not the invoice number)</div><div class="hrc">{{ inv['public_code'] }}</div>{% endif %}
+{% if qr_svg %}<div class="qrbox">{{ qr_svg|safe }}<div class="hrc">{{ inv['public_code'] }}</div></div><div class="hint">Share code (not the invoice number)</div>{% endif %}
 <a class="b sm" href="{{ url_for('invoices.invoice_qr', iid=inv['id']) }}">Print this QR</a>
 {% else %}<div class="msg error">Public QR is OFF{% if inv['public_code'] %} · Share code was {{ inv['public_code'] }}{% endif %}</div>{% endif %}
 {% if can_manage %}<form method="post" action="{{ url_for('invoices.invoice_public', iid=inv['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">

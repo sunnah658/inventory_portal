@@ -1,4 +1,29 @@
 ==============================================================================
+ UPDATE: TAX TICK, SMALL INVOICE QR, GENERAL TAB DELETED, MY RECORDS FOR
+ ALL ADMINS (2026-11-05)
+==============================================================================
+ 1. Tax tick: in the template builder, section 5 Totals, a "Tax" tick box
+ sits on the left of the "VAT / tax %" box, per template. Ticked, the
+ employee gets the tax option as before; unticked, no VAT field and no
+ VAT line anywhere and the total is the subtotal. The % is kept when
+ unticked. Existing templates were set from their VAT % (Billing 5%
+ ticked, 0% starters unticked) and the upgrade never overwrites the tick
+ afterwards. Issued invoices keep their VAT even if the template is
+ unticked later.
+ 2. Invoice detail QR is now the same small 150 px box as a record's QR,
+ instead of full-width. PDF, code page and printed label unchanged.
+ 3. The "General" tab is deleted for everyone (all departments, all
+ roles). It was made by the upgrade, never by a dept admin. Its rows
+ stay in the database, only hidden. It cannot be created, renamed to,
+ or restored again. The Invoices tab is not affected.
+ 4. "My records" is now in the top menu for the portal admin, dept
+ admins and portal administrative permission users, not only for
+ regular users. .env untouched. See README section 30. Upgrade:
+ ./backup.sh, copy live .env OUTSIDE the folder first, unzip only this
+ zip, restore live .env if it differs, docker compose up -d --build.
+ Apply only this latest zip.
+
+==============================================================================
  UPDATE: INVOICE PDF QR BOTTOM LEFT + SAME SIGN GAP, ALL TYPES (2026-11-05)
 ==============================================================================
  Built as approved in the sign-lower-2 JPG preview. Invoice PDF, for

@@ -56,7 +56,7 @@
 <button class="b" type="button" onclick="addLine()">+ Add item</button>
 <div class="card" style="margin-top:16px">
 <div>Subtotal: <b id="subT">0.00</b> <span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span></div>
-<div>VAT {{ tpl['vat_percent'] }}%: <b id="vatT">0.00</b> <span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span></div>
+{% if tpl and tpl['show_tax'] %}<div>VAT {{ tpl['vat_percent'] }}%: <b id="vatT">0.00</b> <span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span></div>{% endif %}
 <div>Grand total: <b id="grandT">0.00</b> <span class="curLabel">{{ inv['currency'] if inv else tpl['default_currency'] }}</span></div>
 <div class="sub" id="wordsT"></div>
 </div>
@@ -67,7 +67,7 @@
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save draft</button><a class="b" href="{{ url_for('invoices.list_invoices') }}">Cancel</a></div>
 </form>
 <script>
-var vatPct = {{ tpl['vat_percent'] or 0 }};
+var vatPct = {{ (tpl['vat_percent'] or 0) if tpl and tpl['show_tax'] else 0 }};
 function fmt(n){return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function words(n){var o=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"],t=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];function w(x){if(x==0)return "Zero";if(x<20)return o[x];if(x<100)return t[Math.floor(x/10)]+(x%10?"-"+o[x%10]:"");if(x<1000)return o[Math.floor(x/100)]+" Hundred"+(x%100?" "+w(x%100):"");if(x<1000000)return w(Math.floor(x/1000))+" Thousand"+(x%1000?" "+w(x%1000):"");return w(Math.floor(x/1000000))+" Million"+(x%1000000?" "+w(x%1000000):"");}return w(Math.floor(n));}
 function recalc(){
@@ -78,7 +78,7 @@ function recalc(){
     else if(a){sub+=parseFloat(a.value)||0;}
   });
   var vat=sub*vatPct/100, grand=sub+vat;
-  document.getElementById('subT').textContent=fmt(sub); document.getElementById('vatT').textContent=fmt(vat); document.getElementById('grandT').textContent=fmt(grand);
+  document.getElementById('subT').textContent=fmt(sub); var vt=document.getElementById('vatT'); if(vt){vt.textContent=fmt(vat);} document.getElementById('grandT').textContent=fmt(grand);
   var cur=document.getElementById('curSel').value, word={BDT:'Taka',USD:'Dollars',EUR:'Euros',GBP:'Pounds',INR:'Rupees'}[cur]||cur;
   document.getElementById('wordsT').textContent='In words: '+word+' '+words(grand)+' Only';
   document.querySelectorAll('.curLabel').forEach(function(e){e.textContent=cur;});

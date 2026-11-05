@@ -46,15 +46,19 @@ KIND_COLOURS = {"billing": "#0F7CA6", "admin": "#7C5CBF", "conveyance": "#1E8A5A
 KIND_TITLES = {"billing": "INVOICE", "admin": "EXPENSE VOUCHER", "conveyance": "CONVEYANCE BILL", "custom": "PURCHASE REQUEST"}
 STARTERS = [
     {"name": "Billing Invoice", "kind": "billing", "title": "INVOICE", "subtitle": "Original for customer", "prefix": "BIL", "vat": 5,
+     "show_tax": 1,
      "notes": "Payment within 15 days. Bank: City Bank, A/C 1234567890.",
      "cols": "Description · Qty · Rate · Amount", "top": "Invoice date, Bill to (customer name), Customer address, Reference / PO number, Department"},
     {"name": "Admin Expense Voucher", "kind": "admin", "title": "EXPENSE VOUCHER", "subtitle": "Office expense voucher", "prefix": "ADM", "vat": 0,
+     "show_tax": 0,
      "notes": "Bills attached. Reimbursement within 7 working days.",
      "cols": "Item · Purpose · Amount", "top": "Invoice date, Employee, Department, Purpose"},
     {"name": "Conveyance Bill", "kind": "conveyance", "title": "CONVEYANCE BILL", "subtitle": "Employee travel claim", "prefix": "CNV", "vat": 0,
+     "show_tax": 0,
      "notes": "Attach rickshaw / CNG slips where available.",
      "cols": "Date · From · To · Mode · Purpose · Amount", "top": "Employee, Employee ID, Department, Period"},
     {"name": "Purchase Request", "kind": "custom", "title": "PURCHASE REQUEST", "subtitle": "Custom format", "prefix": "PRQ", "vat": 0,
+     "show_tax": 0,
      "notes": "Purchase subject to dept admin approval. Quotations attached.",
      "cols": "Item · Spec · Qty · Est. cost", "top": "Requested by, Department, Date, Needed by"},
 ]
@@ -273,8 +277,8 @@ def starters():
     for s in STARTERS:
         if db.execute("SELECT 1 FROM invoice_templates WHERE department_id=? AND name=?", (g.user["department_id"], s["name"])).fetchone():
             continue
-        db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,notes,item_columns_json,top_fields_json,signatures_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                   (g.user["department_id"], g.user["id"], s["name"], s["kind"], s["title"], s["subtitle"], s["prefix"], "BDT", s["vat"], s["notes"], s["cols"], s["top"], json.dumps([{"title": "Authorized by", "person": "", "designation": ""}, {"title": "Approved by", "person": "", "designation": ""}]), "active"))
+        db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,notes,item_columns_json,top_fields_json,signatures_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (g.user["department_id"], g.user["id"], s["name"], s["kind"], s["title"], s["subtitle"], s["prefix"], "BDT", s["vat"], s["show_tax"], s["notes"], s["cols"], s["top"], json.dumps([{"title": "Authorized by", "person": "", "designation": ""}, {"title": "Approved by", "person": "", "designation": ""}]), "active"))
     log(db, "invoice_starters", f"dept {g.user['department_id']}")
     db.commit(); flash("Starter templates created for your department.", "ok")
     return redirect(url_for("invoices.templates"))
@@ -290,9 +294,10 @@ def template_new():
             flash("Write a template name.", "error"); return render_template("invoice_template_form.html", tpl=None, currencies=CURRENCIES)
         left = _save_logo(request.files.get("logo_left")); right = _save_logo(request.files.get("logo_right"))
         sigs = _sigs(request.form)
-        tid = db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_amount_in_words,notes,show_company_logo,show_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        tid = db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,show_amount_in_words,notes,show_company_logo,show_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                          (g.user["department_id"], g.user["id"], name, request.form.get("kind") or "billing", (request.form.get("title") or "INVOICE").strip(), (request.form.get("subtitle") or "").strip(),
                           (request.form.get("number_prefix") or "BIL").strip().upper()[:10], request.form.get("currency") or "BDT", float(request.form.get("vat") or 0),
+                          1 if request.form.get("show_tax") else 0,
                           1 if request.form.get("amount_in_words") else 0, request.form.get("notes") or "",
                           1 if request.form.get("show_company_logo") else 0, 1 if request.form.get("show_address") else 0, left, right,
                           1 if request.form.get("watermark_on") else 0, (request.form.get("watermark_text") or "").strip()[:50],
@@ -311,9 +316,10 @@ def template_edit(tid):
     if request.method == "POST":
         left = _save_logo(request.files.get("logo_left")) or tpl["logo_left"]
         right = _save_logo(request.files.get("logo_right")) or tpl["logo_right"]
-        db.execute("UPDATE invoice_templates SET name=?,kind=?,title=?,subtitle=?,number_prefix=?,default_currency=?,vat_percent=?,show_amount_in_words=?,notes=?,show_company_logo=?,show_address=?,logo_left=?,logo_right=?,watermark_on=?,watermark_text=?,signatures_json=?,item_columns_json=?,top_fields_json=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
+        db.execute("UPDATE invoice_templates SET name=?,kind=?,title=?,subtitle=?,number_prefix=?,default_currency=?,vat_percent=?,show_tax=?,show_amount_in_words=?,notes=?,show_company_logo=?,show_address=?,logo_left=?,logo_right=?,watermark_on=?,watermark_text=?,signatures_json=?,item_columns_json=?,top_fields_json=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
                    ((request.form.get("name") or tpl["name"]).strip(), request.form.get("kind") or tpl["kind"], (request.form.get("title") or "INVOICE").strip(), (request.form.get("subtitle") or "").strip(),
                     (request.form.get("number_prefix") or tpl["number_prefix"]).strip().upper()[:10], request.form.get("currency") or tpl["default_currency"], float(request.form.get("vat") or 0),
+                    1 if request.form.get("show_tax") else 0,
                     1 if request.form.get("amount_in_words") else 0, request.form.get("notes") or "",
                     1 if request.form.get("show_company_logo") else 0, 1 if request.form.get("show_address") else 0, left, right,
                     1 if request.form.get("watermark_on") else 0, (request.form.get("watermark_text") or "").strip()[:50],
@@ -360,8 +366,8 @@ def template_share_use(sid):
     if share is None:
         abort(404)
     tpl = _template(db, share["template_id"])
-    db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_amount_in_words,notes,show_company_logo,show_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status,shared_from_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-               (g.user["department_id"], g.user["id"], tpl["name"], tpl["kind"], tpl["title"], tpl["subtitle"], tpl["number_prefix"], tpl["default_currency"], tpl["vat_percent"], tpl["show_amount_in_words"], tpl["notes"], tpl["show_company_logo"], tpl["show_address"], tpl["logo_left"], tpl["logo_right"], tpl["watermark_on"], tpl["watermark_text"], tpl["signatures_json"], tpl["item_columns_json"], tpl["top_fields_json"], "active", tpl["id"]))
+    db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,show_amount_in_words,notes,show_company_logo,show_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status,shared_from_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+               (g.user["department_id"], g.user["id"], tpl["name"], tpl["kind"], tpl["title"], tpl["subtitle"], tpl["number_prefix"], tpl["default_currency"], tpl["vat_percent"], tpl["show_tax"], tpl["show_amount_in_words"], tpl["notes"], tpl["show_company_logo"], tpl["show_address"], tpl["logo_left"], tpl["logo_right"], tpl["watermark_on"], tpl["watermark_text"], tpl["signatures_json"], tpl["item_columns_json"], tpl["top_fields_json"], "active", tpl["id"]))
     # next_number for the copy starts at 1 (the INSERT above does not set it, default is 1)
     log(db, "invoice_template_use", tpl["name"]); db.commit(); flash("Template copied to your department. You can now use it and edit your own copy.", "ok")
     return redirect(url_for("invoices.templates"))
@@ -410,7 +416,8 @@ def invoice_new():
         if not lines:
             flash("Add at least one line.", "error")
         else:
-            sub, vat, total = _totals(lines, tpl["vat_percent"])
+            # Tax tick: unticked template = no tax option at all for the user.
+            sub, vat, total = _totals(lines, tpl["vat_percent"] if tpl["show_tax"] else 0)
             words = amount_in_words(total, cur) if tpl["show_amount_in_words"] else ""
             sigs = _sigs(request.form, tpl)
             iid = db.execute("INSERT INTO invoices(department_id,owner_id,template_id,title,subtitle,currency,customer_name,customer_address,reference,invoice_date,status,subtotal,vat_amount,total,amount_in_words,notes,signatures_json,template_snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -418,7 +425,7 @@ def invoice_new():
                               (request.form.get("customer_name") or "").strip(), request.form.get("customer_address") or "", (request.form.get("reference") or "").strip(),
                               request.form.get("invoice_date") or date.today().isoformat(), "draft", float(sub), float(vat), float(total), words,
                               request.form.get("notes") or tpl["notes"], json.dumps(sigs),
-                              json.dumps({"name": tpl["name"], "kind": tpl["kind"], "title": tpl["title"], "subtitle": tpl["subtitle"], "vat_percent": tpl["vat_percent"], "logo_left": tpl["logo_left"], "logo_right": tpl["logo_right"], "watermark_on": tpl["watermark_on"], "watermark_text": tpl["watermark_text"]}))).lastrowid
+                              json.dumps({"name": tpl["name"], "kind": tpl["kind"], "title": tpl["title"], "subtitle": tpl["subtitle"], "vat_percent": tpl["vat_percent"], "show_tax": tpl["show_tax"], "logo_left": tpl["logo_left"], "logo_right": tpl["logo_right"], "watermark_on": tpl["watermark_on"], "watermark_text": tpl["watermark_text"]}))).lastrowid
             for i, l in enumerate(lines):
                 db.execute("INSERT INTO invoice_lines(invoice_id,position,description,qty,rate,amount,line_date,from_place,to_place,mode,purpose,spec) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (iid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"]), l["line_date"], l["from_place"], l["to_place"], l["mode"], l["purpose"], l["spec"]))
@@ -440,7 +447,7 @@ def invoice_edit(iid):
         if cur not in CURRENCIES:
             cur = inv["currency"]
         new_lines = _parse_lines(request.form, tpl["kind"])
-        sub, vat, total = _totals(new_lines, tpl["vat_percent"])
+        sub, vat, total = _totals(new_lines, tpl["vat_percent"] if tpl["show_tax"] else 0)
         words = amount_in_words(total, cur) if tpl["show_amount_in_words"] else ""
         db.execute("UPDATE invoices SET currency=?,customer_name=?,customer_address=?,reference=?,invoice_date=?,subtotal=?,vat_amount=?,total=?,amount_in_words=?,notes=?,signatures_json=?,updated_at=datetime('now','localtime') WHERE id=?",
                    (cur, (request.form.get("customer_name") or "").strip(), request.form.get("customer_address") or "", (request.form.get("reference") or "").strip(),

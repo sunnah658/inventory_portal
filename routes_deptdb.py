@@ -466,6 +466,11 @@ def tabs():
     db, dept = _tab_admin()
     if request.method == "POST":
         name = " ".join((request.form.get("name") or "").split())[:60]
+        if name.lower() == "general":
+            # The General tab was deleted for all users (2026-11-05); it must
+            # not be created again under that name.
+            flash("The General tab was removed for all users and cannot be created again.", "error")
+            return redirect(url_for("ddb.tabs", **_back(dept)))
         template = request.form.get("template", "custom")
         if template not in TEMPLATE_MAP:
             template = "custom"
@@ -492,7 +497,7 @@ def tabs():
                 flash(f"A tab named '{name}' already exists.", "error")
         return redirect(url_for("ddb.tabs", **_back(dept)))
     all_tabs = db.execute("SELECT t.*, (SELECT COUNT(*) FROM ddb_rows r WHERE r.tab_id=t.id AND r.deleted_at IS NULL) AS rows "
-                          "FROM ddb_tabs t WHERE t.department_id=? ORDER BY t.removed_at IS NOT NULL, t.position, t.id",
+                          "FROM ddb_tabs t WHERE t.department_id=? AND NOT (t.removed_at IS NOT NULL AND LOWER(t.name)='general') ORDER BY t.removed_at IS NOT NULL, t.position, t.id",
                           (dept["id"],)).fetchall()
     return render_template("deptdb_tabs.html", dept=dept, tabs=all_tabs, templates=TEMPLATE_TABS)
 
@@ -506,6 +511,9 @@ def tab_edit(tab_id):
         abort(404)
     name = " ".join((request.form.get("name") or "").split())[:60]
     meeting = 1 if request.form.get("meeting_notify") else 0
+    if name.lower() == "general":
+        flash("The General tab was removed for all users and cannot be used as a name.", "error")
+        return redirect(url_for("ddb.tabs", **_back(dept)))
     if not name:
         flash("Type the tab name.", "error")
     else:
@@ -541,6 +549,12 @@ def tab_restore(tab_id):
     tab = db.execute("SELECT * FROM ddb_tabs WHERE id=? AND department_id=?", (tab_id, dept["id"])).fetchone()
     if tab is None:
         abort(404)
+    if tab["name"].lower() == "general":
+        # The General tab was deleted for all users (2026-11-05); restoring it
+        # would put it back in front of every user, so it stays deleted. Its
+        # rows are still in the database.
+        flash("The General tab was removed for all users and cannot be restored.", "error")
+        return redirect(url_for("ddb.tabs", **_back(dept)))
     try:
         db.execute("UPDATE ddb_tabs SET removed_at=NULL WHERE id=?", (tab_id,))
         log(db, "ddb_tab_restore", f"{dept['name']}: {tab['name']}")
