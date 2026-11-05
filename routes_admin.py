@@ -21,7 +21,7 @@ from auth import admin_required, login_required
 from utils import is_portal_admin, is_true_admin
 from backup import make_backup
 from core import (COLUMN_TYPES, TYPE_LABEL, admin_ids, build_csv, column_names, create_department, get_columns,
-                  notify, rec_select, reminder_rows, search_clause, summaries_for, table_context)
+                  notify, notify_admin_task, rec_select, reminder_rows, search_clause, summaries_for, table_context)
 from import_users import import_users
 from models import get_db, log, setting_get, setting_set
 from routes_records import code_redirect, list_options
@@ -247,6 +247,10 @@ def user_add():
                               1 if (is_true_admin(g.user) and form.get("can_portal_admin")) else 0, g.user["id"])).lastrowid
             _save_view_departments(db, uid, form.getlist("view_dept"), int(dept))
             log(db, "user_add", username)
+            dept_name = next((d["name"] for d in departments if str(d["id"]) == dept), "")
+            notify_admin_task(db, g.user,
+                              f"{g.user['full_name']} created a new user: {full_name} ({username}), {dept_name}.",
+                              url_for("admin.users"))
             db.commit()
             flash(f"User created. Temporary password for {username}: {password}", "secret")
             return redirect(url_for("admin.users"))
@@ -304,6 +308,14 @@ def user_edit(user_id):
             if not active:
                 revoke_user_sessions(db, user_id)             # a disabled user is logged out at once
             log(db, "user_edit", username)
+            if username != row["username"]:
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} changed the username of {full_name} from {row['username']} to {username}.",
+                                  url_for("admin.users"))
+            else:
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} edited the user {full_name} ({username}).",
+                                  url_for("admin.users"))
             db.commit()
             flash("User updated.", "ok")
             return redirect(url_for("admin.users"))
@@ -329,6 +341,9 @@ def user_reset(user_id):
     db.execute("UPDATE users SET password_hash=?, must_change_password=1 WHERE id=?",
                (generate_password_hash(password), user_id))
     log(db, "password_reset", row["username"])
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} reset the password for {row['username']}.",
+                      url_for("admin.users"))
     db.commit()
     flash(f"New temporary password for {row['username']}: {password}", "secret")
     return redirect(url_for("admin.users"))
@@ -346,6 +361,9 @@ def ddb_attachment_access():
             db.execute("UPDATE users SET can_ddb_attachment=? WHERE id=?",
                        (1 if request.form.get(f"allow_{r['id']}") else 0, r["id"]))
         log(db, "ddb_attachment_access", "portal admin updated dept-admin attachment access")
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} changed the Department Database attachment access list.",
+                          url_for("admin.ddb_attachment_access"))
         db.commit()
         flash("Attachment-column access saved.", "ok")
         return redirect(url_for("admin.ddb_attachment_access"))
@@ -370,6 +388,9 @@ def departments():
             try:
                 dept_id = create_department(db, name, key, selected)
                 log(db, "department_add", name)
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} created the department '{name}'.",
+                                  url_for("admin.columns", did=dept_id))
                 db.commit()
                 flash(f"Department '{name}' created. Check its columns below.", "ok")
                 return redirect(url_for("admin.columns", did=dept_id))
@@ -404,6 +425,9 @@ def department_delete(did):
     else:
         db.execute("DELETE FROM departments WHERE id = ?", (did,))
         log(db, "department_delete", row["name"])
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} deleted the department '{row['name']}'.",
+                          url_for("admin.departments"))
         db.commit()
         flash(f"Department '{row['name']}' removed.", "ok")
     return redirect(url_for("admin.departments"))
@@ -420,6 +444,9 @@ def department_repairs(did):
     enabled = 1 if request.form.get("enabled") else 0
     db.execute("UPDATE departments SET repairs_enabled=? WHERE id=?", (enabled, did))
     log(db, "repair_log_setting", f"{row['name']}: {'on' if enabled else 'off'}")
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} turned the repair log {'on' if enabled else 'off'} for {row['name']}.",
+                      url_for("admin.columns", did=did))
     db.commit()
     flash("The repair log is " + ("ON" if enabled else "OFF (entries are kept, only hidden)") + " for this department.", "ok")
     return redirect(url_for("admin.columns", did=did))
@@ -438,6 +465,9 @@ def department_attachments(did):
     db.execute("UPDATE departments SET attachments_enabled=?, attachment_max_mb=? WHERE id=?",
                (enabled, size, did))
     log(db, "attachment_settings", f"{row['name']}: {'on' if enabled else 'off'}, {size} MB")
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} changed the attachment settings for {row['name']}.",
+                      url_for("admin.columns", did=did))
     db.commit()
     flash("Attachment settings saved.", "ok")
     return redirect(url_for("admin.columns", did=did))
@@ -499,6 +529,10 @@ def column_add(did):
                    (did, name, ctype, options or None, 1 if request.form.get("required") else 0,
                     1 if request.form.get("protected") else 0, reminder, has_time, pos))
         log(db, "column_add", f"department {did}: {name}")
+        dept_name = db.execute("SELECT name FROM departments WHERE id=?", (did,)).fetchone()["name"]
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} added the record column '{name}' to {dept_name}.",
+                          url_for("admin.columns", did=did))
         db.commit()
         flash(f"Column '{name}' added. Existing records show it as blank.", "ok")
     except sqlite3.IntegrityError:
@@ -531,6 +565,10 @@ def column_edit(cid):
                            (name, options, 1 if request.form.get("required") else 0,
                             1 if request.form.get("shown") else 0, protected, reminder, has_time, cid))
                 log(db, "column_edit", f"{col['name']} -> {name}")
+                dept_name = db.execute("SELECT name FROM departments WHERE id=?", (col["department_id"],)).fetchone()["name"]
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} renamed the record column '{col['name']}' to '{name}' in {dept_name}.",
+                                  url_for("admin.columns", did=col["department_id"]))
                 db.commit()
                 flash("Column saved.", "ok")
                 return redirect(url_for("admin.columns", did=col["department_id"]))
@@ -555,6 +593,10 @@ def column_move(cid):
         ids[i], ids[j] = ids[j], ids[i]
         for pos, one in enumerate(ids):               # renumber so the order is always clean
             db.execute("UPDATE columns SET position=? WHERE id=?", (pos, one))
+        dept_name = db.execute("SELECT name FROM departments WHERE id=?", (col["department_id"],)).fetchone()["name"]
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} moved the record column '{col['name']}' in {dept_name}.",
+                          url_for("admin.columns", did=col["department_id"]))
         db.commit()
     return redirect(url_for("admin.columns", did=col["department_id"]))
 
@@ -568,6 +610,10 @@ def column_unprotect(cid):
         return redirect(url_for("admin.columns", did=col["department_id"]))
     db.execute("UPDATE columns SET protected=0 WHERE id=?", (cid,))
     log(db, "column_unprotect", col["name"])
+    dept_name = db.execute("SELECT name FROM departments WHERE id=?", (col["department_id"],)).fetchone()["name"]
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} removed protection from the record column '{col['name']}' in {dept_name}.",
+                      url_for("admin.columns", did=col["department_id"]))
     db.commit()
     flash(f"Protection removed from '{col['name']}'. It can be removed now.", "ok")
     return redirect(url_for("admin.columns", did=col["department_id"]))
@@ -588,6 +634,10 @@ def column_remove(cid):
     else:
         db.execute("UPDATE columns SET removed_at=datetime('now','localtime'), is_reminder=0 WHERE id=?", (cid,))
         log(db, "column_remove", col["name"])
+        dept_name = db.execute("SELECT name FROM departments WHERE id=?", (col["department_id"],)).fetchone()["name"]
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} removed the record column '{col['name']}' from {dept_name}.",
+                          url_for("admin.columns", did=col["department_id"]))
         db.commit()
         flash(f"Column '{col['name']}' removed. Its data is kept; you can restore it any time.", "ok")
     return redirect(url_for("admin.columns", did=col["department_id"]))
@@ -614,6 +664,10 @@ def column_restore(cid):
     try:
         db.execute("UPDATE columns SET removed_at=NULL WHERE id=?", (cid,))
         log(db, "column_restore", col["name"])
+        dept_name = db.execute("SELECT name FROM departments WHERE id=?", (col["department_id"],)).fetchone()["name"]
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} restored the record column '{col['name']}' in {dept_name}.",
+                          url_for("admin.columns", did=col["department_id"]))
         db.commit()
         flash(f"Column '{col['name']}' is back with all its data.", "ok")
     except sqlite3.IntegrityError:
@@ -639,6 +693,10 @@ def column_erase(cid):
         backup_file = make_backup("before-erase_")      # safety copy first
         db.execute("DELETE FROM columns WHERE id=?", (cid,))   # its values go with it (CASCADE)
         log(db, "column_erase", f"{col['name']} (backup {os.path.basename(backup_file)})")
+        dept_name = db.execute("SELECT name FROM departments WHERE id=?", (col["department_id"],)).fetchone()["name"]
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} erased the record column '{col['name']}' in {dept_name} for good.",
+                          url_for("admin.removed_columns", did=col["department_id"]))
         db.commit()
         flash(f"Column '{col['name']}' erased for good. A backup was saved first: "
               f"{os.path.basename(backup_file)}.", "ok")
@@ -666,6 +724,9 @@ def import_page():
         db = get_db()
         created, skipped = import_users(db, text)
         log(db, "user_import", f"{len(created)} created, {len(skipped)} skipped")
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} imported {len(created)} user(s) ({len(skipped)} skipped).",
+                          url_for("admin.users"))
         db.commit()
         out = io.StringIO()
         writer = csv.writer(out)
@@ -705,8 +766,13 @@ def sessions():
 @admin_required
 def session_end(sid):
     db = get_db()
+    row = db.execute("SELECT u.full_name, u.username FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?", (sid,)).fetchone()
     revoke_session(db, sid)
     log(db, "session_end", sid[:8])
+    if row:
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} ended the session of {row['full_name']} ({row['username']}).",
+                          url_for("admin.sessions"))
     db.commit()
     flash("That session was ended.", "ok")
     return redirect(url_for("admin.sessions"))
@@ -741,6 +807,9 @@ def settings():
             if name:
                 setting_set(db, "company_name", name)
                 log(db, "settings", "company name changed")
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} changed the company name to '{name}'.",
+                                  url_for("admin.settings"))
                 db.commit()
                 flash("Company name saved.", "ok")
             else:
@@ -760,11 +829,17 @@ def settings():
                 with open(os.path.join(config.BRAND_DIR, "logo." + kind), "wb") as fh:
                     fh.write(raw)
                 log(db, "settings", "logo changed")
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} changed the portal logo.",
+                                  url_for("admin.settings"))
                 db.commit()
                 flash("Logo changed. It shows on every page, the login page and the browser tab.", "ok")
         elif action == "reset_logo":
             _remove_custom_logo()
             log(db, "settings", "logo reset to default")
+            notify_admin_task(db, g.user,
+                              f"{g.user['full_name']} reset the portal logo to the default.",
+                              url_for("admin.settings"))
             db.commit()
             flash("The default logo is back.", "ok")
         return redirect(url_for("admin.settings"))
@@ -795,6 +870,9 @@ def user_delete(user_id):
                "is_active=0, bin_purged=0 WHERE id=?", (g.user["id"], user_id))
     revoke_user_sessions(db, user_id)
     log(db, "user_delete", row["username"])
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} deleted the user {row['full_name']} ({row['username']}). The account is in the Recycle Bin.",
+                      url_for("records.bin_page", tab="users"))
     db.commit()
     flash(f"{row['full_name']} was moved to the Recycle Bin (Users tab). Their work stays for 30 days and can be restored.", "ok")
     return redirect(url_for("admin.users"))
@@ -827,6 +905,9 @@ def user_approve(user_id):
     notify(db, _approval_notify_targets(db, row),
            f"Your account for {row['full_name']} was approved by {g.user['full_name']} and can now log in.",
            f"/admin/dept-users#user-{user_id}", skip=g.user["id"])
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} approved the account: {row['full_name']} ({row['username']}).",
+                      url_for("admin.users"))
     db.commit()
     flash(f"{row['full_name']} is approved and can now log in.", "ok")
     return redirect(url_for("admin.users"))
@@ -846,6 +927,9 @@ def user_reject(user_id):
     notify(db, _approval_notify_targets(db, row),
            f"Your account for {row['full_name']} was rejected by {g.user['full_name']}.",
            "/admin/dept-users", skip=g.user["id"])
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} rejected the account: {row['full_name']} ({row['username']}).",
+                      url_for("admin.users"))
     db.commit()
     flash(f"The pending account for {row['full_name']} was rejected and removed.", "ok")
     return redirect(url_for("admin.users"))

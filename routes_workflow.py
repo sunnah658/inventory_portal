@@ -41,6 +41,34 @@ def notifications_mark_read():
     return redirect(url_for("flow.notifications"))
 
 
+@bp.route("/notifications/mark-selected", methods=["POST"])
+@login_required
+def notifications_mark_selected():
+    """Mark only the ticked notifications read (the Select button on the page
+    shows the tick boxes). Ids that are not this user's are ignored."""
+    db = get_db()
+    ids = [int(x) for x in request.form.getlist("nid") if x.isdigit()]
+    if ids:
+        db.execute("UPDATE notifications SET read_at=datetime('now','localtime') WHERE user_id=? AND id IN (%s)"
+                   % ",".join("?" * len(ids)), (g.user["id"], *ids))
+        db.commit()
+    return redirect(url_for("flow.notifications"))
+
+
+@bp.route("/notifications/clear-selected", methods=["POST"])
+@login_required
+def notifications_clear_selected():
+    """Clear (delete) only the ticked notifications. Ids that are not this
+    user's are ignored."""
+    db = get_db()
+    ids = [int(x) for x in request.form.getlist("nid") if x.isdigit()]
+    if ids:
+        db.execute("DELETE FROM notifications WHERE user_id=? AND id IN (%s)"
+                   % ",".join("?" * len(ids)), (g.user["id"], *ids))
+        db.commit()
+    return redirect(url_for("flow.notifications"))
+
+
 @bp.route("/notifications/settings", methods=["POST"])
 @login_required
 def notification_settings():

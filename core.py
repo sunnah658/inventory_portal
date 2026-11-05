@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 import config
 from models import log
 from templates_data import TEMPLATES
-from utils import is_portal_admin, like_pattern
+from utils import is_portal_admin, is_true_admin, like_pattern
 
 COLUMN_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                 ("date", "Date"), ("dropdown", "Dropdown list"), ("yesno", "Yes / No")]
@@ -660,6 +660,63 @@ def dept_member_ids(db, dept_id):
 
 def admin_ids(db):
     return [r[0] for r in db.execute("SELECT id FROM users WHERE (role='admin' OR can_portal_admin=1) AND is_active=1")]
+
+
+def true_admin_ids(db):
+    """The original portal admin accounts (role 'admin'), active."""
+    return [r[0] for r in db.execute("SELECT id FROM users WHERE role='admin' AND is_active=1")]
+
+
+def permission_user_ids(db):
+    """Users given portal administrative permission (not true admins), active."""
+    return [r[0] for r in db.execute("SELECT id FROM users WHERE role != 'admin' AND can_portal_admin=1 AND is_active=1")]
+
+
+def notify_admin_task(db, actor, text, link=None):
+    """A permission user did an admin task: tell the true portal admins.
+    Nothing is ever sent about a true portal admin's own task, and the
+    actor is never told about his own task."""
+    if is_true_admin(actor):
+        return
+    notify(db, true_admin_ids(db), text, link, skip=actor["id"])
+
+
+def notify_dept_task(db, actor, text, link=None):
+    """A dept admin did a dept task: tell the true portal admins and the
+    permission users. Nothing is sent about a true portal admin's task,
+    and the actor is never told about his own task."""
+    if is_true_admin(actor):
+        return
+    notify(db, true_admin_ids(db) + permission_user_ids(db), text, link, skip=actor["id"])
+
+
+def notify_ddb_row_task(db, actor, dept_id, text, link=None):
+    """A user did something to a Department Database row: tell that
+    department's dept admins. A dept admin (or delegate) acting on a row
+    is a dept task, not a user task, so the caller routes those through
+    notify_dept_task instead; a portal admin or permission user acting
+    on a row goes through notify_admin_task."""
+    if is_true_admin(actor):
+        return
+    targets = [r[0] for r in db.execute(
+        "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1", (dept_id,))]
+    notify(db, targets, text, link, skip=actor["id"])
+
+
+def notify_ddb_task(db, actor, dept, text, link=None):
+    """Route a Department Database action to its watchers (2026-11-05):
+    a true portal admin's action tells nobody; a permission user's action
+    tells the true portal admins; a dept admin's or delegate's action
+    tells the true portal admins and the permission users; a regular
+    user's action tells that department's dept admins."""
+    if is_true_admin(actor):
+        return
+    if is_portal_admin(actor):
+        notify_admin_task(db, actor, text, link)
+    elif ddb_is_tab_admin(db, actor, dept["id"]):
+        notify_dept_task(db, actor, text, link)
+    else:
+        notify_ddb_row_task(db, actor, dept["id"], text, link)
 
 
 # ---------------------------------------------------------------- sharing

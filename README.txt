@@ -1674,3 +1674,59 @@
    invoice_templates.company_name and company_address columns are
    added automatically on first start). Apply only this latest zip,
    not the older ones in order.
+
+==============================================================================
+ 34. WATCHER NOTIFICATIONS, NOTIFICATION MULTI-SELECT (2026-11-05)
+==============================================================================
+ 1. Watcher notifications. Each level now watches the level below it,
+    so the right people hear about the work done underneath them:
+      - Nobody is told about the portal admin's tasks. When the true
+        portal admin does something, no notification goes to anyone.
+      - The portal admin is told about two levels below him: what a
+        permission user does, and what a dept admin does.
+      - A permission user is told about what the dept admins do.
+      - A dept admin is told about what the users in his department
+        do in the Department Database.
+    What counts as a task at each level:
+      - Permission user (the portal admin is told): the Admin-area
+        work -- create, edit, reset the password of, or delete a user;
+        approve or reject a pending account; end someone's session;
+        import users; restore or erase something from the Recycle
+        Bin; add or delete a department, change its repair-log or
+        attachment settings; add, edit, move, remove, restore, or
+        erase a record column; change the attachment-access list;
+        change the portal settings (company name or logo).
+      - Dept admin (the portal admin and the permission users are
+        told): create a user in his department; manage the Department
+        Database tabs, columns, and delegates; share, create, or copy
+        an invoice template; share the department's invoices with
+        another department; mark an invoice Paid or Void; add, edit,
+        share, delete, or restore a row in his department.
+      - A user in the Department Database (that department's dept
+        admin is told): add, edit, share, or delete a row. When the
+        owner marks his own invoice Paid or Void, the dept admin is
+        told too. A dept admin adding or editing a row himself counts
+        as a dept-admin task, so the portal admin and the permission
+        users are told instead; a delegate's Department Database
+        actions count the same way. Creating or editing an invoice
+        draft, finalising it, or changing its public QR does not send
+        a notification.
+    Each notification says who did what, for example "Perm User
+    created a new user: New Hire (newhire), Sales & Marketing", and
+    tapping it opens the page where it happened, such as the Users
+    page or the Department Database tab.
+ 2. Notification multi-select. A "Select" button now sits on the
+    left of "Mark all as read" on the Notifications page. Tapping it
+    shows a tick box on the left of every notification. Tick the ones
+    wanted, then tap "Mark as read" to mark only the ticked ones read,
+    or "Clear" to clear only the ticked ones. Tapping "Select" again
+    hides the tick boxes. "Mark all as read" and "Clear all" are
+    unchanged and still act on everything.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (notifications use
+   the existing notifications table). Apply only this latest zip,
+   not the older ones in order.

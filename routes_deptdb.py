@@ -38,7 +38,7 @@ from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, ddb_attachment_info,
                   ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
-                  notify, parse_code_text, parse_form, show_when)
+                  notify, notify_ddb_task, parse_code_text, parse_form, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
 
@@ -516,6 +516,9 @@ def tabs():
                                "VALUES (?,?,?,?,?,?,?,?)",
                                (dept["id"], tab_id, cname, ctype, opts, req, has_time, i))
                 log(db, "ddb_tab_add", f"{dept['name']}: {name} ({template})")
+                notify_ddb_task(db, g.user, dept,
+                                f"{g.user['full_name']} created the tab '{name}' in {dept['name']}.",
+                                url_for("ddb.index", dept=dept["id"], tab=tab_id))
                 db.commit()
                 flash(f"Tab '{name}' created.", "ok")
             except sqlite3.IntegrityError:
@@ -546,6 +549,9 @@ def tab_edit(tab_id):
         try:
             db.execute("UPDATE ddb_tabs SET name=?, meeting_notify=? WHERE id=?", (name, meeting, tab_id))
             log(db, "ddb_tab_edit", f"{dept['name']}: {name}")
+            notify_ddb_task(db, g.user, dept,
+                            f"{g.user['full_name']} renamed the tab '{tab['name']}' to '{name}' in {dept['name']}.",
+                            url_for("ddb.index", dept=dept["id"]))
             db.commit()
             flash("Tab saved.", "ok")
         except sqlite3.IntegrityError:
@@ -563,6 +569,9 @@ def tab_delete(tab_id):
         abort(404)
     db.execute("UPDATE ddb_tabs SET removed_at=datetime('now','localtime') WHERE id=?", (tab_id,))
     log(db, "ddb_tab_delete", f"{dept['name']}: {tab['name']}")
+    notify_ddb_task(db, g.user, dept,
+                    f"{g.user['full_name']} deleted the tab '{tab['name']}' in {dept['name']}.",
+                    url_for("ddb.index", dept=dept["id"]))
     db.commit()
     flash(f"Tab '{tab['name']}' deleted. Its rows are hidden until the tab is restored.", "ok")
     return redirect(url_for("ddb.tabs", **_back(dept)))
@@ -584,6 +593,9 @@ def tab_restore(tab_id):
     try:
         db.execute("UPDATE ddb_tabs SET removed_at=NULL WHERE id=?", (tab_id,))
         log(db, "ddb_tab_restore", f"{dept['name']}: {tab['name']}")
+        notify_ddb_task(db, g.user, dept,
+                        f"{g.user['full_name']} restored the tab '{tab['name']}' in {dept['name']}.",
+                        url_for("ddb.index", dept=dept["id"], tab=tab_id))
         db.commit()
         flash("Tab restored.", "ok")
     except sqlite3.IntegrityError:
@@ -608,6 +620,9 @@ def delegates():
                        (dept["id"], uid, g.user["id"]))
             notify(db, [uid], f"You can now do everything a department admin can do in the {dept['name']} department database.",
                    "/deptdb", skip=g.user["id"])
+            notify_ddb_task(db, g.user, dept,
+                            f"{g.user['full_name']} made {member['full_name']} a delegate in {dept['name']}.",
+                            url_for("ddb.delegates", dept=dept["id"]))
             log(db, "ddb_delegate", f"{dept['name']}: {member['username']} made a department-database delegate")
             db.commit()
             flash(f"{member['full_name']} can now do everything a department admin can do in this department database.", "ok")
@@ -624,7 +639,11 @@ def delegates():
 @login_required
 def delegate_revoke(uid):
     db, dept = _tab_admin()
+    member = db.execute("SELECT full_name, username FROM users WHERE id=?", (uid,)).fetchone()
     db.execute("DELETE FROM ddb_delegates WHERE department_id=? AND user_id=?", (dept["id"], uid))
+    notify_ddb_task(db, g.user, dept,
+                    f"{g.user['full_name']} removed {member['full_name'] if member else 'a user'} as a delegate in {dept['name']}.",
+                    url_for("ddb.delegates", dept=dept["id"]))
     log(db, "ddb_delegate_revoke", f"{dept['name']}: user {uid} no longer a department-database delegate")
     db.commit()
     flash("Delegate removed.", "ok")
@@ -663,6 +682,10 @@ def row_share(rid):
     is_admin = ddb_is_tab_admin(db, g.user, row["department_id"])
     if row["deleted_at"] or not (row["owner_id"] == g.user["id"] or is_admin):
         abort(403)
+    dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    tab_name = tab["name"] if tab else ""
+    row_dept = dept
     kind = request.form.get("kind")
     perm = request.form.get("permission", "view")
     if perm not in ("view", "edit"):
@@ -680,6 +703,9 @@ def row_share(rid):
                        (rid, did, perm, g.user["id"]))
             ddb_history(db, rid, g.user, "shared", new=f"{dept['name']} ({'Can edit' if perm == 'edit' else 'View only'})")
             log(db, "ddb_share", f"row {rid} shared with {dept['name']} ({perm})")
+            notify_ddb_task(db, g.user, row_dept,
+                            f"{g.user['full_name']} shared a row in the tab '{tab_name}' in {row_dept['name']} with {dept['name']}.",
+                            ddb_row_link(db, rid))
             db.commit()
             flash(f"Shared with {dept['name']} ({'Can edit' if perm == 'edit' else 'View only'}).", "ok")
     elif kind == "user":
@@ -695,6 +721,9 @@ def row_share(rid):
                    ddb_row_link(db, rid), skip=g.user["id"])
             ddb_history(db, rid, g.user, "shared", new=f"{user['full_name']} ({'Can edit' if perm == 'edit' else 'View only'})")
             log(db, "ddb_share", f"row {rid} shared with {user['username']} ({perm})")
+            notify_ddb_task(db, g.user, row_dept,
+                            f"{g.user['full_name']} shared a row in the tab '{tab_name}' in {row_dept['name']} with {user['full_name']}.",
+                            ddb_row_link(db, rid))
             db.commit()
             flash(f"Shared with {user['full_name']} ({'Can edit' if perm == 'edit' else 'View only'}).", "ok")
     else:
@@ -712,6 +741,11 @@ def row_share_delete(rid, sid):
     db.execute("DELETE FROM ddb_row_shares WHERE id=? AND row_id=?", (sid, rid))
     ddb_history(db, rid, g.user, "unshared")
     log(db, "ddb_unshare", f"row {rid} share {sid} removed")
+    dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    notify_ddb_task(db, g.user, dept,
+                    f"{g.user['full_name']} stopped sharing a row in the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                    ddb_row_link(db, rid))
     db.commit()
     flash("Share removed.", "ok")
     return redirect(url_for("ddb.row_detail", rid=rid))
@@ -756,6 +790,9 @@ def new_row():
             return _form(dept, tab, cols, values, source=source)
         rid = ddb_create_row(db, g.user, dept["id"], values, tab_id=tab["id"], source_record_id=rec["id"] if rec else None)
         log(db, "ddb_add", f"{dept['name']} / {tab['name']} row {rid}")
+        notify_ddb_task(db, g.user, dept,
+                        f"{g.user['full_name']} added a row to the tab '{tab['name']}' in {dept['name']}.",
+                        ddb_row_link(db, rid))
         db.commit()
         flash("Row added to the department database.", "ok")
         return redirect(url_for("ddb.row_detail", rid=rid))
@@ -800,6 +837,9 @@ def edit_row(rid):
             flash("There was nothing to change.", "ok")
         else:
             log(db, "ddb_edit", f"{dept['name']} row {rid}")
+            notify_ddb_task(db, g.user, dept,
+                            f"{g.user['full_name']} edited a row in the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                            ddb_row_link(db, rid))
             db.commit()
             flash("Changes saved.", "ok")
         return redirect(url_for("ddb.row_detail", rid=rid))
@@ -815,6 +855,11 @@ def delete_row(rid):
     db.execute("UPDATE ddb_rows SET deleted_at=datetime('now','localtime') WHERE id=?", (rid,))
     ddb_history(db, rid, g.user, "deleted")
     log(db, "ddb_delete", f"row {rid}")
+    dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    notify_ddb_task(db, g.user, dept,
+                    f"{g.user['full_name']} deleted a row from the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                    url_for("ddb.index", dept=dept["id"], tab=tab["id"] if tab else None))
     db.commit()
     flash("Row deleted. A department admin can restore it for %d days." % config.BIN_DAYS, "ok")
     return redirect(url_for("ddb.index", dept=row["department_id"]) if is_portal_admin(g.user)
@@ -830,6 +875,11 @@ def restore_row(rid):
     db.execute("UPDATE ddb_rows SET deleted_at=NULL, version=version+1 WHERE id=?", (rid,))
     ddb_history(db, rid, g.user, "restored")
     log(db, "ddb_restore", f"row {rid}")
+    dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    notify_ddb_task(db, g.user, dept,
+                    f"{g.user['full_name']} restored a row in the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                    ddb_row_link(db, rid))
     db.commit()
     flash("Row restored.", "ok")
     return redirect(url_for("ddb.row_detail", rid=rid))
@@ -889,6 +939,9 @@ def column_add():
                        (dept["id"], tab["id"], name, ctype, options, 1 if request.form.get("required") else 0,
                         1 if (request.form.get("has_time") and ctype == "date") else 0, pos))
             log(db, "ddb_column_add", f"{dept['name']} / {tab['name']}: {name}")
+            notify_ddb_task(db, g.user, dept,
+                            f"{g.user['full_name']} added the column '{name}' to the tab '{tab['name']}' in {dept['name']}.",
+                            url_for("ddb.index", dept=dept["id"], tab=tab["id"]))
             db.commit()
             flash(f"Column '{name}' added.", "ok")
         except sqlite3.IntegrityError:
@@ -929,6 +982,9 @@ def column_edit(cid):
                             1 if request.form.get("shown") else 0,
                             1 if (request.form.get("has_time") and col["col_type"] == "date") else 0, cid))
                 log(db, "ddb_column_edit", f"{dept['name']}: {name}")
+                notify_ddb_task(db, g.user, dept,
+                                f"{g.user['full_name']} renamed the column '{col['name']}' to '{name}' in the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                                url_for("ddb.index", dept=dept["id"], tab=tab["id"] if tab else None))
                 db.commit()
                 flash("Column saved.", "ok")
                 return redirect(url_for("ddb.columns", **_back(dept, tab)))
@@ -944,6 +1000,9 @@ def column_remove(cid):
     db, col, dept, tab = _ddb_column(cid)
     db.execute("UPDATE ddb_columns SET removed_at=datetime('now','localtime') WHERE id=?", (cid,))
     log(db, "ddb_column_remove", f"{dept['name']}: {col['name']}")
+    notify_ddb_task(db, g.user, dept,
+                    f"{g.user['full_name']} removed the column '{col['name']}' from the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                    url_for("ddb.index", dept=dept["id"], tab=tab["id"] if tab else None))
     db.commit()
     flash(f"Column '{col['name']}' removed. Its data is kept and it can be restored.", "ok")
     return redirect(url_for("ddb.columns", **_back(dept, tab)))
@@ -956,6 +1015,9 @@ def column_restore(cid):
     try:
         db.execute("UPDATE ddb_columns SET removed_at=NULL WHERE id=?", (cid,))
         log(db, "ddb_column_restore", f"{dept['name']}: {col['name']}")
+        notify_ddb_task(db, g.user, dept,
+                        f"{g.user['full_name']} restored the column '{col['name']}' in the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                        url_for("ddb.index", dept=dept["id"], tab=tab["id"] if tab else None))
         db.commit()
         flash(f"Column '{col['name']}' restored.", "ok")
     except sqlite3.IntegrityError:
@@ -976,6 +1038,9 @@ def column_move(cid):
         cols[i], cols[j] = cols[j], cols[i]
         for pos, c in enumerate(cols):
             db.execute("UPDATE ddb_columns SET position=? WHERE id=?", (pos, c))
+        notify_ddb_task(db, g.user, dept,
+                        f"{g.user['full_name']} moved the column '{col['name']}' in the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                        url_for("ddb.index", dept=dept["id"], tab=tab["id"] if tab else None))
         db.commit()
     return redirect(url_for("ddb.columns", **_back(dept, tab)))
 

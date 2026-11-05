@@ -1,4 +1,17 @@
 ==============================================================================
+ UPDATE: WATCHER NOTIFICATIONS, NOTIFICATION MULTI-SELECT (2026-11-05)
+==============================================================================
+ Each level now watches the level below it: nobody is told about the
+ portal admin's tasks; the portal admin is told about what permission
+ users and dept admins do; a permission user is told about what dept
+ admins do; and a dept admin is told about what the users in his
+ department do in the Department Database. Every notification says who
+ did what and opens the page where it happened. On the Notifications
+ page, a "Select" button now sits on the left of "Mark all as read":
+ tap it, tick the notifications wanted, then tap "Mark as read" or
+ "Clear" to act on only the ticked ones.
+
+==============================================================================
  UPDATE: PER-TEMPLATE INVOICE HEADER, LOWER SIGNATURES, RECYCLE BIN PURGE
  RULE, MY SUB-TABS, USERNAME CHANGE (2026-11-05)
 ==============================================================================

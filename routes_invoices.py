@@ -37,7 +37,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import display_code, new_random_code_text
+from core import display_code, new_random_code_text, notify_ddb_row_task, notify_dept_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("invoices", __name__)
@@ -280,6 +280,9 @@ def starters():
         db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,notes,item_columns_json,top_fields_json,signatures_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (g.user["department_id"], g.user["id"], s["name"], s["kind"], s["title"], s["subtitle"], s["prefix"], "BDT", s["vat"], s["show_tax"], s["notes"], s["cols"], s["top"], json.dumps([{"title": "Authorized by", "person": "", "designation": ""}, {"title": "Approved by", "person": "", "designation": ""}]), "active"))
     log(db, "invoice_starters", f"dept {g.user['department_id']}")
+    notify_dept_task(db, g.user,
+                     f"{g.user['full_name']} created the starter invoice templates.",
+                     url_for("invoices.templates"))
     db.commit(); flash("Starter templates created for your department.", "ok")
     return redirect(url_for("invoices.templates"))
 
@@ -303,7 +306,11 @@ def template_new():
                           (request.form.get("company_name") or "").strip(), (request.form.get("company_address") or "").strip(), left, right,
                           1 if request.form.get("watermark_on") else 0, (request.form.get("watermark_text") or "").strip()[:50],
                           json.dumps(sigs), request.form.get("item_columns") or "", request.form.get("top_fields") or "", "active" if request.form.get("status") != "draft" else "draft")).lastrowid
-        log(db, "invoice_template_new", name); db.commit(); flash("Template saved.", "ok")
+        log(db, "invoice_template_new", name)
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} created the invoice template '{name}'.",
+                         url_for("invoices.templates"))
+        db.commit(); flash("Template saved.", "ok")
         return redirect(url_for("invoices.templates"))
     return render_template("invoice_template_form.html", tpl=None, sigs=[], currencies=CURRENCIES, default_company_name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME), default_company_address=config.DEFAULT_COMPANY_ADDRESS)
 
@@ -327,7 +334,11 @@ def template_edit(tid):
                     1 if request.form.get("watermark_on") else 0, (request.form.get("watermark_text") or "").strip()[:50],
                     json.dumps(_sigs(request.form, tpl)), request.form.get("item_columns") or "", request.form.get("top_fields") or "",
                     "active" if request.form.get("status") != "draft" else "draft", tid))
-        log(db, "invoice_template_edit", tpl["name"]); db.commit(); flash("Template saved. Changes apply to new invoices only; issued invoices keep their old format.", "ok")
+        log(db, "invoice_template_edit", tpl["name"])
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} edited the invoice template '{tpl['name']}'.",
+                         url_for("invoices.templates"))
+        db.commit(); flash("Template saved. Changes apply to new invoices only; issued invoices keep their old format.", "ok")
         return redirect(url_for("invoices.templates"))
     return render_template("invoice_template_form.html", tpl=tpl, sigs=json.loads(tpl["signatures_json"] or "[]") if tpl["signatures_json"] else [], currencies=CURRENCIES, default_company_name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME), default_company_address=config.DEFAULT_COMPANY_ADDRESS)
 
@@ -346,7 +357,12 @@ def template_share(tid):
         else:
             db.execute("INSERT INTO invoice_template_shares(template_id,from_department_id,to_department_id,shared_by,expires) VALUES (?,?,?,?,?)",
                        (tid, g.user["department_id"], to_dept, g.user["id"], request.form.get("expires") or None))
-            log(db, "invoice_template_share", f"{tpl['name']} -> dept {to_dept}"); db.commit(); flash("Template shared. The other dept admin can now use it in their department.", "ok")
+            to_name = db.execute("SELECT name FROM departments WHERE id=?", (to_dept,)).fetchone()["name"]
+            log(db, "invoice_template_share", f"{tpl['name']} -> dept {to_dept}")
+            notify_dept_task(db, g.user,
+                             f"{g.user['full_name']} shared the invoice template '{tpl['name']}' with {to_name}.",
+                             url_for("invoices.templates"))
+            db.commit(); flash("Template shared. The other dept admin can now use it in their department.", "ok")
             return redirect(url_for("invoices.templates"))
     shares = db.execute("SELECT s.*, d.name AS to_dept FROM invoice_template_shares s JOIN departments d ON d.id=s.to_department_id WHERE s.template_id=? ORDER BY s.id DESC", (tid,)).fetchall()
     return render_template("invoice_template_share.html", tpl=tpl, depts=depts, shares=shares)
@@ -356,7 +372,15 @@ def template_share(tid):
 def template_share_revoke(sid):
     _dept_admin_required()
     db = get_db()
+    share = db.execute("SELECT s.*, t.name AS tpl_name, d.name AS to_name FROM invoice_template_shares s "
+                       "JOIN invoice_templates t ON t.id=s.template_id JOIN departments d ON d.id=s.to_department_id "
+                       "WHERE s.id=? AND s.from_department_id=?", (sid, g.user["department_id"])).fetchone()
     db.execute("UPDATE invoice_template_shares SET revoked=1 WHERE id=? AND from_department_id=?", (sid, g.user["department_id"]))
+    if share:
+        log(db, "invoice_template_share_revoke", share["tpl_name"])
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} stopped sharing the invoice template '{share['tpl_name']}' with {share['to_name']}.",
+                         url_for("invoices.templates"))
     db.commit(); flash("Share revoked.", "ok"); return redirect(url_for("invoices.templates"))
 
 @bp.route("/invoices/templates/shares/<int:sid>/use", methods=["POST"])
@@ -371,7 +395,11 @@ def template_share_use(sid):
     db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,show_amount_in_words,notes,show_company_logo,show_address,company_name,company_address,logo_left,logo_right,watermark_on,watermark_text,signatures_json,item_columns_json,top_fields_json,status,shared_from_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                (g.user["department_id"], g.user["id"], tpl["name"], tpl["kind"], tpl["title"], tpl["subtitle"], tpl["number_prefix"], tpl["default_currency"], tpl["vat_percent"], tpl["show_tax"], tpl["show_amount_in_words"], tpl["notes"], tpl["show_company_logo"], tpl["show_address"], tpl["company_name"], tpl["company_address"], tpl["logo_left"], tpl["logo_right"], tpl["watermark_on"], tpl["watermark_text"], tpl["signatures_json"], tpl["item_columns_json"], tpl["top_fields_json"], "active", tpl["id"]))
     # next_number for the copy starts at 1 (the INSERT above does not set it, default is 1)
-    log(db, "invoice_template_use", tpl["name"]); db.commit(); flash("Template copied to your department. You can now use it and edit your own copy.", "ok")
+    log(db, "invoice_template_use", tpl["name"])
+    notify_dept_task(db, g.user,
+                     f"{g.user['full_name']} copied the shared invoice template '{tpl['name']}' into their department.",
+                     url_for("invoices.templates"))
+    db.commit(); flash("Template copied to your department. You can now use it and edit your own copy.", "ok")
     return redirect(url_for("invoices.templates"))
 
 # ---------------------------------------------------------------- dept data sharing
@@ -389,7 +417,12 @@ def share_department():
         else:
             db.execute("INSERT INTO invoice_dept_shares(from_department_id,to_department_id,shared_by,scope,expires) VALUES (?,?,?,?,?)",
                        (g.user["department_id"], to_dept, g.user["id"], scope, request.form.get("expires") or None))
-            log(db, "invoice_dept_share", f"dept {to_dept} scope {scope}"); db.commit(); flash("Department invoices shared, view-only. The other dept admin cannot edit, void or mark paid your invoices.", "ok")
+            to_name = db.execute("SELECT name FROM departments WHERE id=?", (to_dept,)).fetchone()["name"]
+            log(db, "invoice_dept_share", f"dept {to_dept} scope {scope}")
+            notify_dept_task(db, g.user,
+                             f"{g.user['full_name']} shared the department's invoices with {to_name}.",
+                             url_for("invoices.share_department"))
+            db.commit(); flash("Department invoices shared, view-only. The other dept admin cannot edit, void or mark paid your invoices.", "ok")
             return redirect(url_for("invoices.share_department"))
     shares = db.execute("SELECT s.*, d.name AS to_dept FROM invoice_dept_shares s JOIN departments d ON d.id=s.to_department_id WHERE s.from_department_id=? ORDER BY s.id DESC", (g.user["department_id"],)).fetchall()
     return render_template("invoice_share_department.html", depts=depts, shares=shares)
@@ -398,7 +431,16 @@ def share_department():
 @login_required
 def share_department_revoke(sid):
     _dept_admin_required()
-    db = get_db(); db.execute("UPDATE invoice_dept_shares SET revoked=1 WHERE id=? AND from_department_id=?", (sid, g.user["department_id"])); db.commit()
+    db = get_db()
+    share = db.execute("SELECT s.*, d.name AS to_name FROM invoice_dept_shares s JOIN departments d ON d.id=s.to_department_id "
+                       "WHERE s.id=? AND s.from_department_id=?", (sid, g.user["department_id"])).fetchone()
+    db.execute("UPDATE invoice_dept_shares SET revoked=1 WHERE id=? AND from_department_id=?", (sid, g.user["department_id"]))
+    if share:
+        log(db, "invoice_dept_share_revoke", share["to_name"])
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} stopped sharing the department's invoices with {share['to_name']}.",
+                         url_for("invoices.share_department"))
+    db.commit()
     flash("Share revoked.", "ok"); return redirect(url_for("invoices.share_department"))
 
 # ---------------------------------------------------------------- create / edit invoice
@@ -480,7 +522,20 @@ def invoice_paid(iid):
     db = get_db(); inv = _invoice(db, iid)
     if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] != "issued":
         abort(403)
-    db.execute("UPDATE invoices SET status='paid' WHERE id=?", (iid,)); log(db, "invoice_paid", inv["number"] or str(iid)); db.commit()
+    db.execute("UPDATE invoices SET status='paid' WHERE id=?", (iid,))
+    log(db, "invoice_paid", inv["number"] or str(iid))
+    # A dept admin marking it Paid is a dept task (portal admin + permission
+    # user are told); the owner marking his own invoice Paid is a user task
+    # in the Department Database (that department's dept admin is told).
+    if _is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"]:
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} marked invoice {inv['number']} as Paid.",
+                         url_for("invoices.detail", iid=iid))
+    else:
+        notify_ddb_row_task(db, g.user, inv["department_id"],
+                            f"{g.user['full_name']} marked invoice {inv['number']} as Paid.",
+                            url_for("invoices.detail", iid=iid))
+    db.commit()
     flash("Marked Paid.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
 
 @bp.route("/invoices/<int:iid>/void", methods=["POST"])
@@ -490,7 +545,17 @@ def invoice_void(iid):
     if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] not in ("issued", "paid"):
         abort(403)
     reason = (request.form.get("reason") or "").strip()
-    db.execute("UPDATE invoices SET status='void',void_reason=?,public_enabled=0 WHERE id=?", (reason, iid)); log(db, "invoice_void", f"{inv['number']} {reason}"); db.commit()
+    db.execute("UPDATE invoices SET status='void',void_reason=?,public_enabled=0 WHERE id=?", (reason, iid))
+    log(db, "invoice_void", f"{inv['number']} {reason}")
+    if _is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"]:
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} voided invoice {inv['number']}.",
+                         url_for("invoices.detail", iid=iid))
+    else:
+        notify_ddb_row_task(db, g.user, inv["department_id"],
+                            f"{g.user['full_name']} voided invoice {inv['number']}.",
+                            url_for("invoices.detail", iid=iid))
+    db.commit()
     flash("Invoice voided. Its number is kept and never reused.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
 
 # ---------------------------------------------------------------- detail, PDF, public QR

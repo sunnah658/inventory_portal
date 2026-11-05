@@ -27,7 +27,7 @@ import scanner
 from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, create_record, dept_member_ids, filter_clause, get_columns, get_record,
-                  names_for_records, notify, parse_code_text, parse_form, purge_record, purge_user_account, rec_select, reminder_rows,
+                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, purge_record, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
                   update_record, values_for, viewable_departments)
 from models import get_db, log
@@ -749,6 +749,9 @@ def bin_restore(rid):
     db = get_db()
     restore(db, g.user, rec)
     log(db, "record_restore", f"record {rid}")
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} restored a deleted record.",
+                      url_for("records.detail", rid=rid))
     db.commit()
     flash("Record restored.", "ok")
     return redirect(url_for("records.bin_page"))
@@ -772,6 +775,9 @@ def bin_purge(rid):
             return redirect(url_for("records.bin_page"))
     purge_record(db, rid)
     log(db, "record_erase", f"record {rid} erased for good")
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} erased a deleted record for good.",
+                      url_for("records.bin_page"))
     db.commit()
     flash("Record erased for good.", "ok")
     return redirect(url_for("records.bin_page"))
@@ -816,6 +822,9 @@ def bin_user_restore(user_id):
     db.execute("UPDATE users SET is_deleted=0, deleted_at=NULL, deleted_by=NULL, bin_purged=0, "
                "is_active=1, approval_status='approved' WHERE id=?", (user_id,))
     log(db, "user_restore", row["username"])
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} restored the user {row['full_name']} ({row['username']}).",
+                      url_for("records.bin_page", tab="users"))
     db.commit()
     flash(f"{row['full_name']} is restored and can work as before.", "ok")
     return redirect(url_for("records.bin_page", tab="users"))
@@ -848,6 +857,10 @@ def bin_user_purge(user_id):
     delete_work = request.form.get("delete_work") == "1"
     purge_user_account(db, user_id, delete_work=delete_work)
     log(db, "user_purge" if delete_work else "user_purge_keep_work", row["username"])
+    notify_admin_task(db, g.user,
+                      f"{g.user['full_name']} erased the user {row['full_name']} ({row['username']}) for good"
+                      + (" and all their work." if delete_work else "."),
+                      url_for("records.bin_page", tab="users"))
     db.commit()
     if delete_work:
         flash(f"{row['full_name']} and all their work were deleted from the portal.", "ok")
