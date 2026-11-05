@@ -37,7 +37,7 @@ from auth import login_required
 from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, ddb_attachment_info,
                   ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
-                  ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
+                  ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
                   notify, parse_code_text, parse_form, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, like_pattern, page_info
@@ -380,13 +380,14 @@ def export():
 def _invoice_tab_view(db, dept, is_admin, args):
     """The invoice page, as a default tab inside Department Database. Every
     feature of invoices is unchanged — only where the list lives moved.
-    Sub-tabs: All, plus one per invoice type in this department. A new type
-    (template) created by the dept admin automatically gets its own sub-tab,
-    because the sub-tabs are built from the department's templates and the
-    templates that already have invoices. Everyone in the department can see
-    every invoice in the tab; editing rules are unchanged (owner edits a
-    draft, dept admin marks Paid/Void). Templates stay outside, on the
-    dept-admin Invoice templates page."""
+    Sub-tabs: All, My invoices (only the current user's invoices), plus one
+    per invoice type in this department. A new type (template) created by
+    the dept admin automatically gets its own sub-tab, because the sub-tabs
+    are built from the department's templates and the templates that already
+    have invoices. Everyone in the department can see every invoice in the
+    tab; editing rules are unchanged (owner edits a draft, dept admin marks
+    Paid/Void). Templates stay outside, on the dept-admin Invoice templates
+    page."""
     from routes_invoices import _shared_dept_ids
     scope = [dept["id"]]
     if is_admin and not is_portal_admin(g.user) and g.user["department_id"] == dept["id"]:
@@ -409,6 +410,8 @@ def _invoice_tab_view(db, dept, is_admin, args):
         invtype, invtype_id = "all", None
     # counts per sub-tab (scope only, before user/status filters)
     counts = {"all": db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks})", scope).fetchone()[0]}
+    counts["mine"] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND owner_id=?",
+                                scope + [g.user["id"]]).fetchone()[0]
     for tid in sub:
         counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
@@ -666,7 +669,7 @@ def row_share(rid):
             db.execute("INSERT INTO ddb_row_shares(row_id,user_id,permission,created_by) VALUES (?,?,?,?)",
                        (rid, uid, perm, g.user["id"]))
             notify(db, [uid], f"A department-database row was shared with you ({'Can edit' if perm == 'edit' else 'View only'}).",
-                   f"/deptdb/row/{rid}", skip=g.user["id"])
+                   ddb_row_link(db, rid), skip=g.user["id"])
             ddb_history(db, rid, g.user, "shared", new=f"{user['full_name']} ({'Can edit' if perm == 'edit' else 'View only'})")
             log(db, "ddb_share", f"row {rid} shared with {user['username']} ({perm})")
             db.commit()

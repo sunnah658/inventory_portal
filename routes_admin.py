@@ -20,8 +20,8 @@ import config
 from auth import admin_required, login_required
 from utils import is_portal_admin, is_true_admin
 from backup import make_backup
-from core import (COLUMN_TYPES, TYPE_LABEL, build_csv, column_names, create_department, get_columns,
-                  rec_select, reminder_rows, search_clause, summaries_for, table_context)
+from core import (COLUMN_TYPES, TYPE_LABEL, admin_ids, build_csv, column_names, create_department, get_columns,
+                  notify, rec_select, reminder_rows, search_clause, summaries_for, table_context)
 from import_users import import_users
 from models import get_db, log, setting_get, setting_set
 from routes_records import code_redirect, list_options
@@ -241,10 +241,10 @@ def user_add():
         else:
             password = password or generate_password()
             uid = db.execute("INSERT INTO users(full_name,username,password_hash,department_id,role,"
-                             "must_change_password,is_dept_admin,can_ddb_attachment,can_portal_admin) VALUES (?,?,?,?,?,1,?,?,?)",
+                             "must_change_password,is_dept_admin,can_ddb_attachment,can_portal_admin,created_by) VALUES (?,?,?,?,?,1,?,?,?,?)",
                              (full_name, username, generate_password_hash(password), int(dept), role,
                               1 if form.get("is_dept_admin") else 0, 1 if form.get("can_ddb_attachment") else 0,
-                              1 if (is_true_admin(g.user) and form.get("can_portal_admin")) else 0)).lastrowid
+                              1 if (is_true_admin(g.user) and form.get("can_portal_admin")) else 0, g.user["id"])).lastrowid
             _save_view_departments(db, uid, form.getlist("view_dept"), int(dept))
             log(db, "user_add", username)
             db.commit()
@@ -797,6 +797,17 @@ def user_delete(user_id):
     return redirect(url_for("admin.users"))
 
 
+def _approval_notify_targets(db, row):
+    """Who should hear the outcome of a pending account: the dept admin who
+    created it (recorded in created_by), or, for accounts created before
+    that was recorded, the dept admins of the account's department."""
+    if row["created_by"]:
+        return [row["created_by"]]
+    return [r[0] for r in db.execute(
+        "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+        (row["department_id"],)).fetchall()]
+
+
 @bp.route("/users/<int:user_id>/approve", methods=["POST"])
 @admin_required
 def user_approve(user_id):
@@ -807,6 +818,12 @@ def user_approve(user_id):
         abort(404)
     db.execute("UPDATE users SET approval_status='approved', is_active=1 WHERE id=?", (user_id,))
     log(db, "user_approve", row["username"])
+    # The dept admin who created the account hears that it was approved
+    # (2026-11-05): tapping the notification opens their own Users page
+    # at the approved account (the portal Users page is not theirs to open).
+    notify(db, _approval_notify_targets(db, row),
+           f"Your account for {row['full_name']} was approved by {g.user['full_name']} and can now log in.",
+           f"/admin/dept-users#user-{user_id}", skip=g.user["id"])
     db.commit()
     flash(f"{row['full_name']} is approved and can now log in.", "ok")
     return redirect(url_for("admin.users"))
@@ -823,6 +840,9 @@ def user_reject(user_id):
         abort(404)
     db.execute("DELETE FROM users WHERE id=?", (user_id,))
     log(db, "user_reject", row["username"])
+    notify(db, _approval_notify_targets(db, row),
+           f"Your account for {row['full_name']} was rejected by {g.user['full_name']}.",
+           "/admin/dept-users", skip=g.user["id"])
     db.commit()
     flash(f"The pending account for {row['full_name']} was rejected and removed.", "ok")
     return redirect(url_for("admin.users"))
@@ -885,12 +905,19 @@ def dept_user_add():
         else:
             password = password or generate_password()
             approved = is_portal_admin(g.user)
-            db.execute("INSERT INTO users(full_name,username,password_hash,department_id,role,"
-                       "must_change_password,is_dept_admin,can_ddb_attachment,approval_status,is_active) "
-                       "VALUES (?,?,?,?,'user',1,0,0,?,?)",
-                       (full_name, username, generate_password_hash(password), dept["id"],
-                        "approved" if approved else "pending", 1 if approved else 0))
+            uid = db.execute("INSERT INTO users(full_name,username,password_hash,department_id,role,"
+                             "must_change_password,is_dept_admin,can_ddb_attachment,approval_status,is_active,created_by) "
+                             "VALUES (?,?,?,?,'user',1,0,0,?,?,?)",
+                             (full_name, username, generate_password_hash(password), dept["id"],
+                              "approved" if approved else "pending", 1 if approved else 0, g.user["id"])).lastrowid
             log(db, "user_add_pending" if not approved else "user_add", username)
+            if not approved:
+                # The portal admin and permission users get a bell notification
+                # (2026-11-05): tapping it opens the Users page at this exact
+                # pending account, ready to approve or reject.
+                notify(db, admin_ids(db),
+                       f"New account waiting for approval: {full_name} ({username}), {dept['name']}.",
+                       f"/admin/users?status=pending#user-{uid}", skip=g.user["id"])
             db.commit()
             if approved:
                 flash(f"User created. Temporary password for {username}: {password}", "secret")

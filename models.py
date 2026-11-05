@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS users (
     deleted_by           INTEGER REFERENCES users(id), -- who deleted the account
     bin_purged           INTEGER NOT NULL DEFAULT 0,   -- removed from the Recycle Bin list, work kept until the 30 days end
     approval_status      TEXT NOT NULL DEFAULT 'approved', -- approved, or pending (dept-admin-created, not functional yet)
+    created_by           INTEGER REFERENCES users(id), -- who created the account (for approval notifications)
     theme                TEXT NOT NULL DEFAULT 'auto', -- light, dark or auto
     warn_days            INTEGER NOT NULL DEFAULT 3,   -- reminder warning: 1, 3 or 7 days ahead
     created_at           TEXT NOT NULL DEFAULT (datetime('now','localtime'))
@@ -692,6 +693,7 @@ def init_db():
         conn.executescript(SCHEMA)
         _ensure_column(conn, "departments", "attachments_enabled", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "departments", "attachment_max_mb", "INTEGER NOT NULL DEFAULT 10")
+        _ensure_column(conn, "users", "created_by", "INTEGER REFERENCES users(id)")  # who created the account (2026-11-05)
         _ensure_column(conn, "users", "is_dept_admin", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INTEGER NOT NULL DEFAULT 0")

@@ -619,7 +619,7 @@ def send_ddb_meeting_notifications(db, now=None):
                 continue
             text = (f"You have a meeting at {when_text}" if uid == r["owner_id"]
                     else f"{r['owner_name']} has a meeting at {when_text}")
-            notify(db, [uid], text, f"/deptdb/row/{r['rid']}")
+            notify(db, [uid], text, ddb_row_link(db, r["rid"]))
             sent += 1
     return sent
 
@@ -1019,6 +1019,22 @@ def ddb_values(db, row_ids):
         for r in db.execute(f"SELECT row_id,column_id,value FROM ddb_values WHERE row_id IN ({q})", chunk):
             out[r["row_id"]][r["column_id"]] = r["value"]
     return out
+
+
+def ddb_row_link(db, rid):
+    """Link to a Department Database row in place: the list page on the row's
+    own tab and page, with an anchor that highlights the row for a moment
+    (2026-11-05). Used by notifications and by Locate so the row is found
+    in context instead of opening the row detail page."""
+    row = db.execute("SELECT department_id, tab_id, updated_at FROM ddb_rows WHERE id=?", (rid,)).fetchone()
+    if row is None:
+        return "/deptdb"
+    before = db.execute(
+        "SELECT COUNT(*) FROM ddb_rows WHERE tab_id=? AND deleted_at IS NULL "
+        "AND (updated_at > ? OR (updated_at = ? AND id > ?))",
+        (row["tab_id"], row["updated_at"], row["updated_at"], rid)).fetchone()[0]
+    page = before // config.PER_PAGE + 1
+    return f"/deptdb?dept={row['department_id']}&tab={row['tab_id']}&page={page}#row-{rid}"
 
 
 def ddb_history(db, row_id, user, action, field=None, old=None, new=None):

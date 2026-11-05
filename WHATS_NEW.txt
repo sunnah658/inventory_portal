@@ -1,4 +1,23 @@
 ==============================================================================
+ UPDATE: APPROVAL NOTIFICATIONS, MY INVOICES TAB, PRINT WITHOUT HISTORY,
+ PROFESSIONAL ROW HIGHLIGHT, NOTIFICATION LINKS (2026-11-05)
+==============================================================================
+ When a dept admin creates an account, the portal admin and permission
+ users now get a notification; tapping it opens the Users page at that
+ exact pending account to approve or reject. The creating dept admin is
+ told when it is approved or rejected. The Invoices tab has a new "My
+ invoices" sub-tab next to All, listing only your invoices. Printed
+ Department Database rows and records no longer show Edit history. The
+ row opened by Locate or from a notification now gets a soft blue
+ highlight that fades after 1.5 seconds, instead of the yellow cells
+ with an orange outline. Tapping any notification opens its exact
+ target: a DeptDB row in place with the highlight, a user approval, a
+ record, or the Shared with me tab. .env untouched. See README section
+ 32. Upgrade: ./backup.sh, copy live .env OUTSIDE the folder first,
+ unzip only this zip, restore live .env if it differs, docker compose
+ up -d --build. Apply only this latest zip.
+
+==============================================================================
  UPDATE: MY DEPARTMENT TAB - OWN DEPTDB WORK ONLY, WITH LOCATE (2026-11-05)
 ==============================================================================
  The "My department" tab on the My records page is now on every user's

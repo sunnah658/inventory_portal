@@ -1561,3 +1561,62 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 32. USER APPROVAL NOTIFICATIONS, MY INVOICES TAB, PRINT WITHOUT
+    EDIT HISTORY, PROFESSIONAL ROW HIGHLIGHT, NOTIFICATION LINKS
+    (2026-11-05)
+    1. User creation approval notifications. Until now, when a dept
+    admin created an account, it only sat as "Pending approval"
+    on the Users page and nobody was told. Now the moment a dept
+    admin creates an account, every portal admin and every user
+    with portal administrative permission gets a bell
+    notification with the new person's name and department.
+    Tapping it opens the Users page filtered to pending accounts,
+    at that exact person's row, with Approve and Reject right
+    there. When the admin approves the account, the dept admin
+    who created it gets a notification saying it was approved
+    and can now log in; when it is rejected, they get a
+    notification saying it was rejected, so they are not left
+    waiting. Tapping that notification opens the dept admin's
+    own Users page at the account. The account now records who
+    created it (users.created_by, added automatically on
+    upgrade); accounts created before this update notify the
+    dept admins of their department instead.
+    2. My invoices sub-tab. The Invoices tab had sub-tabs for
+    All and for each invoice type, and "My invoices" only as an
+    option in the user dropdown. There is now a "My invoices"
+    sub-tab next to All, listing only the current user's
+    invoices across all types, with its own count beside it.
+    The dropdown is unchanged, and search, status and sort
+    still carry across the sub-tabs.
+    3. Print without Edit history. The printed Department
+    Database row page (and the printed record page) showed the
+    Edit history section even though it is marked not to print:
+    a later print rule that lays the page out for printing
+    (.stack) overrode the do-not-print mark on the same element.
+    That rule now leaves do-not-print elements alone, so the
+    printed page has no Edit history. The screen page is
+    unchanged, and Edit history is still shown there.
+    4. Professional row highlight. The row opened by Locate (or
+    from a notification) used to get yellow cells with a hard
+    orange outline. It now gets a soft blue tint that fades
+    away on its own after 1.5 seconds, with no outline.
+    5. Notification links. Every notification that points at
+    something now opens that exact place when tapped, in the
+    same tab. A Department Database row (meeting reminders and
+    row shares) opens the Department Database page on the row's
+    own tab and page, with the same soft 1.5-second highlight
+    on the row. A user approval opens the Users page at that
+    pending account. A record opens its detail page, and a bulk
+    share opens the Shared with me tab. Notifications with
+    nothing to open (for example a blocked upload) stay as
+    plain text.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (the new
+   users.created_by column is added automatically on first
+   start). Apply only this latest zip, not the older ones in
+   order.

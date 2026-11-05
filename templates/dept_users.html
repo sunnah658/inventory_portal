@@ -5,7 +5,7 @@
   <div class="acts"><a class="b p" href="{{ url_for('admin.dept_user_add') }}">+ Add user</a></div></div>
 {% if can_portal_admin and departments %}<form class="tools" method="get"><select name="dept" aria-label="Department"><option value="">Choose a department</option>{% for d in departments %}<option value="{{ d['id'] }}" {{ 'selected' if dept['id'] == d['id'] }}>{{ d['name'] }}</option>{% endfor %}</select><button class="b" type="submit">Show</button></form>{% endif %}
 <div class="tb">{% if rows %}<table><thead><tr><th>Full name</th><th>Username</th><th>Role</th><th>Status</th><th>Records</th></tr></thead><tbody>
-{% for u in rows %}<tr class="r"><td><span class="{{ user_name_class(u) }}">{{ u['full_name'] }}</span></td><td>{{ u['username'] }}</td>
+{% for u in rows %}<tr class="r" id="user-{{ u['id'] }}"><td><span class="{{ user_name_class(u) }}">{{ u['full_name'] }}</span></td><td>{{ u['username'] }}</td>
 <td>{% if u['role'] == 'admin' %}<span class="pill b2">Admin</span>{% elif u['is_dept_admin'] %}<span class="pill b2">Department admin</span>{% else %}User{% endif %}{% if u['can_portal_admin'] %} <span class="pill b2">Portal administrative permission</span>{% endif %}</td>
 <td>{% if u['approval_status'] == 'pending' %}<span class="s a">Pending approval</span>{% elif u['is_active'] %}Active{% else %}<span class="s a">Locked</span>{% endif %} {% if u['must_change_password'] %}<span class="pill">Temporary password</span>{% endif %}</td><td>{{ u['item_count'] }}</td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="empty">No users in this department yet.</div>{% endif %}</div>

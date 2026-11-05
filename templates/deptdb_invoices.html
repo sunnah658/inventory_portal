@@ -29,7 +29,8 @@
   <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
 </div>
 <div class="tabs" style="margin-top:8px">
-  <a class="tab {{ 'on' if invtype == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user=user_filter, status=status, q=q, sort=sort) }}">All · {{ counts.all }}</a>
+  <a class="tab {{ 'on' if invtype == 'all' and user_filter != 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user=user_filter, status=status, q=q, sort=sort) }}">All · {{ counts.all }}</a>
+  <a class="tab {{ 'on' if invtype == 'all' and user_filter == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='mine', status=status, q=q, sort=sort) }}">My invoices · {{ counts.mine }}</a>
   {% for st in sub_tabs %}<a class="tab {{ 'on' if invtype_id == st['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', invtype=st['id'], user=user_filter, status=status, q=q, sort=sort) }}">{{ st['name'] }} · {{ counts[st['id']] }}</a>{% endfor %}
 </div>
 {% if create_templates %}

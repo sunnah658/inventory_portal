@@ -69,7 +69,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 /* ---------- tables */
 .tb{background:var(--card);border-radius:14px;overflow-x:auto;box-shadow:var(--shadow);animation:up .55s .08s both}
 table{width:100%;border-collapse:collapse;font-size:.9rem}th{text-align:left;padding:12px 15px;background:var(--head);color:var(--soft);font-size:.78rem;font-weight:800;white-space:nowrap}
-td{padding:12px 15px;border-top:1px solid var(--line);vertical-align:top}tr.r{transition:background .2s}tr.r:nth-child(even){background:var(--stripe)}tr.r:hover{background:var(--hover)}tr.r:target td{background:#fff3cd;outline:2px solid #d9a400;outline-offset:-2px}
+td{padding:12px 15px;border-top:1px solid var(--line);vertical-align:top}tr.r{transition:background .2s}tr.r:nth-child(even){background:var(--stripe)}tr.r:hover{background:var(--hover)}@keyframes rowflash{from{background:#dbeafe}to{background:transparent}}tr.r:target td{animation:rowflash 1.5s ease-out forwards}
 td.chk,th.chk{width:34px;padding-right:0}td.chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
 .clamp{max-width:260px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}.num{font-variant-numeric:tabular-nums}
 .s{display:inline-block;padding:3px 11px;border-radius:99px;font-size:.78rem;font-weight:800;background:var(--chip);color:var(--soft)}.s.g{background:var(--g-bg);color:var(--g-tx)}.s.a{background:var(--a-bg);color:var(--a-tx)}.s.r{background:var(--r-bg);color:var(--r-tx)}
@@ -166,7 +166,7 @@ body{background:#fff;color:#000;font-size:10.5pt}
 /* everything that is only for working on screen is hidden when printing */
 .top,.tools,.acts,.noprint,.msg,.tabs,.pager,.alert,.bulkbar,.chk,.actcell,.nt,.hint:not(.keepprint),.sub:not(.keepprint),details,.badge,.skip,button,nav{display:none!important}
 main{padding:0;max-width:none}
-.tw{display:block!important}.stack{display:block!important}
+.tw{display:block!important}.stack:not(.noprint){display:block!important}
 a{color:inherit!important;text-decoration:none!important}
 h1{font-size:15pt;margin:0 0 6px}h2{font-size:11.5pt;margin:0 0 6px}
 .print-head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #49c7f5;padding-bottom:8px;margin-bottom:12px;font-size:9.5pt}.print-head img{height:36px;background:#fff}.print-head span{margin-left:auto;color:#506a7b}

@@ -12,7 +12,7 @@
   <select name="status" aria-label="Status filter"><option value="">All statuses</option><option value="active" {{ 'selected' if status_filter == 'active' }}>Active</option><option value="locked" {{ 'selected' if status_filter == 'locked' }}>Locked</option><option value="pending" {{ 'selected' if status_filter == 'pending' }}>Pending approval</option></select>
   <button class="b" type="submit">Search</button>{% if q or dept or user_filter or role_filter or status_filter %}<a href="{{ url_for('admin.users') }}" style="align-self:center">Clear</a>{% endif %}</form>
 <div class="tb">{% if rows %}<table><thead><tr><th>Full name</th><th>Username</th><th>Department</th><th>Role</th><th>Status</th><th>Records</th><th></th></tr></thead><tbody>
-{% for u in rows %}<tr class="r"><td><span class="{{ user_name_class(u) }}">{{ u['full_name'] }}</span></td><td>{{ u['username'] }}</td><td><span class="dp">{{ u['department_name'] or '' }}</span></td>
+{% for u in rows %}<tr class="r" id="user-{{ u['id'] }}"><td><span class="{{ user_name_class(u) }}">{{ u['full_name'] }}</span></td><td>{{ u['username'] }}</td><td><span class="dp">{{ u['department_name'] or '' }}</span></td>
 <td>{% if u['role'] == 'admin' %}<span class="pill b2">Admin</span>{% elif u['is_dept_admin'] %}<span class="pill b2">Department admin</span>{% else %}User{% endif %}{% if u['can_portal_admin'] %} <span class="pill b2">Portal administrative permission</span>{% endif %}</td>
 <td>{% if u['approval_status'] == 'pending' %}<span class="s a">Pending approval</span>{% elif u['is_active'] %}Active{% else %}<span class="s a">Locked</span>{% endif %} {% if u['must_change_password'] %}<span class="pill">Temporary password</span>{% endif %}</td><td>{{ u['item_count'] }}</td>
 <td class="actcell">
