@@ -1,4 +1,14 @@
 ==============================================================================
+ UPDATE: DASHBOARD "LOGGED IN NOW" CARD LINKS TO SESSIONS (2026-11-05)
+==============================================================================
+ The "Logged in now" card on the dashboard now has a "See all" link,
+ just like the Reminders card. Clicking it opens the Sessions page,
+ which lists the users who are currently active, with their IP
+ address, browser, login time, and last activity. The Sessions page
+ itself is unchanged. The link is visible to the portal admin and to
+ a portal-administrative-permission user.
+
+==============================================================================
  UPDATE: WATCHER NOTIFICATIONS, NOTIFICATION MULTI-SELECT (2026-11-05)
 ==============================================================================
  Each level now watches the level below it: nobody is told about the

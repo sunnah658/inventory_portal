@@ -1730,3 +1730,25 @@
    No database change is needed for this update (notifications use
    the existing notifications table). Apply only this latest zip,
    not the older ones in order.
+
+==============================================================================
+ 35. DASHBOARD "LOGGED IN NOW" CARD LINKS TO SESSIONS (2026-11-05)
+==============================================================================
+ The "Logged in now" card on the dashboard now has a "See all" link
+ under the number, in the same place and style as the "See all" link
+ on the Reminders card. Clicking it opens the Sessions page
+ (Admin > Sessions), which lists the users who are currently active,
+ with their IP address, browser, login time, and last activity, and
+ lets the admin log someone out. The Sessions page itself is
+ unchanged. The dashboard and the Sessions page are both open to the
+ portal admin and to a portal-administrative-permission user, so both
+ see the link and can open the page; a dept admin cannot open the
+ dashboard, as before.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (only one template
+   line changed). Apply only this latest zip, not the older ones
+   in order.
