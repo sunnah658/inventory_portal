@@ -17,6 +17,8 @@
     <button class="b printguard" type="button">Print</button>
   </div>
 </div>
+{% if depts %}<form method="get" class="tools" style="margin-bottom:10px"><label for="dsel" style="margin:0">Department</label>
+  <select id="dsel" name="dept" style="width:auto" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept['id'] }}>{{ d['name'] }}</option>{% endfor %}</select></form>{% endif %}
 {% if tab %}
 <div class="kp">
   {{ kpi('Total rows', counts.all, '+' ~ (design.week|sum(attribute='n') if design and design.week else 0) ~ ' this week') }}
@@ -25,8 +27,6 @@
   {{ kpi('Deleted', counts.deleted) }}
 </div>
 <div class="tw"><div>
-{% if depts %}<form method="get" class="tools" style="margin-bottom:10px"><label for="dsel" style="margin:0">Department</label>
-  <select id="dsel" name="dept" style="width:auto" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept['id'] }}>{{ d['name'] }}</option>{% endfor %}</select></form>{% endif %}
 {{ listbar('ddb.index', {'dept': dept['id'], 'tab': tab['id'], 'mine': 1 if mine else '', 'deleted': 1 if deleted else ''}, q, info, names) }}
 <div class="tabs">
   {% for tb in tabs %}<a class="tab {{ 'on' if tb['id'] == tab['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}

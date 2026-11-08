@@ -82,6 +82,8 @@ table{width:100%;border-collapse:collapse;font-size:.9rem}th{text-align:left;pad
 td{padding:12px 15px;border-top:1px solid var(--line);vertical-align:top}tr.r{transition:background .2s}tr.r:nth-child(even){background:var(--stripe)}tr.r:hover{background:var(--hover)}@keyframes rowflash{from{background:#dbeafe}to{background:transparent}}tr.r:target td{animation:rowflash 1.5s ease-out forwards}
 /* Notifications page: the message is the thing to read, so it is bigger than the table body. (2026-11-07) */
 .tb td.msg{font-size:1.05rem;line-height:1.5}
+/* Notifications page: no visible lines between the messages. (2026-11-08) */
+.tb.notif td{border-top:0}
 td.chk,th.chk{width:34px;padding-right:0}td.chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
 .clamp{max-width:260px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}.num{font-variant-numeric:tabular-nums}
 .s{display:inline-block;padding:3px 11px;border-radius:99px;font-size:.78rem;font-weight:800;background:var(--chip);color:var(--soft)}.s.g{background:var(--g-bg);color:var(--g-tx)}.s.a{background:var(--a-bg);color:var(--a-tx)}.s.r{background:var(--r-bg);color:var(--r-tx)}
@@ -125,6 +127,9 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--c
 .vbar.hot{background:var(--accent)}
 .vbarlab{display:flex;gap:14px;margin-top:8px}
 .vbarlab span{flex:1 1 auto;text-align:center;font-size:.72rem;color:var(--soft)}
+/* Value on top of each bar (dashboard charts). Mirrors .vbarlab so the number sits over its own bar. (2026-11-08) */
+.vbarval{display:flex;gap:14px}
+.vbarval span{flex:1 1 auto;text-align:center;font-size:.85rem;font-weight:800;color:var(--ink)}
 /* Dashboard settings dropdown + filled pie charts (2026-11-06) */
 .dset{position:relative}
 .dset>summary{list-style:none;cursor:pointer}
@@ -233,19 +238,19 @@ body{background:#fff;color:#000;font-size:10.5pt}
 /* everything that is only for working on screen is hidden when printing */
 .top,.tools,.acts,.noprint,.msg,.tabs,.pager,.alert,.bulkbar,.chk,.actcell,.nt,.hint:not(.keepprint),.sub:not(.keepprint),details,.badge,button,nav,.selcol,.selbtns,.selcount,.subtabs,.kp,.rail{display:none!important}
 main{padding:12mm 14mm;max-width:none}
-.tw{display:block!important}.stack:not(.noprint){display:block!important}
+.tw{display:block!important}.stack:not(.noprint):not(.rail){display:block!important}
 a{color:inherit!important;text-decoration:none!important}
 h1{font-size:15pt;margin:0 0 6px}h2{font-size:11.5pt;margin:0 0 6px}
 .print-head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #49c7f5;padding-bottom:8px;margin-bottom:12px;font-size:9.5pt}.print-head img{height:36px;background:#fff}.print-head span{margin-left:auto;color:#506a7b}
 .hd{display:block!important;margin-bottom:8px}
-.tb,.card{box-shadow:none;border:1px solid #ccd;background:#fff;color:#000;break-inside:avoid;margin-bottom:10px}
+.tb,.card{box-shadow:none;border:1px solid #ccd;background:#fff;color:#000;break-inside:avoid;margin-bottom:10px}.tb{overflow:visible}
 .ig{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 18px}.ig .k{display:block;font-size:8pt;color:#506a7b;text-transform:uppercase}
 table{font-size:8.5pt}.label{border-style:solid}
 .tb table,.tb tbody,.tb tr,.tb td{display:revert!important}.tb thead{display:table-header-group!important}.tb td::before{display:none!important}
 /* List tables fit the page: fixed layout, text wraps inside its cell, and
    the header repeats on every page. Columns past the first 7, which are
    hidden on screen, are shown in print. */
-.tb table{table-layout:fixed;width:100%}.tb th{width:var(--w,auto)}.tb th,.tb td{overflow-wrap:break-word;vertical-align:top}
+.tb table{table-layout:fixed;width:100%}.tb th{width:var(--w,auto);white-space:normal}.tb th,.tb td{overflow-wrap:break-word;vertical-align:top;padding:6px 8px}
 /* The actions column, the tick-box column and rows that were not selected
    never print (these beat the display:revert rule above). */
 .tb th.noprint,.tb td.noprint,.tb th.chk,.tb td.chk,.tb th.selcol,.tb td.selcol,.tb tr.hideme{display:none!important}

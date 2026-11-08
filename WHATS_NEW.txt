@@ -1,4 +1,21 @@
 ==============================================================================
+ UPDATE: DASHBOARD VALUES + SETTINGS SAVE + NOTIFICATIONS + MY RECORDS +
+         PRINT FIX + PORTAL-ADMIN DEPT SWITCH (2026-11-08)
+==============================================================================
+ 1. Dashboard charts show the count above each bar, so you can read
+    how many records each department added. Dashboard settings Save
+    works again (it used to fail with the 400 "page has expired"
+    error). The Notifications table has no visible lines, and
+    clicking Select now really shows the tick boxes. My records no
+    longer shows Follow-ups due or Recent activity (they stay on the
+    Department Database page). Printing the Department Database no
+    longer prints the right-hand cards, the headings and data line
+    up, and all columns fit. The portal admin's Department dropdown
+    is back on the Department Database page, even when his own
+    department has no tabs yet.
+ 2. NOTHING ELSE CHANGED.
+
+==============================================================================
  UPDATE: CSS CLEANUP — MUTED TEXT FIX + DEAD RULES REMOVED (2026-11-07)
 ==============================================================================
  1. The tab breakdown in the Dashboard's "Department database"

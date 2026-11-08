@@ -17,7 +17,7 @@
     <select id="wd" name="warn_days">{% for n in choices %}<option value="{{ n }}" {{ 'selected' if n == warn_days }}>{{ n }} day{{ '' if n == 1 else 's' }} ahead</option>{% endfor %}</select></div>
   <button class="b p" type="submit">Save</button></form>
   <div class="sub" style="margin-top:8px">For the records you own you always get a message 1 day before and on the day itself (from {{ '%02d' % hour }}:00 in the morning), plus one more at the number of days you choose here.</div></div>
-<div class="tb">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_mark_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="tb notif">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_mark_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div id="selActions" class="acts" style="display:none;margin-bottom:10px"><button class="b p" type="submit">Mark as read</button><button class="b dg" type="submit" formaction="{{ url_for('flow.notifications_clear_selected') }}" onclick="return confirm('Clear the selected notifications?');">Clear</button></div>
 <table><thead><tr><th class="selcol" style="display:none"></th><th>Message</th><th>When</th></tr></thead><tbody>
 {% for n in rows %}<tr class="r"><td class="selcol" style="display:none"><input type="checkbox" name="nid" value="{{ n['id'] }}"></td><td class="msg">{% if not n['read_at'] %}<span class="badge" style="margin-right:6px">New</span>{% endif %}{% if n['link'] %}<a href="{{ n['link'] }}">{{ n['text'] }}</a>{% else %}{{ n['text'] }}{% endif %}</td><td>{{ n['created_at'] }}</td></tr>{% endfor %}
@@ -29,7 +29,7 @@
   btn.addEventListener('click', function(){
     var on = btn.textContent === 'Select';
     btn.textContent = on ? 'Cancel' : 'Select';
-    document.querySelectorAll('.selcol').forEach(function(el){ el.style.display = on ? '' : 'none'; });
+    document.querySelectorAll('.selcol').forEach(function(el){ el.style.display = on ? 'table-cell' : 'none'; });
     var a = document.getElementById('selActions'); if (a) a.style.display = on ? '' : 'none';
   });
 })();

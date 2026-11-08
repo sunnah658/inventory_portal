@@ -2083,3 +2083,67 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 43. DASHBOARD VALUES + SETTINGS SAVE FIX + NOTIFICATIONS LINES & SELECT
+     + MY RECORDS RAIL + PRINT FIX + PORTAL-ADMIN DEPT SWITCH (2026-11-08)
+==============================================================================
+ 1. Dashboard charts now show the value. In "Records by department"
+    and in "Department database", the count is printed in bold above
+    each bar (0 shows as 0), so you can read how many records each
+    department added without guessing from the bar height. The pie
+    view is unchanged (it already showed the counts in its legend).
+    Nothing else on the Dashboard changed.
+ 2. Dashboard settings Save works again. Saving any dashboard
+    setting used to fail with the "400 — This page has expired"
+    error. The settings form was the only form in the portal that
+    sent the security token's name instead of the token itself, so
+    the server rejected every save. That one line is fixed; changing
+    a tick box or a Bar/Pie switch and clicking Save now applies it
+    and returns to the Dashboard. No other form was touched.
+ 3. Notifications table has no visible lines any more. The Message /
+    When table on the Notifications page (the same page every user
+    sees) no longer shows the lines between the rows. Other tables
+    in the portal keep their lines; only this table changed.
+ 4. Notifications Select now shows the tick boxes. Clicking Select
+    (it becomes Cancel, and Mark as read / Clear appear) now really
+    shows a tick box on the left of every notification, so you can
+    tick just the ones you want and then Mark as read or Clear only
+    those. The boxes were in the page but a stylesheet rule kept
+    hiding them after the script ran; the script now sets them to
+    show properly. Clicking Cancel hides them again. Mark all as
+    read and Clear all are unchanged.
+ 5. My records is simpler. The "Follow-ups due" and the "Recent
+    activity" cards are removed from the My records page (both the
+    main view and the "My department" tab), for all users. Quick
+    actions stays. Follow-ups due and Recent activity are
+    Department Database activity, and they stay on the Department
+    Database page, the Dashboard and the Notifications page.
+ 6. Printing the Department Database is fixed. (a) The right-hand
+    cards (Follow-ups due, Recent activity, Quick actions) no
+    longer print — they were slipping through because a print rule
+    that lays the page out was overriding the rule that hides them.
+    (b) The print table's headings and data now line up: long
+    headings wrap instead of spilling into the next column, and
+    the cells have tighter padding so there is room. (c) All
+    columns print and fit: the table keeps its fixed layout with
+    the per-column widths, text wraps inside its cell, and the
+    table no longer clips at the side. The "Selected rows" line,
+    the print header and the landscape page are unchanged.
+ 7. The portal admin can switch departments again. The Department
+    dropdown on the Department Database page is back and is always
+    visible for the portal admin (and for a permission user), even
+    when the admin's own department has no tabs yet — before, it
+    was hidden inside the "this department has a tab" block, so an
+    admin whose own department had no tabs had no way to switch
+    and could not open another department's database at all. The
+    dropdown sits under the page heading; picking a department
+    shows that department's tabs, rows and invoices, and it stays
+    on that department when paging or changing tabs. Regular users
+    and dept admins never see the dropdown, as before.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.

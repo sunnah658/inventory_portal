@@ -5,7 +5,7 @@
   <div class="acts"><a class="b" href="{{ url_for('bulk.reports') }}">Reports</a><a class="b" href="{{ url_for('bulk.export_admin', fmt='xlsx') }}">Export Excel</a><a class="b p" href="{{ url_for('records.new_record') }}">+ Add record</a>
   <details class="dset"><summary class="b">&#9881; Dashboard settings</summary>
     <div class="card dset-panel"><form method="post" action="{{ url_for('admin.dashboard_settings_save') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <h2 style="margin-bottom:2px">Dashboard settings</h2>
       <p class="hint" style="margin:0 0 8px">Choose what shows on your dashboard. Saved for your own login.</p>
       <label class="dchk"><input type="checkbox" name="show_kpi" value="1" {% if dsettings.show.kpi %}checked{% endif %}><span><b>KPI cards</b><small>Total records, Active users, Open repairs, Reminders, Logged in now</small></span></label>
@@ -34,6 +34,7 @@
         <div class="pleg">{% for d in by_dept %}{% if d['n'] > 0 %}<span class="pl"><em style="background:{{ dept_colours[d['id']] }}"></em>{{ d['name'] }} <b style="color:{{ dept_colours[d['id']] }}">{{ d['n'] }}</b></span>{% endif %}{% endfor %}<span class="pl total">Total <b>{{ total_by_dept }}</b></span></div>
         {% else %}<p class="hint">No records yet.</p>{% endif %}
       {% else %}
+        <div class="vbarval">{% for d in by_dept %}<span>{{ d['n'] }}</span>{% endfor %}</div>
         <div class="vbars">{% for d in by_dept %}<div class="vbar" style="height:{{ (100 * d['n'] / max_dept)|round(1) }}%;background:{{ dept_colours[d['id']] }}"></div>{% endfor %}</div>
         <div class="vbarlab">{% for d in by_dept %}<span>{{ d['name'] }}</span>{% endfor %}</div>
       {% endif %}
@@ -44,6 +45,7 @@
         <div class="pie">{{ pie_ddb|safe }}</div>
         <div class="pleg">{% for e in ddb %}{% if e['total'] > 0 %}<span class="pl"><em style="background:{{ e['colour'] }}"></em>{{ e['name'] }} <b style="color:{{ e['colour'] }}">{{ e['total'] }}</b></span>{% endif %}{% endfor %}<span class="pl total">Total <b>{{ total_ddb }}</b></span></div>
       {% else %}
+        <div class="vbarval">{% for e in ddb %}<span>{{ e['total'] }}</span>{% endfor %}</div>
         <div class="vbars">{% for e in ddb %}<div class="vbar" style="height:{{ (100 * e['total'] / max_ddb)|round(1) }}%;background:{{ e['colour'] }}"></div>{% endfor %}</div>
         <div class="vbarlab">{% for e in ddb %}<span>{{ e['name'] }}</span>{% endfor %}</div>
       {% endif %}
