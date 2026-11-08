@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0b6e99">
   <title>{% block title %}Portal{% endblock %} - {{ company_name }}</title>
   <link rel="icon" href="{{ icon_url }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=css_v) }}">
   {% block head %}{% endblock %}
   <script>(function(){var h=document.documentElement;if(h.getAttribute('data-theme')==='auto'){h.setAttribute('data-theme',window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}})();</script>
 </head>

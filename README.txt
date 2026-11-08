@@ -2194,3 +2194,126 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 45. NOTIFICATION LINES REALLY GONE + STYLESHEET CACHE FIX (2026-11-08)
+==============================================================================
+ 1. Why the lines were still there after the last build. The last
+    build only took the top border off the cells
+    (.tb.notif td{border-top:0}), but the lines were not coming
+    from that border at all. The message cell in the table carries
+    class="msg" (added so the message text is bigger), and the
+    stylesheet also uses .msg for the flash-message box, which has
+    border:1px solid (a full border on all four sides, in the dark
+    text colour). So every message cell was drawn inside its own
+    dark box: the left and right edges and the bottom edge came
+    from that flash-message border, and in a collapsed table the
+    bottom edge of one cell shows as the line under it. Taking
+    only the top border off could never remove those edges.
+    That is also why the lines looked dark instead of the pale
+    table-line colour.
+ 2. The fix is to take the whole border off the notification
+    table cells: .tb.notif td{border:0} in the stylesheet, which
+    removes the flash-message border and the table's own top
+    border together. The bigger message text is untouched (it
+    comes from a separate .tb td.msg font-size rule, not from the
+    border). The messages now sit on one plain background with
+    no lines between them. Other tables keep their lines and
+    shading, and the flash-message box keeps its border.
+ 3. As a guarantee, the Notifications page now also carries the
+    flat-table style inside the page itself (a small <style> block
+    in templates/notifications.html, using the {% block head %}
+    slot). It sets the same three rules as the stylesheet: no
+    border on the cells, no shading on alternate rows, no shading
+    on hover. Because it is part of the page, it applies even if
+    the browser is still holding an old copy of style.css.
+ 4. The stylesheet now also has the same cache protection as the
+    logo, so a future stylesheet fix cannot sit unseen behind a
+    saved copy. The page loads style.css with a version number
+    taken from the file's own change time (app.py inject_common
+    computes css_v from the modification time of
+    static/style.css, and base.html loads
+    /static/style.css?v=<that number>). Whenever style.css
+    changes, the address changes too, so the browser fetches a
+    fresh copy instead of reusing the saved one. This applies to
+    every page, so any future stylesheet fix takes effect right
+    after the build is applied, with no cache clearing needed.
+ 5. NOTHING ELSE CHANGED.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 46. DASHBOARD "RECENT ACTIVITY" REMOVED — IT LIVES ONLY ON DEPARTMENT DATABASE (2026-11-08)
+==============================================================================
+ 1. Follow-ups due and Recent activity now live only on the
+    Department Database page, with no exception. The Dashboard's
+    own "Recent activity" overview section is gone: it showed the
+    latest activity-log entries on the Dashboard, which is not
+    the Department Database page, so it did not belong there
+    under the rule that these two belong only on Department
+    Database. The section is removed from the Dashboard
+    (templates/admin_dashboard.html), and its tick box is removed
+    from the Dashboard settings panel, so there is no way to turn
+    it back on. The setting itself is removed too: "recent" is
+    out of core.DASHBOARD_SECTIONS (so it leaves the defaults),
+    and the settings save route no longer writes a show_recent
+    value. A previously saved show_recent value is simply
+    ignored, never an error, and no database change is needed.
+ 2. What stays: the Recent activity card in the Department
+    Database page's right rail (templates/_design6.html
+    recent_card, called only from deptdb.html and
+    deptdb_invoices.html), and Follow-ups due in the same rail.
+    The Dashboard keeps everything else: KPI cards, Records by
+    department, Department database, Records by status, Logged
+    in now, Reminders coming up and Quick actions, with the same
+    settings, colours and Bar/Pie switches. The Activity page
+    (/admin/activity) is untouched — it is a full page of its own,
+    not the Dashboard section.
+ 3. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 26 (notification lines really gone, stylesheet
+    cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 47. NOTIFICATION LINES GONE AT THE SOURCE — MESSAGE CELL NO LONGER SHARES THE FLASH-MESSAGE CLASS (2026-11-08)
+==============================================================================
+ 1. Why the lines were still showing. Build 26 took the whole
+    border off the notification table cells (.tb.notif
+    td{border:0}), which removes the border in the stylesheet.
+    But the message cell itself still carried class="msg", the
+    same class the flash-message box uses, so the cell still
+    matched the .msg rule (border:1px solid) and a saved or
+    slow-loading stylesheet could still draw the box around
+    every message. Overriding the border was not enough; the
+    cell should never have shared that class at all.
+ 2. The cell no longer shares the class. The message cell in
+    templates/notifications.html is now <td class="nmsg">, and
+    the bigger-text rule in the stylesheet is now
+    .tb td.nmsg{font-size:1.05rem;line-height:1.5}, so the
+    message text is exactly as big as before. The .msg rule
+    itself is untouched and still gives the flash-message box
+    (and the "Public QR is ON/OFF" and "Please select the data
+    row first" messages) its border. The .tb.notif td{border:0}
+    rule and the inline flat-table style on the Notifications
+    page stay in place as a safety net, and the stylesheet
+    version (css_v) stays too. The messages now sit on one plain
+    background with no lines between them, in every browser, with
+    no dependence on which copy of the stylesheet loads first.
+ 3. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.

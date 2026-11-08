@@ -128,8 +128,7 @@ def dashboard():
         dsettings=dsettings, dept_colours=colours, ddb=ddb, max_ddb=max_ddb,
         pie_records=pie_records, pie_ddb=pie_ddb, pie_status=pie_status,
         total_by_dept=total_by_dept, total_ddb=total_ddb,
-        soon=soon_list, logged_in=logged_in,
-        recent=db.execute("SELECT * FROM activity_log ORDER BY id DESC LIMIT 6").fetchall())
+        soon=soon_list, logged_in=logged_in)
 
 
 @bp.route("/dashboard/settings", methods=["POST"])
@@ -139,7 +138,7 @@ def dashboard_settings_save():
     each of the two department charts is a bar chart or a pie chart)."""
     db = get_db()
     show = {}
-    for key in ("kpi", "records_by_dept", "ddb", "status", "recent",
+    for key in ("kpi", "records_by_dept", "ddb", "status",
                 "logged_in", "reminders", "quick"):
         show[key] = request.form.get(f"show_{key}") == "1"
     chart = {}

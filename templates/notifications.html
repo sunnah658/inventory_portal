@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% from "_design6.html" import kpi, quick_card with context %}
+{# Flat notification table, inline in the page so it applies even if the
+   browser is still holding a cached copy of style.css. #}
+{% block head %}<style>.tb.notif td{border:0}.tb.notif tr.r:nth-child(even){background:transparent}.tb.notif tr.r:hover{background:transparent}</style>{% endblock %}
 {% block title %}Notifications{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Notifications</h1><p class="hint">Shares, comments, replaced files, owner changes and reminders.</p></div>
@@ -20,7 +23,7 @@
 <div class="tb notif">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_mark_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div id="selActions" class="acts" style="display:none;margin-bottom:10px"><button class="b p" type="submit">Mark as read</button><button class="b dg" type="submit" formaction="{{ url_for('flow.notifications_clear_selected') }}" onclick="return confirm('Clear the selected notifications?');">Clear</button></div>
 <table><thead><tr><th class="selcol" style="display:none"></th><th>Message</th><th>When</th></tr></thead><tbody>
-{% for n in rows %}<tr class="r"><td class="selcol" style="display:none"><input type="checkbox" name="nid" value="{{ n['id'] }}"></td><td class="msg">{% if not n['read_at'] %}<span class="badge" style="margin-right:6px">New</span>{% endif %}{% if n['link'] %}<a href="{{ n['link'] }}">{{ n['text'] }}</a>{% else %}{{ n['text'] }}{% endif %}</td><td>{{ n['created_at'] }}</td></tr>{% endfor %}
+{% for n in rows %}<tr class="r"><td class="selcol" style="display:none"><input type="checkbox" name="nid" value="{{ n['id'] }}"></td><td class="nmsg">{% if not n['read_at'] %}<span class="badge" style="margin-right:6px">New</span>{% endif %}{% if n['link'] %}<a href="{{ n['link'] }}">{{ n['text'] }}</a>{% else %}{{ n['text'] }}{% endif %}</td><td>{{ n['created_at'] }}</td></tr>{% endfor %}
 </tbody></table></form>{% else %}<div class="empty">No notifications.</div>{% endif %}</div>
 <script>
 (function(){

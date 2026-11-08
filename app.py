@@ -158,11 +158,16 @@ def create_app():
             return session["csrf"]
         db = get_db()
         version = logo_version()
+        # Stylesheet version: changes when style.css changes, so browsers fetch a
+        # fresh stylesheet after an upgrade instead of reusing a cached copy.
+        css_path = os.path.join(app.static_folder, "style.css")
+        css_v = int(os.path.getmtime(css_path)) if os.path.exists(css_path) else 0
         data = {"csrf_token": csrf_token,
                 "theme": g.get("theme", "auto"),
                 "now_text": datetime.now().strftime("%d %b %Y %H:%M"),
                 "company_name": setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
                 "logo_url": url_for("brand.logo", v=version), "icon_url": url_for("brand.icon", v=version),
+                "css_v": css_v,
                 "reauth_fresh": reauth_fresh(), "unread": 0,
                 "can_reports": False, "has_view_tabs": False, "can_portal_admin": False, "user_name_class": user_name_class}
         user = g.get("user")

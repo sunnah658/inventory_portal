@@ -1108,7 +1108,7 @@ def design_rail(db, user, dept_id=None, tab_id=None):
 # existing DONUT_COLORS order (green first) so its colours do not change.
 DEPT_COLORS = ["#0b6e99", "#17a05d", "#e8a317", "#d9534f", "#7b61c4", "#9db3c1"]
 
-DASHBOARD_SECTIONS = ["kpi", "records_by_dept", "ddb", "status", "recent",
+DASHBOARD_SECTIONS = ["kpi", "records_by_dept", "ddb", "status",
                       "logged_in", "reminders", "quick"]
 DASHBOARD_DEFAULTS = {"show": {s: True for s in DASHBOARD_SECTIONS},
                       "chart": {"records_by_dept": "bar", "ddb": "bar"}}

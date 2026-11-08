@@ -1,4 +1,55 @@
 ==============================================================================
+ UPDATE: NOTIFICATION LINES GONE AT THE SOURCE — MESSAGE CELL RENAMED (2026-11-08)
+==============================================================================
+ 1. The lines are gone at the source this time. The message cell
+    used to share class="msg" with the flash-message box, so it
+    kept matching that box's full dark border. The cell is now
+    class="nmsg" with its own bigger-text rule, so it never
+    matches the flash-message border at all. The message text is
+    exactly as big as before, and the flash-message box keeps its
+    border. The border:0 rule and the inline flat-table style
+    stay as a safety net. The messages sit on one plain
+    background with no lines between them.
+ 2. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+==============================================================================
+ UPDATE: DASHBOARD "RECENT ACTIVITY" REMOVED — ONLY ON DEPARTMENT DATABASE (2026-11-08)
+==============================================================================
+ 1. The Dashboard's own "Recent activity" section is gone, and its
+    tick box is gone from the Dashboard settings panel. Follow-ups
+    due and Recent activity now live only on the Department
+    Database page, with no exception. The Recent activity card in
+    the Department Database page's right rail stays, and so does
+    Follow-ups due. Everything else on the Dashboard stays: KPI
+    cards, Records by department, Department database, Records by
+    status, Logged in now, Reminders coming up and Quick actions.
+    A previously saved setting for it is simply ignored.
+ 2. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 26 (notification lines really gone, stylesheet
+    cache-busting, inline flat-table style).
+
+==============================================================================
+ UPDATE: NOTIFICATION LINES REALLY GONE + STYLESHEET CACHE FIX (2026-11-08)
+==============================================================================
+ 1. The lines on the Notifications page are now gone for real. The
+    last build only took the top border off the cells, but the
+    lines were not coming from that border. The message cell
+    carries class="msg" (for the bigger text), and the stylesheet
+    also uses .msg for the flash-message box, which has a full
+    dark border on all four sides. Every message was drawn inside
+    its own dark box. The fix takes the whole border off the
+    notification table cells (.tb.notif td{border:0}), so the
+    messages sit on one plain background with no lines between
+    them. The stylesheet now also loads with a version number
+    that changes whenever the file changes (the same protection
+    the logo already had), so the browser fetches a fresh copy
+    after an upgrade, and the Notifications page carries the
+    flat-table style inside the page itself as a guarantee.
+ 2. NOTHING ELSE CHANGED.
+
+==============================================================================
  UPDATE: BIG BOX FIX + PRINT ALIGNMENT + NOTIFICATION LINES +
          FOLLOW-UPS / RECENT ACTIVITY ONLY ON DEPARTMENT DATABASE (2026-11-08)
 ==============================================================================

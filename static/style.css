@@ -81,9 +81,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 table{width:100%;border-collapse:collapse;font-size:.9rem}th{text-align:left;padding:12px 15px;background:var(--head);color:var(--soft);font-size:.78rem;font-weight:800;white-space:nowrap}
 td{padding:12px 15px;border-top:1px solid var(--line);vertical-align:top}tr.r{transition:background .2s}tr.r:nth-child(even){background:var(--stripe)}tr.r:hover{background:var(--hover)}@keyframes rowflash{from{background:#dbeafe}to{background:transparent}}tr.r:target td{animation:rowflash 1.5s ease-out forwards}
 /* Notifications page: the message is the thing to read, so it is bigger than the table body. (2026-11-07) */
-.tb td.msg{font-size:1.05rem;line-height:1.5}
+.tb td.nmsg{font-size:1.05rem;line-height:1.5}
 /* Notifications page: no visible lines between the messages. (2026-11-08) */
-.tb.notif td{border-top:0}
+.tb.notif td{border:0}
 .tb.notif tr.r:nth-child(even){background:transparent}
 .tb.notif tr.r:hover{background:transparent}
 td.chk,th.chk{width:34px;padding-right:0}td.chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
