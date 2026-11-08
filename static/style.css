@@ -84,6 +84,8 @@ td{padding:12px 15px;border-top:1px solid var(--line);vertical-align:top}tr.r{tr
 .tb td.msg{font-size:1.05rem;line-height:1.5}
 /* Notifications page: no visible lines between the messages. (2026-11-08) */
 .tb.notif td{border-top:0}
+.tb.notif tr.r:nth-child(even){background:transparent}
+.tb.notif tr.r:hover{background:transparent}
 td.chk,th.chk{width:34px;padding-right:0}td.chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
 .clamp{max-width:260px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}.num{font-variant-numeric:tabular-nums}
 .s{display:inline-block;padding:3px 11px;border-radius:99px;font-size:.78rem;font-weight:800;background:var(--chip);color:var(--soft)}.s.g{background:var(--g-bg);color:var(--g-tx)}.s.a{background:var(--a-bg);color:var(--a-tx)}.s.r{background:var(--r-bg);color:var(--r-tx)}
@@ -172,9 +174,9 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--c
 /* ---------- login and public page (Frost 6: frosted card left, hero text right) */
 .lgx{position:relative;display:flex;min-height:100vh;overflow:hidden;background:linear-gradient(140deg,#0d2437 0%,#0f5a7a 55%,#49c7f5 130%)}
 .blob{position:absolute;border-radius:50%;opacity:.5}
-.b1{width:480px;height:480px;background:#49c7f5;left:-120px;top:-140px}
-.b2{width:380px;height:380px;background:#0d86b8;right:-90px;bottom:-110px}
-.b3{width:220px;height:220px;background:#e8eff4;right:220px;top:90px;opacity:.25}
+.blob.b1{width:480px;height:480px;background:#49c7f5;left:-120px;top:-140px}
+.blob.b2{width:380px;height:380px;background:#0d86b8;right:-90px;bottom:-110px}
+.blob.b3{width:220px;height:220px;background:#e8eff4;right:220px;top:90px;opacity:.25}
 .side{position:relative;width:48%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px;gap:14px}
 .lcard{width:100%;max-width:440px;background:rgba(255,255,255,.88);border:1px solid rgba(255,255,255,.7);border-radius:20px;padding:38px 38px 30px;box-shadow:0 24px 60px rgba(0,0,0,.28);animation:up .8s .15s both}
 .lcard img{width:150px;display:block;margin:0 auto 18px;animation:pop .9s .3s both}
@@ -250,7 +252,7 @@ table{font-size:8.5pt}.label{border-style:solid}
 /* List tables fit the page: fixed layout, text wraps inside its cell, and
    the header repeats on every page. Columns past the first 7, which are
    hidden on screen, are shown in print. */
-.tb table{table-layout:fixed;width:100%}.tb th{width:var(--w,auto);white-space:normal}.tb th,.tb td{overflow-wrap:break-word;vertical-align:top;padding:6px 8px}
+.tb table{table-layout:fixed;width:100%}.tb col{width:var(--w,auto)}.tb th{width:var(--w,auto);white-space:normal;font-size:8.5pt}.tb th,.tb td{overflow-wrap:break-word;vertical-align:top;padding:6px 8px}
 /* The actions column, the tick-box column and rows that were not selected
    never print (these beat the display:revert rule above). */
 .tb th.noprint,.tb td.noprint,.tb th.chk,.tb td.chk,.tb th.selcol,.tb td.selcol,.tb tr.hideme{display:none!important}

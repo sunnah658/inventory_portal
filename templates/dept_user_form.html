@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_design6.html" import followups_card, recent_card, quick_card with context %}
+{% from "_design6.html" import quick_card with context %}
 {% block title %}Add user — {{ dept['name'] }}{% endblock %}
 {% block content %}
 <div class="tw"><div>
@@ -18,8 +18,6 @@
 <div class="stack rail">
   <div class="card"><h2>About this account</h2>
     <p class="hint">This account is for your department only, as a regular user. It cannot log in until the portal admin approves it. The user must change the temporary password at first login.</p></div>
-  {{ followups_card() }}
-  {{ recent_card() }}
   {{ quick_card([('Users in my department', url_for('admin.dept_users'), True)]) }}
 </div></div>
 {% endblock %}

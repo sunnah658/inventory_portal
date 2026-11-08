@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
+{% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Database row {{ row['id'] }}{% endblock %}
 {% block content %}
 <div class="hd">
@@ -49,8 +49,6 @@
       {% elif h.action == 'unshared' %} removed a share from this row
       {% else %} {{ h.action }}{% endif %} <small>{{ h.at }}</small></div>{% endfor %}
   </div></div>
-  {{ followups_card() }}
-  {{ recent_card() }}
   {{ quick_card([
     ('Edit', url_for('ddb.edit_row', rid=row['id']), True) if can_edit else None,
     ('Back to the list', url_for('ddb.index', dept=row['department_id'], tab=row['tab_id']), False),

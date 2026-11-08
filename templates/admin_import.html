@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_design6.html" import followups_card, recent_card, quick_card with context %}
+{% from "_design6.html" import quick_card with context %}
 {% block title %}Import users{% endblock %}
 {% block content %}
 <div class="tw"><div>
@@ -14,8 +14,6 @@
 <div class="stack rail">
   <div class="card"><h2>After the import</h2>
     <p class="hint">New users get a temporary password and must change it at first login. The result page shows the passwords once — download or print them there, they are not shown again. Accounts imported here can log in at once.</p></div>
-  {{ followups_card() }}
-  {{ recent_card() }}
   {{ quick_card([
     ('Users', url_for('admin.users'), True),
     ('Download a sample file', url_for('static', filename='users_template.csv'), False),

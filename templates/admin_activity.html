@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
+{% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Activity{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Activity</h1><p class="hint">The last 300 actions with the IP address of the computer: logins, failed logins, changes, shares, deletes, downloads and admin work. Lines older than {{ keep_days }} days are removed automatically.</p></div>
@@ -15,8 +15,6 @@
 {% else %}<div class="empty">Nothing recorded yet.</div>{% endif %}</div>
 </div>
 <div class="stack rail">
-  {{ followups_card() }}
-  {{ recent_card() }}
   {{ quick_card([
     ('Export Excel', url_for('bulk.report', name='activity', fmt='xlsx'), True),
     ('Reports', url_for('bulk.reports'), False),

@@ -1,4 +1,20 @@
 ==============================================================================
+ UPDATE: BIG BOX FIX + PRINT ALIGNMENT + NOTIFICATION LINES +
+         FOLLOW-UPS / RECENT ACTIVITY ONLY ON DEPARTMENT DATABASE (2026-11-08)
+==============================================================================
+ 1. The big empty box on the Sessions and Users pages is gone: it
+    was the small blue pill ("This is you", "Admin", "Department
+    admin") blown up to the size of a login-page circle by a
+    stylesheet name clash. The login circles are now named so they
+    only apply to the login page. Printing the Department Database
+    lines the headings up with their data (a column guide for the
+    whole table, headings the same size as the data). The
+    Notifications table is now completely flat, with no lines and
+    no shaded rows. "Follow-ups due" and "Recent activity" are now
+    only on the Department Database page, not on every page.
+ 2. NOTHING ELSE CHANGED.
+
+==============================================================================
  UPDATE: DASHBOARD VALUES + SETTINGS SAVE + NOTIFICATIONS + MY RECORDS +
          PRINT FIX + PORTAL-ADMIN DEPT SWITCH (2026-11-08)
 ==============================================================================

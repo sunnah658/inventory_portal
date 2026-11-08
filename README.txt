@@ -2147,3 +2147,50 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 44. BIG BOX FIX + PRINT ALIGNMENT + NOTIFICATION LINES + FOLLOW-UPS /
+     RECENT ACTIVITY ONLY ON DEPARTMENT DATABASE (2026-11-08)
+==============================================================================
+ 1. The big empty box on the Sessions page and the Users page is
+    gone. It was the small blue pill ("This is you" on Sessions;
+    "Admin" and "Department admin" on Users) blown up to 380 by
+    380 pixels. The login page's three decorative circles were
+    named .b1, .b2 and .b3 in the stylesheet, and that bare .b2
+    name also matched the pill, so every pill got the circle's
+    size. The circles are now named .blob.b1, .blob.b2 and .blob.b3,
+    so they only apply to the login page. The login page keeps its
+    circles, and the pills are their normal small size again on
+    every page that uses them (Sessions, Users, record details,
+    public view, departments, columns).
+ 2. Printing the Department Database lines the headings up with
+    their data. The table now has a column guide, so every
+    column's width is set once for the whole table and the heading
+    and the data under it share it, instead of the width coming
+    only from the heading row. The print headings are now the same
+    size as the data (8.5 pt), so short headings fit on one line
+    more often instead of breaking onto two lines. The right-hand
+    cards still do not print, all columns still print, and the
+    "Selected rows" line and landscape page are unchanged.
+ 3. The Notifications table is now completely flat. Taking the
+    border off was not enough: the table also shaded every second
+    row, and the edge between a white row and a shaded row still
+    showed as a line. The shading (and the shading on hover) is
+    now off for this table only, so the messages sit on one plain
+    background with nothing between them. Other tables keep their
+    lines and shading.
+ 4. "Follow-ups due" and "Recent activity" are now only on the
+    Department Database page. They were in the side panel of
+    almost every page (Sessions, Users, Notifications, record
+    pages, invoice pages, settings and more). Both cards are
+    removed from all of those pages and stay only on the
+    Department Database page (and its Invoices tab), where they
+    belong. The Dashboard's own "Recent activity" section is a
+    dashboard overview, not one of these cards, so it stays and
+    can still be hidden from the Dashboard settings.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.

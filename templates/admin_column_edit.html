@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_design6.html" import followups_card, recent_card, quick_card with context %}
+{% from "_design6.html" import quick_card with context %}
 {% block title %}Edit column{% endblock %}
 {% block content %}
 <div class="tw"><div>
@@ -20,8 +20,6 @@
 <div class="stack rail">
   <div class="card"><h2>What you can change</h2>
     <p class="hint">Rename the column, change whether it is required or shown, and switch reminders and the time on or off. The type cannot be changed — add a new column instead. A protected column cannot be removed until its protection is removed on the columns page.</p></div>
-  {{ followups_card() }}
-  {{ recent_card() }}
   {{ quick_card([
     ('Back to columns', url_for('admin.columns', did=col['department_id']), True),
     ('Departments', url_for('admin.departments'), False),
