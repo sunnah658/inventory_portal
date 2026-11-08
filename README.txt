@@ -2317,3 +2317,24 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 48. LOGIN HEADING: "WELCOME BACK" BECOMES "WELCOME" (2026-11-08)
+==============================================================================
+ 1. The heading inside the frosted card on the login page now
+    reads "Welcome" instead of "Welcome back"
+    (templates/login.html). One word changed, nothing else: the
+    sign-in hint, Username, Password, Department select, Sign in
+    button, Appearance selector, hero text and pills on the right,
+    and the login behaviour (CSRF, errors, department validation,
+    lockout, forced password change) are all unchanged.
+ 2. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 28 (notification lines gone at the source), build 27
+    (Dashboard Recent activity removed) and build 26 (stylesheet
+    cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
