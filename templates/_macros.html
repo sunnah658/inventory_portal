@@ -16,21 +16,23 @@
 </div>{% endif %}
 {% endmacro %}
 
-{# Record tables grouped by department. mode: 'mine' (shows Shared with) or 'shared' (shows Owner). bulk adds tick boxes #}
-{% macro groups_table(ctx, mode, bulk=False) %}
+{# Record tables grouped by department. mode: 'mine' (shows Shared with) or 'shared' (shows Owner). bulk adds tick boxes.
+   sel=True (My records) also shows every column in print, with print widths. #}
+{% macro groups_table(ctx, mode, bulk=False, sel=False) %}
 {% for grp in ctx.groups %}
   {% if ctx.multi %}<h2 class="grp">{{ grp.dept_name }}</h2>{% endif %}
+  {% set showcols = grp.columns if sel else grp.columns[:7] %}
   <div class="tb"><table>
     <thead><tr>
       {% if bulk %}<th class="chk"><input type="checkbox" class="selall" aria-label="Select all"></th>{% endif %}
-      {% for c in grp.columns[:7] %}<th>{{ c.name }}</th>{% endfor %}
-      <th>{{ 'Owner' if mode == 'shared' else 'Shared with' }}</th><th class="noprint"></th>
+      {% for c in showcols %}<th{% if sel and loop.index > 7 %} class="xcol"{% endif %}{% if sel %} style="--w:{{ grp.widths[loop.index0] }}%"{% endif %}>{{ c.name }}</th>{% endfor %}
+      <th{% if sel %} style="--w:{{ grp.widths[grp.columns|length] }}%"{% endif %}>{{ 'Owner' if mode == 'shared' else 'Shared with' }}</th><th class="noprint"></th>
     </tr></thead>
     <tbody>
     {% for r in grp.rows %}{% set vals = ctx.vmap[r.id] %}{% set lvl = ctx.levels.get(r.id) %}
     <tr class="r">
       {% if bulk %}<td class="chk"><input type="checkbox" class="rowck" name="ids" value="{{ r.id }}" form="bulkform" aria-label="Select"></td>{% endif %}
-      {% for c in grp.columns[:7] %}<td>{{ cell(c, vals.get(c.id)) }}</td>{% endfor %}
+      {% for c in showcols %}<td{% if sel and loop.index > 7 %} class="xcol"{% endif %}>{{ cell(c, vals.get(c.id)) }}</td>{% endfor %}
       <td>{% if mode == 'shared' %}<span class="{{ user_name_class(r) }}">{{ r.owner_name }}</span>{% else %}{% for n in ctx.shares[r.id] %}<span class="dp">{{ n }}</span>{% endfor %}{% endif %}</td>
       <td class="actcell noprint">
         <a class="b sm" href="{{ url_for('records.detail', rid=r.id) }}">Open</a>
@@ -114,8 +116,12 @@ document.addEventListener('change',function(e){var t=e.target;if(t.classList.con
 <small>{{ h.at }}</small></div>
 {% endmacro %}
 
+{# Eye button for a password box: tap to show the password, tap again to hide it.
+   Used inside a <div class="pw-wrap"> around the password input. #}
+{% macro pw_eye() %}<button type="button" class="pw-eye" aria-label="Show password"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5.5C5.6 3.6 8.6 2.5 12 2.5c1.9 0 3.7.4 5.3 1.1M21 12s-3.5 6.5-10 6.5c-1.9 0-3.7-.4-5.3-1.1"/><circle cx="12" cy="12" r="2.8"/><line x1="4" y1="4" x2="20" y2="20"/></svg></button>{% endmacro %}
+
 {# Asks for the admin's password unless it was typed a moment ago #}
-{% macro reauth() %}{% if not reauth_fresh %}<input class="pw" type="password" name="admin_password" placeholder="Your password to confirm" autocomplete="current-password" required aria-label="Your password">{% endif %}{% endmacro %}
+{% macro reauth() %}{% if not reauth_fresh %}<div class="pw-wrap" style="margin-top:8px"><input type="password" name="admin_password" placeholder="Your password to confirm" autocomplete="current-password" required aria-label="Your password">{{ pw_eye() }}</div>{% endif %}{% endmacro %}
 
 {# The input boxes of a record / department-database form (also used by the department database) #}
 {% macro record_fields(cols, values) %}

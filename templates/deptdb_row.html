@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Database row {{ row['id'] }}{% endblock %}
 {% block content %}
 <div class="hd">
@@ -13,6 +14,11 @@
   </div>
 </div>
 {% if row['deleted_at'] %}<div class="alert">This row was deleted on {{ row['deleted_at'] }}.</div>{% endif %}
+<div class="kp">
+  {{ kpi('Fields', cols|length) }}
+  {{ kpi('Shared with', shares|length) }}
+  {{ kpi('Changes', history|length) }}
+</div>
 <div class="tw"><div class="stack">
   <div class="card"><h2>Details</h2><div class="ig">
     {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}</span>{% if c['col_type'] == 'attachment' %}{% if attach_urls and attach_urls.get(c['id']) %}<a href="{{ attach_urls[c['id']] }}">Download {{ vals.get(c['id']) }}</a>{% else %}{{ vals.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (vals.get(c['id']) or '')|showdt }}{% else %}{{ vals.get(c['id']) or '' }}{% endif %}</div>{% endfor %}
@@ -27,13 +33,13 @@
       <div class="fd"><label>Share with a specific user</label><select name="user_id">{% for u in users %}<option value="{{ u['id'] }}">{{ u['full_name'] }} ({{ u['dept_name'] or 'no department' }})</option>{% endfor %}</select></div>
       <div class="fd"><label>Permission</label><select name="permission"><option value="view">View only</option><option value="edit">Can edit</option></select></div>
       <button class="b" type="submit" name="kind" value="user">Share with user</button></form>
-    {% if shares %}<h2 style="margin-top:16px">Shared with</h2>
-      {% for s in shares %}<div class="ck" style="gap:8px"><span style="flex:1"><b>{{ s['dept_name'] or s['user_name'] }}</b> <span class="sub">{{ 'Can edit' if s['permission'] == 'edit' else 'View only' }}</span></span>
-        <form method="post" action="{{ url_for('ddb.row_share_delete', rid=row['id'], sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form></div>{% endfor %}{% endif %}
-  </div>{% elif shares %}<div class="card noprint"><h2>Shared with</h2>
-    {% for s in shares %}<div><b>{{ s['dept_name'] or s['user_name'] }}</b> <span class="sub">{{ 'Can edit' if s['permission'] == 'edit' else 'View only' }}</span></div>{% endfor %}</div>{% endif %}
+  </div>{% endif %}
   </div>
-  <aside class="stack noprint"><div class="card"><h2>Edit history</h2><div class="tl">
+  <div class="stack rail noprint">
+  {% if shares %}<div class="card"><h2>Shared with</h2>
+      {% for s in shares %}<div class="ck" style="gap:8px"><span style="flex:1"><b>{{ s['dept_name'] or s['user_name'] }}</b> <span class="sub">{{ 'Can edit' if s['permission'] == 'edit' else 'View only' }}</span></span>
+        {% if can_share %}<form method="post" action="{{ url_for('ddb.row_share_delete', rid=row['id'], sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>{% endif %}</div>{% endfor %}</div>{% endif %}
+  <div class="card"><h2>Edit history</h2><div class="tl">
     {% for h in history %}<div class="ev"><b>{{ h.full_name or 'System' }}</b>
       {% if h.action == 'created' %} added this row{% if h.new_value %} ({{ h.new_value }}){% endif %}
       {% elif h.action == 'edit' %} changed <b>{{ h.field }}</b><br><del>{{ h.old_value or '(blank)' }}</del> &rarr; <ins>{{ h.new_value or '(blank)' }}</ins>
@@ -42,5 +48,13 @@
       {% elif h.action == 'shared' %} shared this row{% if h.new_value %} with {{ h.new_value }}{% endif %}
       {% elif h.action == 'unshared' %} removed a share from this row
       {% else %} {{ h.action }}{% endif %} <small>{{ h.at }}</small></div>{% endfor %}
-  </div></div></aside></div>
+  </div></div>
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([
+    ('Edit', url_for('ddb.edit_row', rid=row['id']), True) if can_edit else None,
+    ('Back to the list', url_for('ddb.index', dept=row['department_id'], tab=row['tab_id']), False),
+    ('Print', 'print', False),
+  ] | select) }}
+  </div></div>
 {% endblock %}

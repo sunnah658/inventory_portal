@@ -1,10 +1,26 @@
 {% extends "base.html" %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Activity{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Activity</h1><p class="hint">The last 300 actions with the IP address of the computer: logins, failed logins, changes, shares, deletes, downloads and admin work. Lines older than {{ keep_days }} days are removed automatically.</p></div>
   <div class="acts"><a class="b" href="{{ url_for('bulk.report', name='activity', fmt='xlsx') }}">Export Excel</a></div></div>
+<div class="kp">
+  {{ kpi('Lines shown', rows|length) }}
+  {{ kpi('Kept for', keep_days ~ ' days', 'older lines are removed automatically') }}
+</div>
+<div class="tw"><div>
 <form class="tools" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search user, action, details or IP" aria-label="Search"><button class="b" type="submit">Search</button>{% if q %}<a href="{{ url_for('admin.activity') }}">Clear</a>{% endif %}</form>
 <div class="tb">{% if rows %}<table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th><th>IP address</th></tr></thead><tbody>
 {% for r in rows %}<tr class="r"><td>{{ r['created_at'] }}</td><td>{{ r['username'] or '' }}</td><td>{% if r['action'] in ('login_failed', 'login_blocked', 'virus_blocked', 'scan_error') %}<span class="s r">{{ r['action'] }}</span>{% else %}{{ r['action'] }}{% endif %}</td><td>{{ r['details'] or '' }}</td><td>{{ r['ip'] or '' }}</td></tr>{% endfor %}</tbody></table>
 {% else %}<div class="empty">Nothing recorded yet.</div>{% endif %}</div>
+</div>
+<div class="stack rail">
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([
+    ('Export Excel', url_for('bulk.report', name='activity', fmt='xlsx'), True),
+    ('Reports', url_for('bulk.reports'), False),
+    ('Dashboard', url_for('admin.dashboard'), False),
+  ]) }}
+</div></div>
 {% endblock %}

@@ -23,7 +23,7 @@ import config
 import models
 from auth import bp as auth_bp
 from branding import bp as brand_bp, logo_version
-from core import options_of, purge_expired, send_ddb_meeting_notifications, send_reminder_notifications, show_when
+from core import design_rail, options_of, purge_expired, send_ddb_meeting_notifications, send_reminder_notifications, show_when
 from models import get_db, setting_get
 from utils import is_portal_admin, user_name_class
 from routes_admin import bp as admin_bp
@@ -172,6 +172,16 @@ def create_app():
             data["can_reports"] = user["role"] == "admin" or bool(user["is_dept_admin"])
             data["can_portal_admin"] = is_portal_admin(user)
             data["user_name_class"] = user_name_class
+            # Design 6 rail + chart data (follow-ups, recent rows, rows added this
+            # week), scoped to the department/tab being viewed. Only data this
+            # user is already allowed to see; {} when there is nothing to show.
+            try:
+                dept_arg = request.args.get("dept", type=int)
+                tab_arg = request.args.get("tab", "")
+                tab_id = int(tab_arg) if tab_arg and tab_arg.isdigit() else None
+                data["design"] = design_rail(db, user, dept_arg, tab_id)
+            except Exception:
+                data["design"] = {}
         return data
 
     @app.template_filter("status_class")

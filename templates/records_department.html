@@ -1,17 +1,29 @@
 {% extends "base.html" %}
 {% from "_macros.html" import pager with context %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}My records{% endblock %}
+{% block head %}<style>@media print{@page{size:A4 landscape;margin:0}}</style>{% endblock %}
 {% block content %}
 <div class="hd">
   <div><h1>My records</h1><p class="hint">Your own rows in the Department Database. Nothing here can be edited — use Locate to open a row in the Department Database.</p></div>
   <div class="acts">
     <a class="b" href="{{ url_for('ddb.index', dept=dept_id) }}">Open Department Database</a>
-    <a class="b" href="{{ url_for('records.download', tab='department', q=q) }}">Download CSV</a>
-    <button class="b" type="button" onclick="window.print()">Print</button>
+    <a class="b explink" href="{{ url_for('records.download', tab='department', q=q) }}">Download CSV</a>
+    <button class="b printguard" type="button">Print</button>
   </div>
 </div>
+<p class="msg error" id="printErr" hidden>Please select the data row first.</p>
+<p class="print-only">Selected rows · <span class="selprint-n">0</span> of {{ total }}</p>
+<div class="kp">
+  {{ kpi('My department rows', total) }}
+  {{ kpi('Tabs with my rows', groups|length) }}
+</div>
+<div class="tw"><div>
+<div class="subtabs">
 <div class="tabs">
   {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for('records.list_records', tab=t) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
+</div>
+<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>
 </div>
 <form method="get" action="{{ url_for('records.list_records') }}" class="tools">
   <input type="hidden" name="tab" value="department">
@@ -22,15 +34,29 @@
   {% for g in groups %}
   <h2 style="margin-top:16px">{{ g.tab_name }}</h2>
   <div class="tb"><table>
-    <thead><tr>{% for c in g.cols[:7] %}<th>{{ c['name'] }}</th>{% endfor %}<th class="noprint"></th></tr></thead>
+    <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in g.cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %} style="--w:{{ g.widths[loop.index0] }}%">{{ c['name'] }}</th>{% endfor %}<th class="noprint"></th></tr></thead>
     <tbody>{% for r in g.rows %}{% set v = g.vmap[r['id']] %}
-      <tr class="r">{% for c in g.cols[:7] %}<td>{% if c['col_type'] == 'attachment' %}{% if g.urls and g.urls.get(r['id'], {}).get(c['id']) %}<a href="{{ g.urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
+      <tr class="r"><td class="selcol"><input type="checkbox" class="rowck" value="{{ r['id'] }}" aria-label="Select"></td>{% for c in g.cols %}<td{% if loop.index > 7 %} class="xcol"{% endif %}>{% if c['col_type'] == 'attachment' %}{% if g.urls and g.urls.get(r['id'], {}).get(c['id']) %}<a href="{{ g.urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.index', dept=dept_id, tab=g.tab_id, page=locate_pages[r['id']]) }}#row-{{ r['id'] }}">Locate</a></td></tr>
     {% endfor %}</tbody></table>
     {% if g.cols|length > 7 %}<div class="nt">The first 7 columns are shown. Locate the row to see all fields.</div>{% endif %}</div>
   {% endfor %}
+  <p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>
   {{ pager(page, pages, 'records.list_records', keep) }}
 {% else %}
   <div class="tb"><div class="empty">{% if q %}Nothing matches your search.{% else %}You have no rows in the Department Database yet. <a href="{{ url_for('ddb.index', dept=dept_id) }}">Open the Department Database</a> to add one.{% endif %}</div></div>
 {% endif %}
+</div>
+<div class="stack rail">
+  <div class="card"><h2>About this tab</h2>
+    <p class="hint">Only your own rows in your own department's Department Database are shown here, grouped under the tab each row belongs to. Rows shared with you and invoices are not shown.</p>
+    <p class="hint">Nothing can be edited from this tab. <b>Locate</b> opens the row in the Department Database, on the exact page it sits on.</p></div>
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([
+    ('Open Department Database', url_for('ddb.index', dept=dept_id), True),
+    ('Download CSV', url_for('records.download', tab='department', q=q), False),
+    ('Print selected', 'print', False),
+  ] | select) }}
+</div></div>
 {% endblock %}

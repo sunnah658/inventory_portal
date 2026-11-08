@@ -107,6 +107,12 @@ def export_list():
     fq, order, fp, op, _info = list_options(db, g.user, request.args)
     rows = db.execute(rec_select() + " WHERE " + where + sq + fq + " ORDER BY " + order,
                       params + sp + fp + op).fetchall()
+    # A selection (ids=1,2,3) exports only those records; without it, all the
+    # records the current filters match are exported, as before.
+    ids = request.args.get("ids")
+    if ids:
+        idset = {x for x in ids.split(",") if x.isdigit()}
+        rows = [r for r in rows if str(r["id"]) in idset]
     header, out, kinds = build_table(db, rows, any(r["owner_id"] != g.user["id"] for r in rows))
     log(db, "export", f"{fmt}: {len(rows)} records ({tab})")
     db.commit()

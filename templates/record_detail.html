@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import cell, history_line with context %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Record {{ rec['id'] }}{% endblock %}
 {% block content %}
 <div class="hd">
@@ -21,6 +22,12 @@
 </div>
 {% if rec['deleted_at'] %}<div class="alert noprint">This record is in the recycle bin since {{ rec['deleted_at'] }}. <a href="{{ url_for('records.bin_page') }}">Open the recycle bin</a> to restore it.</div>{% endif %}
 {% if not can_edit and not rec['deleted_at'] %}<div class="alert noprint">You can view this record and write suggestions. Only the owner and the people it is shared with for editing can change it.</div>{% endif %}
+<div class="kp">
+  {{ kpi('Public QR views', link['views'] if link else 'Off', 'Share code ' ~ public_code if link else 'No public QR yet') }}
+  {{ kpi('Attachments', attachments|length) }}
+  {{ kpi('Comments', comments|length) }}
+  {{ kpi('Edit history', history|length) }}
+</div>
 <div class="tw">
   <div class="stack">
     <div class="card"><h2>Details</h2>
@@ -79,7 +86,7 @@
     </div>
   </div>
 
-  <aside class="stack noprint">
+  <aside class="stack rail noprint">
     {% if can_manage and not rec['deleted_at'] %}
     <div class="card" id="public"><h2>Public QR</h2>
       <p class="hint" style="margin-bottom:10px">Anyone who scans it sees only what you choose, without logging in. No history, files or costs are shown. The QR gets a unique code that any portal user can search.</p>
@@ -135,6 +142,14 @@
     {% endif %}
 
     <div class="card"><h2>Edit history</h2><div class="tl">{% for h in history %}{{ history_line(h) }}{% endfor %}</div></div>
+
+    {{ followups_card() }}
+    {{ recent_card() }}
+    {{ quick_card([
+      ('Edit', url_for('records.edit_record', rid=rec['id']), True) if can_edit else None,
+      ('Download PDF', url_for('bulk.record_pdf', rid=rec['id']), False),
+      ('My records', url_for('records.list_records'), False),
+    ] | select) }}
   </aside>
 </div>
 {% endblock %}

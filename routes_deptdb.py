@@ -34,11 +34,11 @@ import config
 import exports
 import scanner
 from auth import login_required
-from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, ddb_attachment_info,
+from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, col_weight, ddb_attachment_info,
                   ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
-                  notify, notify_ddb_task, parse_code_text, parse_form, show_when)
+                  notify, notify_ddb_task, parse_code_text, parse_form, print_col_widths, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
 
@@ -332,7 +332,7 @@ def index():
                                cols=[], rows=[], vmap={}, attach_urls={}, info={"sort": "updated", "dir": "desc", "fcol": "", "fval": ""},
                                q="", mine=False, deleted=False, total=0, page=1, pages=1,
                                counts={"all": 0, "mine": 0, "deleted": 0}, keep={}, can_add=False, names=[],
-                               show_mine=show_mine,
+                               show_mine=show_mine, widths=[],
                                depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                                if is_portal_admin(g.user) else [],
                                is_admin=is_admin, can_edit_row=lambda r: False, can_delete_row=lambda r: False)
@@ -343,6 +343,8 @@ def index():
                       "WHERE " + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
                       params + op + [config.PER_PAGE, offset]).fetchall()
     cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
+    # Print widths for this tab's columns plus the trailing Added by column.
+    widths = print_col_widths([col_weight(c["col_type"]) for c in cols] + [1.0])
     counts = {
         "all": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NULL",
                           (dept["id"], tab["id"])).fetchone()[0],
@@ -359,6 +361,7 @@ def index():
         "deptdb.html", dept=dept, tab=tab, tabs=tabs, level="manager" if is_admin else "own", cols=cols, rows=rows,
         vmap=_vmap, attach_urls=_urls, info=info, q=q, mine=mine, deleted=deleted,
         total=total, page=page, pages=pages, counts=counts, keep=keep, show_mine=show_mine,
+        widths=widths,
         can_add=can_add_here, names=[c["name"] for c in cols], is_admin=is_admin,
         depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
         if is_portal_admin(g.user) else [],
@@ -377,6 +380,12 @@ def export():
     where, params, order, op, _info, _q, _mine, _deleted = _filters(db, dept, tab, is_admin, request.args)
     rows = db.execute("SELECT r.*, u.full_name AS owner_name FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
                       "WHERE " + where + " ORDER BY " + order, params + op).fetchall()
+    # A selection (ids=1,2,3) exports only those rows; without it, everything
+    # the current filters match is exported, as before.
+    ids = request.args.get("ids")
+    if ids:
+        idset = {x for x in ids.split(",") if x.isdigit()}
+        rows = [r for r in rows if str(r["id"]) in idset]
     cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
     vals = ddb_values(db, [r["id"] for r in rows])
     header = [c["name"] for c in cols] + ["Added by", "Last updated"]
@@ -434,6 +443,9 @@ def _invoice_tab_view(db, dept, is_admin, args):
     for tid in sub:
         counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
+    for st in ("issued", "paid", "draft", "void"):
+        counts[st] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND status=?",
+                                scope + [st]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
     show_mine = _show_mine(dept)
     user_filter = args.get("user") or ""

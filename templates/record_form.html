@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% from "_macros.html" import record_fields with context %}
+{% from "_design6.html" import quick_card with context %}
 {% block title %}{{ 'Edit record' if rec else 'Add record' }}{% endblock %}
 {% block content %}
+<div class="tw"><div>
 <div class="card medium">
   <h1>{{ 'Edit record' if rec else 'Add record' }}</h1>
   <p class="hint" style="margin-bottom:18px">{% if rec %}Department: {{ rec['department_name'] }}. {% endif %}Fill only what you know. Empty fields stay blank. <span class="req">*</span> means required.</p>
@@ -18,4 +20,16 @@
       <a class="b" href="{{ url_for('records.detail', rid=rec['id']) if rec else url_for('records.list_records') }}">Cancel</a></div>
   </form>
 </div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Who can see this record</h2>
+    <p class="hint">Only you can change it. After you save it, you can share it with a whole department or one person — view only or can edit — from the record page. A department admin can also see records in their department.</p>
+    <p class="hint">Empty fields stay blank. <span class="req">*</span> means required.</p></div>
+  {% if cols %}<div class="card"><h2>Fields on this form</h2>
+    {% for c in cols %}<div class="sh"><span>{{ c['name'] }}</span><span class="sub">{{ c['col_type'] }}</span></div>{% endfor %}</div>{% endif %}
+  {{ quick_card([
+    ('My records', url_for('records.list_records'), True),
+    ('Department Database', url_for('ddb.index', dept=g.user['department_id']), False),
+  ] | select) }}
+</div></div>
 {% endblock %}

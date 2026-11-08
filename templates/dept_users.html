@@ -1,12 +1,32 @@
 {% extends "base.html" %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Users — {{ dept['name'] }}{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Users — {{ dept['name'] }}</h1><p class="hint">Department admin page: view the accounts of your own department and create an account for your own department. An account you create cannot log in until the portal admin (or a user with portal administrative permission) approves it. You cannot reset a password, lock, disable, edit or delete any user here — those are portal-admin actions.</p></div>
   <div class="acts"><a class="b p" href="{{ url_for('admin.dept_user_add') }}">+ Add user</a></div></div>
+{% set ns = namespace(pending=0, admins=0) %}
+{% for u in rows %}
+{% if u['approval_status'] == 'pending' %}{% set ns.pending = ns.pending + 1 %}{% endif %}
+{% if u['role'] == 'admin' or u['is_dept_admin'] %}{% set ns.admins = ns.admins + 1 %}{% endif %}
+{% endfor %}
+<div class="kp">
+  {{ kpi('Users in ' ~ dept['name'], rows|length) }}
+  {{ kpi('Pending approval', ns.pending, 'waiting for portal admin approval', 'w' if ns.pending else '') }}
+  {{ kpi('Department admins', ns.admins) }}
+</div>
+<div class="tw"><div>
 {% if can_portal_admin and departments %}<form class="tools" method="get"><select name="dept" aria-label="Department"><option value="">Choose a department</option>{% for d in departments %}<option value="{{ d['id'] }}" {{ 'selected' if dept['id'] == d['id'] }}>{{ d['name'] }}</option>{% endfor %}</select><button class="b" type="submit">Show</button></form>{% endif %}
 <div class="tb">{% if rows %}<table><thead><tr><th>Full name</th><th>Username</th><th>Role</th><th>Status</th><th>Records</th></tr></thead><tbody>
 {% for u in rows %}<tr class="r" id="user-{{ u['id'] }}"><td><span class="{{ user_name_class(u) }}">{{ u['full_name'] }}</span></td><td>{{ u['username'] }}</td>
 <td>{% if u['role'] == 'admin' %}<span class="pill b2">Admin</span>{% elif u['is_dept_admin'] %}<span class="pill b2">Department admin</span>{% else %}User{% endif %}{% if u['can_portal_admin'] %} <span class="pill b2">Portal administrative permission</span>{% endif %}</td>
 <td>{% if u['approval_status'] == 'pending' %}<span class="s a">Pending approval</span>{% elif u['is_active'] %}Active{% else %}<span class="s a">Locked</span>{% endif %} {% if u['must_change_password'] %}<span class="pill">Temporary password</span>{% endif %}</td><td>{{ u['item_count'] }}</td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="empty">No users in this department yet.</div>{% endif %}</div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>About this page</h2>
+    <p class="hint">You see only the accounts of your own department. You can create a regular user here; the account cannot log in until the portal admin approves it. Resetting a password, locking, editing or deleting an account is a portal-admin action.</p></div>
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([('+ Add user', url_for('admin.dept_user_add'), True)]) }}
+</div></div>
 {% endblock %}

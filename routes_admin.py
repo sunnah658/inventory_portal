@@ -10,7 +10,7 @@ import csv
 import io
 import os
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from flask import (Blueprint, abort, flash, g, redirect, render_template, request,
                    session, url_for)
@@ -20,8 +20,9 @@ import config
 from auth import admin_required, login_required
 from utils import is_portal_admin, is_true_admin
 from backup import make_backup
-from core import (COLUMN_TYPES, TYPE_LABEL, admin_ids, build_csv, column_names, create_department, get_columns,
-                  notify, notify_admin_task, rec_select, reminder_rows, search_clause, summaries_for, table_context)
+from core import (COLUMN_TYPES, TYPE_LABEL, admin_ids, build_csv, column_names, create_department, dashboard_settings,
+                  ddb_dashboard_data, dept_colours, get_columns, notify, notify_admin_task, pie_svg, rec_select,
+                  reminder_rows, save_dashboard_settings, search_clause, summaries_for, table_context)
 from import_users import import_users
 from models import get_db, log, setting_get, setting_set
 from routes_records import code_redirect, list_options
@@ -79,7 +80,7 @@ def dashboard():
         "sessions": db.execute("SELECT COUNT(*) FROM sessions WHERE revoked=0 AND last_seen > "
                                "datetime('now','localtime',?)", (f"-{config.IDLE_MINUTES} minutes",)).fetchone()[0],
     }
-    by_dept = db.execute("SELECT d.name, COUNT(r.id) AS n FROM departments d LEFT JOIN records r "
+    by_dept = db.execute("SELECT d.id, d.name, COUNT(r.id) AS n FROM departments d LEFT JOIN records r "
                          "ON r.department_id=d.id AND r.deleted_at IS NULL GROUP BY d.id "
                          "ORDER BY n DESC, d.name").fetchall()
     status = db.execute(
@@ -88,17 +89,66 @@ def dashboard():
         "JOIN records r ON r.id=v.record_id AND r.deleted_at IS NULL "
         "GROUP BY v.value ORDER BY n DESC LIMIT 6").fetchall()
     total_status = sum(s["n"] for s in status)
-    donut, start = [], 0.0
-    for i, s in enumerate(status):                       # CSS conic-gradient for the donut chart
-        end = start + 100.0 * s["n"] / total_status
-        donut.append(f"{DONUT_COLORS[i]} {start:.2f}% {end:.2f}%")
-        start = end
+    # Dashboard settings (per admin) + department colours + Department
+    # database widget. Each department keeps its colour in both charts.
+    dsettings = dashboard_settings(db, g.user["id"])
+    colours = dept_colours(db)
+    ddb = ddb_dashboard_data(db)
+    for e in ddb:
+        e["colour"] = colours.get(e["dept_id"], "#0b6e99")
+    max_ddb = max([e["total"] for e in ddb] + [1])
+    # Filled pies (no hollow centre): each slice in its department's colour,
+    # the count written on the slice in white. The status pie keeps the
+    # existing DONUT_COLORS so its colours do not change.
+    pie_records = pie_svg([(colours.get(d["id"], "#0b6e99"), d["n"]) for d in by_dept if d["n"] > 0])
+    pie_ddb = pie_svg([(e["colour"], e["total"]) for e in ddb if e["total"] > 0])
+    pie_status = pie_svg([(DONUT_COLORS[i], s["n"]) for i, s in enumerate(status) if s["n"] > 0])
+    total_by_dept = sum(d["n"] for d in by_dept)
+    total_ddb = sum(e["total"] for e in ddb)
+    soon_list = []
+    for r in soon[:6]:
+        d = dict(r, summary=sums[r["id"]])
+        try:
+            dt = datetime.strptime(d["reminder_date"][:10], "%Y-%m-%d").date()
+            d["day"] = "%02d" % dt.day
+            d["mon"] = dt.strftime("%b").upper()
+        except (ValueError, TypeError, KeyError):
+            d["day"] = ""
+            d["mon"] = ""
+        soon_list.append(d)
+    logged_in = db.execute(
+        "SELECT u.full_name, u.username, d.name AS dept_name, s.last_seen FROM sessions s "
+        "JOIN users u ON u.id=s.user_id JOIN departments d ON d.id=u.department_id "
+        "WHERE s.revoked=0 AND s.last_seen > datetime('now','localtime',?) "
+        "ORDER BY s.last_seen DESC LIMIT 5",
+        (f"-{config.IDLE_MINUTES} minutes",)).fetchall()
     return render_template(
         "admin_dashboard.html", stats=stats, by_dept=by_dept, max_dept=max([d["n"] for d in by_dept] + [1]),
         status=status, total_status=total_status, colors=DONUT_COLORS,
-        donut_css="conic-gradient(" + ", ".join(donut) + ")" if donut else "",
-        soon=[dict(r, summary=sums[r["id"]]) for r in soon[:6]],
+        dsettings=dsettings, dept_colours=colours, ddb=ddb, max_ddb=max_ddb,
+        pie_records=pie_records, pie_ddb=pie_ddb, pie_status=pie_status,
+        total_by_dept=total_by_dept, total_ddb=total_ddb,
+        soon=soon_list, logged_in=logged_in,
         recent=db.execute("SELECT * FROM activity_log ORDER BY id DESC LIMIT 6").fetchall())
+
+
+@bp.route("/dashboard/settings", methods=["POST"])
+@admin_required
+def dashboard_settings_save():
+    """Save one admin's dashboard settings (which sections show, and whether
+    each of the two department charts is a bar chart or a pie chart)."""
+    db = get_db()
+    show = {}
+    for key in ("kpi", "records_by_dept", "ddb", "status", "recent",
+                "logged_in", "reminders", "quick"):
+        show[key] = request.form.get(f"show_{key}") == "1"
+    chart = {}
+    for key in ("records_by_dept", "ddb"):
+        v = request.form.get(f"chart_{key}", "bar")
+        chart[key] = v if v in ("bar", "pie") else "bar"
+    save_dashboard_settings(db, g.user["id"], {"show": show, "chart": chart})
+    flash("Dashboard settings saved.")
+    return redirect(url_for("admin.dashboard"))
 
 
 # ================================================================ all records

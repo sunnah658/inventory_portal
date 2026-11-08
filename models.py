@@ -479,6 +479,15 @@ CREATE INDEX IF NOT EXISTS idx_attempts_ip     ON login_attempts(ip, at);
 CREATE INDEX IF NOT EXISTS idx_notif_user      ON notifications(user_id, read_at);
 CREATE INDEX IF NOT EXISTS idx_comments_record ON comments(record_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user   ON sessions(user_id);
+
+-- Dashboard settings (2026-11-06): one row per admin, JSON with which
+-- dashboard sections that admin wants to see and which chart type (bar/pie)
+-- each of the two department charts uses. No row = everything shown, bars.
+CREATE TABLE IF NOT EXISTS dashboard_settings (
+    user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    settings_json TEXT NOT NULL DEFAULT '{}',
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 """
 
 

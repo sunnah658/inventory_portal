@@ -1386,6 +1386,58 @@
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
 
+ 1. DASHBOARD SETTINGS BUTTON. Top right of the Dashboard, next to
+    Reports / Export Excel / + Add record, there is now a "Dashboard
+    settings" button. It opens a panel with a tick box for each
+    dashboard section: KPI cards, Records by department, Department
+    database, Records by status, Recent activity, Logged in now,
+    Reminders coming up and Quick actions. Unticking a section hides
+    it from YOUR dashboard. The setting is saved per admin (each
+    admin's own login): hiding a section on your login does not hide
+    it for anyone else. Tick everything back on to bring a section
+    back. Nothing is deleted — a hidden section is only hidden.
+ 2. DEPARTMENT DATABASE WIDGET. A new section on the Dashboard,
+    "Department database", right after "Records by department". For
+    each department it shows the total Department Database rows, and
+    underneath, each tab's row count (Client Info 3, Meetings 1,
+    Invoices 2, and so on). The Invoices tab is counted too: the
+    total is all the department's DeptDB rows plus its invoices.
+    Only tabs that have rows are listed; a department with no rows
+    shows nothing in the breakdown. The numbers come from the live
+    Department Database, so the widget always matches it.
+ 3. EACH DEPARTMENT HAS ITS OWN COLOUR. In both department charts
+    the bars/slices are coloured per department, from the portal's
+    chart colours (teal, green, amber, red, purple, grey-blue). A
+    department keeps the same colour in both charts and every time
+    you look, even when the counts change. The "Records by status"
+    chart keeps its existing colours (by status, not by department).
+ 4. BAR / PIE CHART SWITCH. In the Dashboard settings panel, under
+    "Records by department" and under "Department database", there
+    is a Bar | Pie chart switch for each chart, set independently.
+    Bar shows the vertical bars (as before, now in each
+    department's colour). Pie chart shows a big filled pie: each
+    slice is its department's colour, and the count is written on
+    the slice in white (white is the ink that reads on every slice
+    colour — the department's own colour on its own slice would
+    disappear into it). Under the pie, the legend shows each
+    department with its count in that department's colour, and the
+    Total at the end. "Records by status" is now the same filled
+    pie, the same size, so all three charts match.
+ 5. NOTHING ELSE CHANGED. The login page is unchanged. Every other
+    page, tab, filter, button and permission is exactly as it was.
+    The dashboard still has its "See all" links, Select / Select
+    all and the print guard are untouched, and the password eye is
+    still on every password box. The KPI row and the rail are still
+    hidden when printing.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   The upgrade creates one new table (dashboard_settings) for the
+   per-admin settings; your data and the live .env are not touched.
+   Apply only this latest zip, not the older ones in order.
+
  27. INVOICE PDF SHARE CODE IN THE BOTTOM RIGHT CORNER (2026-11-05)
     In the invoice PDF only, the share code is now flush-right in
     the bottom right corner: the QR is flush-right in its column
@@ -1752,3 +1804,282 @@
    No database change is needed for this update (only one template
    line changed). Apply only this latest zip, not the older ones
    in order.
+
+==============================================================================
+ 36. SELECT / SELECT ALL + PRINT GUARD + LANDSCAPE PRINT WITH ALL COLUMNS
+     (2026-11-06)
+==============================================================================
+ 1. SELECT AND SELECT ALL. On every Department Database record tab
+    (Client Info, Meetings, custom tabs) and on the My records page
+    (Mine, Shared by me, Shared with me, My department), two buttons
+    now sit on the right of the sub-tabs row: "Select" and "Select
+    all". Tapping Select shows a tick box on the left of every row on
+    the page; tapping it again hides the boxes and clears the
+    selection (it reads "Cancel" while the boxes are shown). "Select
+    all" shows the boxes and ticks every row on the page. A line under
+    the table says how many rows are selected. On My records the same
+    tick boxes already used for bulk actions are used, so the bulk bar
+    (Share, Public QR, Excel, PDF, CSV, Delete) still works on the
+    ticked rows. The Invoices tab has no Select buttons, as before.
+ 2. EXPORT AND PRINT USE ONLY THE SELECTED ROWS. With rows ticked,
+    Export (Excel / PDF / CSV) and the Download CSV on the My
+    department tab export only those rows; Print prints only those
+    rows. With nothing ticked, Export still exports everything the
+    current filters match, as before.
+ 3. PRINT GUARD. On the Department Database page and the My records
+    page, pressing Print with no row selected shows the red message
+    "Please select the data row first." and nothing prints. After
+    selecting a row (Select or Select all), Print works and prints
+    only the selected rows. The Invoices tab has no Select, so its
+    Print button is unchanged and prints the whole list. Detail
+    pages' Print is unchanged.
+ 4. PRINT FORMAT. The Open / Edit / Restore / Locate buttons no
+    longer print (the print rule that forced the actions column back
+    on is fixed). The browser's own header and footer (the page
+    address at the top right, the date) no longer print; the portal's
+    own header (HRC logo, company name, "Printed ... by ...") stays.
+    The print table fits the page width, the header row repeats on
+    every page, and long text wraps inside its own cell, so the row
+    grows taller and every cell stays lined up at the top. Nothing is
+    cut off.
+ 5. LANDSCAPE, ALL COLUMNS. The Department Database and My records
+    list pages now print in landscape, and the print table shows ALL
+    columns of the tab, not only the first 7 shown on screen (the
+    extra columns stay hidden on screen and only appear in print),
+    one row per record, with "Added by" always last. The printout
+    says "Selected rows · N of M" under the title. Other pages
+    (record detail, row detail, Invoices tab) still print in
+    portrait. A selection covers only the rows on the page shown, not
+    other pages of the list.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+==============================================================================
+ 37. PASSWORD EYE: SHOW WHAT YOU TYPED (2026-11-06)
+==============================================================================
+ 1. EYE BUTTON ON EVERY PASSWORD BOX. Every box where you type a
+    password now has a small eye button at its right end: the login
+    page (Password), the Change password page (Current password, New
+    password, New password again), and the "Your password to confirm"
+    box that appears on admin actions (reset a password, delete an
+    account, remove a department or a column, and the same box on the
+    Edit user page).
+ 2. TAP TO SHOW, TAP AGAIN TO HIDE. Tapping the eye shows the
+    password as plain text and the eye changes to an eye with a slash
+    across it. Tapping it again hides the password back to dots. The
+    password starts hidden every time the page opens, and showing it
+    changes nothing else: the password is only shown on your own
+    screen, it is not saved or sent any differently, and the eye
+    button never submits the form.
+ 3. TEMPORARY PASSWORD BOXES UNCHANGED. When an admin creates a user,
+    the "Temporary password" box already shows the password as plain
+    text (so the admin can read it back to the user), so it has no
+    eye button. The eye follows the portal's light and dark themes.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+==============================================================================
+ 38. DESIGN 6: NEW PAGE LAYOUT — KPI CARDS, CHART AND RIGHT RAIL (2026-11-06)
+==============================================================================
+ 1. EVERY PAGE EXCEPT LOGIN HAS THE NEW LAYOUT. This is the Design 6
+    layout you approved from the 32 JPG concepts (Command Center +
+    Activity Rail combined): a row of KPI cards at the top, the page's
+    main content on the left, and a 330px rail on the right. The
+    colours are the portal's own (deep teal-blue, cyan, pale blue-grey
+    background, Manrope font) — nothing was re-coloured. The LOGIN
+    PAGE IS UNCHANGED, exactly as it is now.
+ 2. NOTHING WAS REMOVED. Every tab, filter, button, form field, table
+    column, link and permission is exactly where it was, only the
+    layout around it changed. The Department Database still has Select
+    / Select all, the print guard and the landscape print; the
+    Invoices tab still has its sub-tabs, share codes and Create cards;
+    My records still has Mine / Shared by me / Shared with me / My
+    department with Locate; the dashboard still has its "See all"
+    link to the Sessions page; the password eye is still on every
+    password box.
+ 3. KPI CARDS. The top row shows the counts that matter on that page:
+    Department Database shows Total rows, My rows, Follow-ups due and
+    Deleted; the Invoices tab shows All invoices, My invoices, Issued
+    and Paid; the Dashboard shows Total records, Active users, Open
+    repairs, Reminders and Logged in now; Users shows Users, Pending
+    approval, Locked and Admins; and so on. Each card's number comes
+    from data the page already had.
+ 4. THE CHART. The Department Database has a "Rows added this week"
+    bar chart (rows created each day for the last 7 days, tallest day
+    highlighted). The Dashboard's "Records by department" is now the
+    same vertical bar chart instead of horizontal bars. Both use the
+    portal's own colours.
+ 5. THE RIGHT RAIL. On list and detail pages the rail shows:
+    - Follow-ups due: meetings in this department in the next 7 days
+      (a date+time column in a meeting-notify tab), with the date and
+      time, linking to the row.
+    - Recent activity: the most recently changed rows in this
+      department, with who changed them and when, linking to the row.
+    - Quick actions: the page's main actions (Add row, Export to
+      Excel, Print this tab, and so on).
+    Everything in the rail is data that user is already allowed to
+    see — a regular user only ever sees their own department's rows
+    and meetings, never another department's.
+    Detail pages keep their own side cards in the rail: the record
+    detail keeps its Public QR, Shared with and Admin cards; the
+    invoice detail keeps its Public QR card and a Details card. Form
+    pages have a short explainer card in the rail instead.
+ 6. PRINTING IS UNCHANGED. The KPI row and the rail are hidden when
+    printing, so a printout still shows only the table (and the
+    Select/print guard still works: Print with nothing selected shows
+    "Please select the data row first."). On a narrow screen (phone
+    or tablet) the rail stacks below the main content, as the
+    portal's other two-column pages already do.
+ 7. A LATENT CRASH WAS FIXED ALONG THE WAY. The portal admin's
+    Dashboard would crash (500) whenever any record reminder was due,
+    because routes_admin.py used datetime.strptime without importing
+    datetime. It never fired before because no reminder date had come
+    due in testing. The import is fixed (one word); nothing else
+    about reminders changed.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 39. DASHBOARD SETTINGS + DEPARTMENT DATABASE WIDGET + FILLED PIE CHARTS (2026-11-06)
+==============================================================================
+ 1. DASHBOARD SETTINGS BUTTON. Top right of the Dashboard, next to
+    Reports / Export Excel / + Add record, there is now a "Dashboard
+    settings" button. It opens a panel with a tick box for each
+    dashboard section: KPI cards, Records by department, Department
+    database, Records by status, Recent activity, Logged in now,
+    Reminders coming up and Quick actions. Unticking a section hides
+    it from YOUR dashboard. The setting is saved per admin (each
+    admin's own login): hiding a section on your login does not hide
+    it for anyone else. Tick everything back on to bring a section
+    back. Nothing is deleted — a hidden section is only hidden.
+ 2. DEPARTMENT DATABASE WIDGET. A new section on the Dashboard,
+    "Department database", right after "Records by department". For
+    each department it shows the total Department Database rows, and
+    underneath, each tab's row count (Client Info 3, Meetings 1,
+    Invoices 2, and so on). The Invoices tab is counted too: the
+    total is all the department's DeptDB rows plus its invoices.
+    Only tabs that have rows are listed; a department with no rows
+    shows nothing in the breakdown. The numbers come from the live
+    Department Database, so the widget always matches it.
+ 3. EACH DEPARTMENT HAS ITS OWN COLOUR. In both department charts
+    the bars/slices are coloured per department, from the portal's
+    chart colours (teal, green, amber, red, purple, grey-blue). A
+    department keeps the same colour in both charts and every time
+    you look, even when the counts change. The "Records by status"
+    chart keeps its existing colours (by status, not by department).
+ 4. BAR / PIE CHART SWITCH. In the Dashboard settings panel, under
+    "Records by department" and under "Department database", there
+    is a Bar | Pie chart switch for each chart, set independently.
+    Bar shows the vertical bars (as before, now in each
+    department's colour). Pie chart shows a big filled pie: each
+    slice is its department's colour, and the count is written on
+    the slice in white (white is the ink that reads on every slice
+    colour — the department's own colour on its own slice would
+    disappear into it). Under the pie, the legend shows each
+    department with its count in that department's colour, and the
+    Total at the end. "Records by status" is now the same filled
+    pie, the same size, so all three charts match.
+ 5. NOTHING ELSE CHANGED. The login page is unchanged. Every other
+    page, tab, filter, button and permission is exactly as it was.
+    The dashboard still has its "See all" links, Select / Select
+    all and the print guard are untouched, and the password eye is
+    still on every password box. The KPI row and the rail are still
+    hidden when printing.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   The upgrade creates one new table (dashboard_settings) for the
+   per-admin settings; your data and the live .env are not touched.
+   Apply only this latest zip, not the older ones in order.
+
+ 40. NOTIFICATION MESSAGES BIGGER (2026-11-07)
+==============================================================================
+ 1. The message text on the Notifications page is now bigger
+    (1.05rem, with more space between the lines) so it is easy to
+    read at a glance. The date in the "When" column, the "New"
+    badge, the KPI cards and everything else on the page are
+    unchanged. This is the same for every user: the Notifications
+    page is one page, and the bigger message text applies to
+    everyone who opens it.
+ 2. NOTHING ELSE CHANGED. No other page, table or permission was
+    touched.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 41. LOGIN PAGE REDESIGNED — FROST 6 (2026-11-07)
+==============================================================================
+ 1. The login page has a new look, Frost 6, the frosted-glass design
+    you picked from the JPG: the whole page is the teal gradient
+    with soft round shapes behind it, the sign-in form sits in a
+    frosted-glass card on the left, and your own words sit on the
+    right — "Every asset, one clear place." with the description
+    and the three points (Department workspaces, Secure sharing,
+    Full edit history) as small pills.
+ 2. NOTHING ABOUT SIGNING IN CHANGED. The same username, password
+    and department boxes, the same department list (including
+    "All departments (admin only)"), the same Sign in button, the
+    same password eye, the same "Forgot your password?" line and
+    the same Appearance selector below the card. Wrong passwords,
+    wrong departments, locked accounts and forced password changes
+    all behave exactly as before.
+ 3. The frosted card always looks the same — light glass on the
+    teal gradient — whichever Appearance (Auto / Light / Dark) you
+    use, so the login page looks identical for everyone.
+ 4. On a narrow screen (phone or narrow window) the text on the
+    right hides and the frosted card takes the whole width, as
+    the old login page did.
+ 5. NOTHING ELSE CHANGED. No other page, table or permission was
+    touched.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.
+
+ 42. CSS CLEANUP — MUTED TEXT FIX + DEAD RULES REMOVED (2026-11-07)
+==============================================================================
+ 1. The tab breakdown in the Dashboard's "Department database"
+    widget (the "— Client Info 12 · Meetings 3" part after each
+    department name) is now muted grey, as it was meant to be. It
+    was showing in the same dark colour as the department name
+    because the "mut" style it uses had no rule in the stylesheet.
+    A new .mut rule (the portal's muted text colour) fixes it.
+    Nothing else on the Dashboard changed.
+ 2. Five rules that nothing uses were removed from the stylesheet:
+    the old bar-chart row, the old donut chart and its legend, an
+    old two-column grid, and a print-hide entry for a class no
+    element carries. The old "grow" animation went with the bar
+    chart, since nothing else used it. This only makes the
+    stylesheet smaller; no page looks or behaves differently.
+ 3. NOTHING ELSE CHANGED. No page, table or permission was touched,
+    and the login page is exactly as it was.
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.

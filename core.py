@@ -28,6 +28,18 @@ DDB_TYPE_LABEL = dict(DDB_COLUMN_TYPES)
 
 
 # ---------------------------------------------------------------- columns
+def col_weight(col_type):
+    """Print width weight for one column: long text gets the most room."""
+    return 2.0 if col_type == "longtext" else 1.5 if col_type == "text" else 1.0
+
+
+def print_col_widths(weights):
+    """Turn a list of column weights into print width percentages (the print
+    table uses a fixed layout, so the percentages decide the columns)."""
+    total = sum(weights) or 1.0
+    return [round(w / total * 100, 1) for w in weights]
+
+
 def get_columns(db, dept_id, only_shown=True):
     """Active (not removed) columns of a department, in display order."""
     sql = "SELECT * FROM columns WHERE department_id=? AND removed_at IS NULL"
@@ -207,7 +219,11 @@ def table_context(db, rows, user=None):
         if d not in index:
             index[d] = len(groups)
             groups.append({"dept_id": d, "dept_name": r["department_name"],
-                           "columns": cols[d], "rows": []})
+                           "columns": cols[d], "rows": [],
+                           # Print widths for this group's columns plus the
+                           # trailing Owner / Shared-with column (weight 1).
+                           "widths": print_col_widths(
+                               [col_weight(c["col_type"]) for c in cols[d]] + [1.0])})
         groups[index[d]]["rows"].append(r)
     return {"groups": groups, "vmap": values_for(db, ids), "shares": shares_for(db, ids),
             "multi": len(groups) > 1,
@@ -1007,6 +1023,213 @@ def ddb_columns(db, dept_id, only_shown=True, tab_id=None):
 def ddb_tabs(db, dept_id):
     return db.execute("SELECT * FROM ddb_tabs WHERE department_id=? AND removed_at IS NULL ORDER BY position, id",
                       (dept_id,)).fetchall()
+
+
+def first_text_value(db, row_id):
+    """The value of a row's first text/longtext column (its display name)."""
+    row = db.execute(
+        "SELECT v.value FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id "
+        "AND c.col_type IN ('text','longtext') AND c.removed_at IS NULL "
+        "WHERE v.row_id=? ORDER BY c.position, c.id LIMIT 1", (row_id,)).fetchone()
+    return row["value"] if row and row["value"] else None
+
+
+def design_rail(db, user, dept_id=None, tab_id=None):
+    """Data for the Design 6 right rail and the "rows added this week" chart.
+    Everything returned is data this user is already allowed to see: meetings
+    and recently changed rows in one department they can view, and row counts
+    for the tab they are looking at. Returns {} with no user or no department.
+    """
+    if user is None:
+        return {}
+    dept = None
+    if dept_id:
+        row = db.execute("SELECT id FROM departments WHERE id=?", (dept_id,)).fetchone()
+        if row and (is_portal_admin(user) or user["department_id"] == dept_id):
+            dept = row["id"]
+    if dept is None:
+        dept = user["department_id"]
+    if not dept:
+        return {}
+    today = date.today()
+    end = today + timedelta(days=7)
+    # Follow-ups: meetings (a date+time column in a meeting-notify tab) in the next 7 days.
+    followups = []
+    for m in db.execute(
+            "SELECT r.id AS rid, v.value AS val, tb.name AS tab_name FROM ddb_values v "
+            "JOIN ddb_columns c ON c.id=v.column_id AND c.col_type='date' AND c.has_time=1 AND c.removed_at IS NULL "
+            "JOIN ddb_tabs tb ON tb.id=c.tab_id AND tb.meeting_notify=1 AND tb.removed_at IS NULL "
+            "JOIN ddb_rows r ON r.id=v.row_id AND r.deleted_at IS NULL AND r.department_id=? "
+            "WHERE substr(v.value,1,10) BETWEEN ? AND ? ORDER BY v.value LIMIT 3",
+            (dept, today.isoformat(), end.isoformat())).fetchall():
+        when = parse_when(m["val"])
+        if when is None:
+            continue
+        day, clock = when
+        followups.append({"day": "%02d" % day.day, "mon": day.strftime("%b").upper(),
+                          "title": first_text_value(db, m["rid"]) or m["tab_name"],
+                          "detail": show_when(m["val"]), "link": ddb_row_link(db, m["rid"])})
+    # Recent activity: recently updated rows in this department.
+    recent = []
+    for r in db.execute(
+            "SELECT r.id AS rid, r.updated_at, u.full_name AS owner_name, tb.name AS tab_name "
+            "FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
+            "LEFT JOIN ddb_tabs tb ON tb.id=r.tab_id "
+            "WHERE r.department_id=? AND r.deleted_at IS NULL "
+            "ORDER BY r.updated_at DESC, r.id DESC LIMIT 3", (dept,)).fetchall():
+        recent.append({"who": r["owner_name"],
+                       "what": first_text_value(db, r["rid"]) or (r["tab_name"] or "row"),
+                       "when": r["updated_at"][5:16], "link": ddb_row_link(db, r["rid"])})
+    # Rows added this week (chart) for the tab being viewed.
+    week = []
+    if tab_id:
+        days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+        counts = {d: 0 for d in days}
+        for row in db.execute(
+                "SELECT date(created_at) AS d, COUNT(*) AS n FROM ddb_rows "
+                "WHERE department_id=? AND tab_id=? AND deleted_at IS NULL "
+                "AND date(created_at) BETWEEN ? AND ? GROUP BY date(created_at)",
+                (dept, tab_id, days[0], days[-1])).fetchall():
+            if row["d"] in counts:
+                counts[row["d"]] = row["n"]
+        top = max(counts.values()) or 1
+        for d in days:
+            dt = date.fromisoformat(d)
+            week.append({"label": dt.strftime("%a")[:3], "n": counts[d],
+                         "pct": round(100 * counts[d] / top, 1),
+                         "hot": 1 if counts[d] == top and top > 0 else 0})
+    return {"dept_id": dept, "followups": followups, "recent": recent, "week": week}
+
+
+# ======================= Dashboard settings + department charts (2026-11-06) =======================
+# One colour per department, from the portal's chart palette (teal first, the
+# portal's main accent). Assigned by department id, so a department keeps its
+# colour even when the counts change. The Records-by-status pie keeps the
+# existing DONUT_COLORS order (green first) so its colours do not change.
+DEPT_COLORS = ["#0b6e99", "#17a05d", "#e8a317", "#d9534f", "#7b61c4", "#9db3c1"]
+
+DASHBOARD_SECTIONS = ["kpi", "records_by_dept", "ddb", "status", "recent",
+                      "logged_in", "reminders", "quick"]
+DASHBOARD_DEFAULTS = {"show": {s: True for s in DASHBOARD_SECTIONS},
+                      "chart": {"records_by_dept": "bar", "ddb": "bar"}}
+
+
+def dashboard_settings(db, user_id):
+    """One admin's dashboard settings, merged over the defaults. Unknown keys
+    and bad values are ignored, so a saved row never breaks the dashboard."""
+    import json
+    data = {}
+    row = db.execute("SELECT settings_json FROM dashboard_settings WHERE user_id=?",
+                     (user_id,)).fetchone()
+    if row and row["settings_json"]:
+        try:
+            data = json.loads(row["settings_json"])
+        except (ValueError, TypeError):
+            data = {}
+    out = {"show": dict(DASHBOARD_DEFAULTS["show"]),
+           "chart": dict(DASHBOARD_DEFAULTS["chart"])}
+    if isinstance(data.get("show"), dict):
+        for k, v in data["show"].items():
+            if k in out["show"]:
+                out["show"][k] = bool(v)
+    if isinstance(data.get("chart"), dict):
+        for k, v in data["chart"].items():
+            if k in out["chart"] and v in ("bar", "pie"):
+                out["chart"][k] = v
+    return out
+
+
+def save_dashboard_settings(db, user_id, settings):
+    """Store one admin's dashboard settings (one row per admin, upsert)."""
+    import json
+    db.execute(
+        "INSERT INTO dashboard_settings (user_id, settings_json, updated_at) "
+        "VALUES (?, ?, datetime('now','localtime')) "
+        "ON CONFLICT(user_id) DO UPDATE SET settings_json=excluded.settings_json, "
+        "updated_at=datetime('now','localtime')",
+        (user_id, json.dumps(settings)))
+    db.commit()
+
+
+def dept_colours(db):
+    """dept_id -> colour, stable by department id, cycling the palette."""
+    rows = db.execute("SELECT id FROM departments ORDER BY id").fetchall()
+    return {r["id"]: DEPT_COLORS[i % len(DEPT_COLORS)] for i, r in enumerate(rows)}
+
+
+def ddb_dashboard_data(db):
+    """Per-department Department Database totals + per-tab row counts, for the
+    dashboard widget. Only active tabs with rows, plus the Invoices tab when
+    the department has invoices. The total is the sum of the listed tabs, so
+    the pie slices and the breakdown always agree."""
+    tabs = db.execute(
+        "SELECT t.department_id, t.name, COUNT(r.id) AS n FROM ddb_tabs t "
+        "LEFT JOIN ddb_rows r ON r.tab_id=t.id AND r.deleted_at IS NULL "
+        "WHERE t.removed_at IS NULL GROUP BY t.id "
+        "ORDER BY t.department_id, t.position").fetchall()
+    inv = {r["department_id"]: r["n"] for r in db.execute(
+        "SELECT department_id, COUNT(*) AS n FROM invoices GROUP BY department_id").fetchall()}
+    out = []
+    for d in db.execute("SELECT id, name FROM departments ORDER BY name").fetchall():
+        tab_list = [{"name": t["name"], "n": t["n"]}
+                    for t in tabs if t["department_id"] == d["id"] and t["n"] > 0]
+        inv_n = inv.get(d["id"], 0)
+        if inv_n:
+            tab_list.append({"name": "Invoices", "n": inv_n})
+        out.append({"dept_id": d["id"], "name": d["name"],
+                    "total": sum(t["n"] for t in tab_list), "tabs": tab_list})
+    return out
+
+
+def pie_svg(segments, size=360):
+    """A filled pie chart as inline SVG (no hollow centre). segments is a list
+    of (colour, count); the count is written on each slice in white bold text
+    (white is the ink that reads on every slice colour — the same colour as
+    its slice would disappear into it). A slice covering the whole pie is
+    drawn as a full circle, because an arc from a point to itself draws
+    nothing. Tiny slices (under 15 degrees) get no on-slice label, so labels
+    never overlap. Returns "" when there is nothing to draw."""
+    total = sum(c for _, c in segments)
+    if total <= 0:
+        return ""
+    cx = cy = size // 2
+    r = size // 2 - 15
+    parts = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" role="img">']
+    start = 0.0
+    for colour, count in segments:
+        if count <= 0:
+            continue
+        sweep = 360.0 * count / total
+        end = start + sweep
+        if sweep >= 360.0:
+            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{colour}"/>')
+            parts.append(
+                f'<text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central" '
+                f'font-size="26" font-weight="800" fill="#ffffff">{count}</text>')
+            start = end
+            continue
+        s = math.radians(start)
+        e = math.radians(end)
+        x1 = cx + r * math.sin(s)
+        y1 = cy - r * math.cos(s)
+        x2 = cx + r * math.sin(e)
+        y2 = cy - r * math.cos(e)
+        large = 1 if sweep > 180 else 0
+        parts.append(
+            f'<path d="M {cx},{cy} L {x1:.1f},{y1:.1f} A {r},{r} 0 {large} 1 '
+            f'{x2:.1f},{y2:.1f} Z" fill="{colour}"/>')
+        if sweep >= 15:
+            mid = math.radians(start + sweep / 2.0)
+            lr = r * 0.62
+            lx = cx + lr * math.sin(mid)
+            ly = cy - lr * math.cos(mid)
+            parts.append(
+                f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="middle" '
+                f'dominant-baseline="central" font-size="26" font-weight="800" '
+                f'fill="#ffffff">{count}</text>')
+        start = end
+    parts.append('</svg>')
+    return ''.join(parts)
 
 
 def ddb_is_tab_admin(db, user, dept_id):

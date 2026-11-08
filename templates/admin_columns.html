@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 {% from "_macros.html" import reauth with context %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}{{ dept['name'] }} columns{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>{{ dept['name'] }}: record columns</h1><p class="hint">Choose what this department stores. Changes apply to its forms at once. <a href="{{ url_for('admin.departments') }}">Back to departments</a></p></div>
   <div class="acts"><a class="b" href="{{ url_for('admin.removed_columns', did=dept['id']) }}">Removed columns · {{ removed }}</a></div></div>
-<div class="tw" style="grid-template-columns:1fr 330px">
+<div class="kp">
+  {{ kpi('Columns', cols|length) }}
+  {{ kpi('Removed', removed, 'data kept, can be restored') }}
+  {{ kpi('Protected', cols|selectattr('protected')|list|length) }}
+  {{ kpi('Reminder dates', cols|selectattr('is_reminder')|list|length) }}
+</div>
+<div class="tw">
   <div class="tb"><table><thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Shown</th><th>Filled in</th><th></th></tr></thead><tbody>
   {% for c in cols %}<tr class="r">
     <td>{% if c['protected'] %}<svg class="lock" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0b6e99" stroke-width="2.2" aria-label="Protected"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>{% endif %}<b>{{ c['name'] }}</b>
@@ -25,7 +32,7 @@
       {% endif %}</td></tr>
   {% else %}<tr><td colspan="6" class="empty">No columns yet. Add the first one on the right.</td></tr>{% endfor %}</tbody></table>
   <div class="nt">The lock means accidental delete protection: a protected column has no Remove button until you click "Remove protection".</div></div>
-  <aside class="stack">
+  <aside class="stack rail">
     <div class="card"><h2>Add column</h2>
       <form method="post" action="{{ url_for('admin.column_add', did=dept['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="fd"><label for="cname">Column name</label><input id="cname" name="name" type="text" maxlength="60" required></div>
@@ -46,6 +53,12 @@
         <label class="ck"><input type="checkbox" name="enabled" value="1" {{ 'checked' if dept['attachments_enabled'] }}> Allow attachments in this department</label>
         <div class="fd" style="margin-top:12px"><label for="mx">Max size per file (MB)</label><input id="mx" name="max_mb" type="number" min="1" max="{{ server_max }}" value="{{ dept['attachment_max_mb'] }}"><div class="sub">Server-wide limit: {{ server_max }} MB. Programs and scripts are always blocked.</div></div>
         <button class="b p sm" type="submit">Save</button></form></div>
+    {{ followups_card() }}
+    {{ recent_card() }}
+    {{ quick_card([
+      ('Removed columns · ' ~ removed, url_for('admin.removed_columns', did=dept['id']), False),
+      ('Back to departments', url_for('admin.departments'), False),
+    ]) }}
   </aside>
 </div>
 {% endblock %}

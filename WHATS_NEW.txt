@@ -1,4 +1,137 @@
 ==============================================================================
+ UPDATE: CSS CLEANUP — MUTED TEXT FIX + DEAD RULES REMOVED (2026-11-07)
+==============================================================================
+ 1. The tab breakdown in the Dashboard's "Department database"
+    widget is now muted grey, as it was meant to be. Five unused
+    stylesheet rules (old bar chart, old donut and legend, old
+    grid, one print-hide entry) were removed.
+ 2. NOTHING ELSE CHANGED.
+
+==============================================================================
+ UPDATE: LOGIN PAGE REDESIGNED — FROST 6 (2026-11-07)
+==============================================================================
+ 1. The login page has a new frosted-glass look: the sign-in form
+    in a frosted card on the left, your own words on the right,
+    on the teal gradient. Signing in works exactly as before —
+    same boxes, same department list, same password eye, same
+    Appearance selector.
+ 2. NOTHING ELSE CHANGED.
+
+==============================================================================
+ UPDATE: NOTIFICATION MESSAGES BIGGER (2026-11-07)
+==============================================================================
+ 1. The message text on the Notifications page is now bigger and
+    easier to read, for every user. The date, the "New" badge and
+    everything else on the page are unchanged.
+ 2. NOTHING ELSE CHANGED.
+
+==============================================================================
+ UPDATE: DASHBOARD SETTINGS + DEPARTMENT DATABASE WIDGET (2026-11-06)
+==============================================================================
+ 1. DASHBOARD SETTINGS: a "Dashboard settings" button at the top
+    right of the Dashboard lets each admin choose which sections
+    show on their own dashboard (KPI cards, Records by department,
+    Department database, Records by status, Recent activity,
+    Logged in now, Reminders coming up, Quick actions). Saved per
+    admin — your choices do not change anyone else's dashboard.
+ 2. DEPARTMENT DATABASE WIDGET: a new section showing each
+    department's total DeptDB rows and each tab's count, including
+    Invoices.
+ 3. EACH DEPARTMENT HAS ITS OWN COLOUR in both charts, and a
+    Bar / Pie chart switch for each chart in the settings panel.
+    The pie charts are big and filled (no hollow centre), with the
+    count written on each slice in white and the Total in the
+    legend. "Records by status" is the same filled pie.
+ 4. NOTHING ELSE CHANGED: login page unchanged, all other pages,
+    tabs and permissions exactly as they were.
+
+==============================================================================
+ UPDATE: DESIGN 6 — NEW PAGE LAYOUT (2026-11-06)
+==============================================================================
+ 1. EVERY PAGE EXCEPT LOGIN HAS THE NEW LAYOUT: the Design 6 design
+    you approved (Command Center + Activity Rail) — a row of KPI
+    cards at the top, the page's content on the left, and a rail on
+    the right with follow-ups due, recent activity and quick actions.
+    The colours are the portal's own, nothing was re-coloured, and
+    the LOGIN PAGE IS UNCHANGED.
+ 2. NOTHING WAS REMOVED: every tab, filter, button, form field,
+    table column and permission is exactly where it was. Select /
+    Select all and the print guard, the Invoices sub-tabs and share
+    codes, the My department Locate button, the dashboard "See all"
+    to Sessions, and the password eye are all still there.
+ 3. KPI CARDS show the counts that matter on each page (Total rows,
+    My rows, Follow-ups due, Deleted; All invoices, My invoices,
+    Issued, Paid; and so on). The Department Database has a "Rows
+    added this week" bar chart. The rail only ever shows data that
+    user is already allowed to see.
+ 4. PRINTING IS UNCHANGED: the KPI row and the rail are hidden when
+    printing, so a printout still shows only the table.
+ 5. ALSO FIXED: the portal admin's Dashboard would crash whenever
+    any record reminder was due (a missing import). That is fixed.
+
+==============================================================================
+ UPDATE: PASSWORD EYE — SHOW WHAT YOU TYPED (2026-11-06)
+==============================================================================
+ 1. EYE BUTTON ON EVERY PASSWORD BOX: the login page, the Change
+    password page (Current password, New password, New password
+    again), and the "Your password to confirm" box on admin actions
+    (reset a password, delete an account, remove a department or a
+    column, and the Edit user page) now have a small eye button at
+    the right end of the box.
+ 2. TAP TO SHOW, TAP AGAIN TO HIDE: tapping the eye shows the
+    password as plain text and the eye changes to an eye with a
+    slash; tapping again hides it back to dots. The password starts
+    hidden every time the page opens, and showing it changes nothing
+    else — it is only shown on your own screen.
+ 3. TEMPORARY PASSWORD BOXES UNCHANGED: when an admin creates a
+    user, the "Temporary password" box already shows the password as
+    plain text, so it has no eye button.
+ .env untouched. See README section 37. No database change. Upgrade:
+ ./backup.sh, copy live .env OUTSIDE the folder first, unzip only
+ this zip, restore live .env if it differs, docker compose up -d
+ --build. Apply only this latest zip.
+
+==============================================================================
+ UPDATE: SELECT / SELECT ALL + PRINT GUARD + LANDSCAPE PRINT WITH ALL
+         COLUMNS (2026-11-06)
+==============================================================================
+ 1. SELECT AND SELECT ALL: on every Department Database record tab
+    except Invoices, and on the My records page (Mine, Shared by me,
+    Shared with me, My department), "Select" and "Select all" buttons
+    now sit on the right of the sub-tabs row. Select shows a tick box
+    on the left of every row on the page (tap again to hide them and
+    clear the selection); Select all ticks every row on the page. A
+    line under the table says how many rows are selected. On My
+    records the same tick boxes already used for bulk actions are
+    used, so bulk Share / Public QR / Excel / PDF / CSV / Delete
+    still work on the ticked rows.
+ 2. EXPORT AND PRINT USE ONLY THE SELECTED ROWS: with rows ticked,
+    Export (Excel / PDF / CSV) and the My department Download CSV
+    export only those rows, and Print prints only those rows. With
+    nothing ticked, Export still exports everything the filters
+    match, as before.
+ 3. PRINT GUARD: on the Department Database and My records pages,
+    Print with no row selected shows "Please select the data row
+    first." and nothing prints. After selecting, Print prints only
+    the selected rows. The Invoices tab has no Select, so its Print
+    button is unchanged and prints the whole list.
+ 4. PRINT FORMAT: Open / Edit / Restore / Locate buttons no longer
+    print. The browser's own header and footer (page address, date)
+    no longer print; the portal's own header stays. The print table
+    fits the page width, the header repeats on every page, and long
+    text wraps inside its own cell, so the row grows taller and
+    nothing is cut off.
+ 5. LANDSCAPE, ALL COLUMNS: those list pages now print in landscape,
+    and the print table shows ALL columns of the tab (not only the
+    first 7 on screen), one row per record, with "Added by" always
+    last. The printout says "Selected rows · N of M". Other pages
+    still print in portrait.
+ .env untouched. See README section 36. No database change. Upgrade:
+ ./backup.sh, copy live .env OUTSIDE the folder first, unzip only
+ this zip, restore live .env if it differs, docker compose up -d
+ --build. Apply only this latest zip.
+
+==============================================================================
  UPDATE: DASHBOARD "LOGGED IN NOW" CARD LINKS TO SESSIONS (2026-11-05)
 ==============================================================================
  The "Logged in now" card on the dashboard now has a "See all" link,

@@ -1,9 +1,24 @@
 {% extends "base.html" %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Invoices shared with me{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Invoices shared with me</h1><p class="hint">View-only. You can view and download these invoices, but you cannot edit, void or mark them paid.</p></div></div>
+<div class="kp">
+  {{ kpi('Invoices shared with me', rows|length) }}
+  {{ kpi('Departments sharing', rows|map(attribute='dept_name')|unique|list|length) }}
+</div>
+<div class="tw"><div>
 <div class="tb"><table><thead><tr><th>Department</th><th>Number</th><th>Format</th><th>Owner</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
 {% for r in rows %}<tr class="r"><td>{{ r['dept_name'] }}</td><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['owner_name'] }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid') else 'a' if r['status']=='draft' else 'r' }}">{{ r['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('invoices.detail', iid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('invoices.invoice_pdf', iid=r['id']) }}">PDF</a></td></tr>
 {% else %}<tr><td colspan="7"><div class="empty">No department has shared invoices with you yet.</div></td></tr>{% endfor %}
 </tbody></table></div>
+</div>
+<div class="stack rail">
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([
+    ('All invoices in my department', url_for('invoices.dept_list'), True),
+    ('Back to Invoices', url_for('invoices.list_invoices'), False),
+  ]) }}
+</div></div>
 {% endblock %}

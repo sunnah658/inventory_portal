@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
 {% block title %}Edit database column{% endblock %}
 {% block content %}
+<div class="tw"><div>
 <div class="card medium"><h1>Edit column</h1>
   <p class="hint" style="margin-bottom:18px">{{ dept['name'] }} database · type: {{ type_label[col['col_type']] }} (the type cannot be changed; add a new column instead).</p>
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dept" value="{{ dept['id'] }}">
@@ -11,4 +13,13 @@
     {% if col['col_type'] == 'date' %}<label class="ck"><input type="checkbox" name="has_time" value="1" {{ 'checked' if col['has_time'] }}> Also keep a time</label>{% endif %}
     <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save column</button><a class="b" href="{{ url_for('ddb.columns', dept=dept['id'], tab=tab['id']) }}">Cancel</a></div>
   </form></div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>About this column</h2>
+    <p class="hint">The column type cannot be changed — add a new column instead. Renaming a column changes its label everywhere in this tab: the list, the row form and exports. Values already filled in stay where they are.</p></div>
+  {{ quick_card([
+    ('Back to Columns', url_for('ddb.columns', dept=dept['id'], tab=tab['id']), True),
+    ('Tabs', url_for('ddb.tabs', dept=dept['id']), False),
+  ]) }}
+</div></div>
 {% endblock %}

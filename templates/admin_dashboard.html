@@ -2,28 +2,73 @@
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Dashboard</h1><p class="hint">Everything across all departments.</p></div>
-  <div class="acts"><a class="b" href="{{ url_for('bulk.reports') }}">Reports</a><a class="b" href="{{ url_for('bulk.export_admin', fmt='xlsx') }}">Export Excel</a><a class="b p" href="{{ url_for('records.new_record') }}">+ Add record</a></div></div>
-<div class="kp">
+  <div class="acts"><a class="b" href="{{ url_for('bulk.reports') }}">Reports</a><a class="b" href="{{ url_for('bulk.export_admin', fmt='xlsx') }}">Export Excel</a><a class="b p" href="{{ url_for('records.new_record') }}">+ Add record</a>
+  <details class="dset"><summary class="b">&#9881; Dashboard settings</summary>
+    <div class="card dset-panel"><form method="post" action="{{ url_for('admin.dashboard_settings_save') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h2 style="margin-bottom:2px">Dashboard settings</h2>
+      <p class="hint" style="margin:0 0 8px">Choose what shows on your dashboard. Saved for your own login.</p>
+      <label class="dchk"><input type="checkbox" name="show_kpi" value="1" {% if dsettings.show.kpi %}checked{% endif %}><span><b>KPI cards</b><small>Total records, Active users, Open repairs, Reminders, Logged in now</small></span></label>
+      <label class="dchk"><input type="checkbox" name="show_records_by_dept" value="1" {% if dsettings.show.records_by_dept %}checked{% endif %}><span><b>Records by department</b><small>Personal record counts, by department</small><span class="seg"><label><input type="radio" name="chart_records_by_dept" value="bar" {% if dsettings.chart.records_by_dept == 'bar' %}checked{% endif %}><span>Bar</span></label><label><input type="radio" name="chart_records_by_dept" value="pie" {% if dsettings.chart.records_by_dept == 'pie' %}checked{% endif %}><span>Pie chart</span></label></span></span></label>
+      <label class="dchk"><input type="checkbox" name="show_ddb" value="1" {% if dsettings.show.ddb %}checked{% endif %}><span><b>Department database</b><small>Department Database rows, by department and tab</small><span class="seg"><label><input type="radio" name="chart_ddb" value="bar" {% if dsettings.chart.ddb == 'bar' %}checked{% endif %}><span>Bar</span></label><label><input type="radio" name="chart_ddb" value="pie" {% if dsettings.chart.ddb == 'pie' %}checked{% endif %}><span>Pie chart</span></label></span></span></label>
+      <label class="dchk"><input type="checkbox" name="show_status" value="1" {% if dsettings.show.status %}checked{% endif %}><span><b>Records by status</b></span></label>
+      <label class="dchk"><input type="checkbox" name="show_recent" value="1" {% if dsettings.show.recent %}checked{% endif %}><span><b>Recent activity</b></span></label>
+      <label class="dchk"><input type="checkbox" name="show_logged_in" value="1" {% if dsettings.show.logged_in %}checked{% endif %}><span><b>Logged in now</b><small>Right rail</small></span></label>
+      <label class="dchk"><input type="checkbox" name="show_reminders" value="1" {% if dsettings.show.reminders %}checked{% endif %}><span><b>Reminders coming up</b><small>Right rail</small></span></label>
+      <label class="dchk"><input type="checkbox" name="show_quick" value="1" {% if dsettings.show.quick %}checked{% endif %}><span><b>Quick actions</b><small>Right rail</small></span></label>
+      <div style="display:flex;gap:10px;margin-top:14px"><button class="b p" type="submit" style="flex:1">Save</button><a class="b" href="{{ url_for('admin.dashboard') }}" style="flex:1;text-align:center">Cancel</a></div>
+    </form></div>
+  </details></div></div>
+{% if dsettings.show.kpi %}<div class="kp">
   <div class="k1"><span>Total records</span><b>{{ stats.records }}</b><small>+{{ stats.new_week }} this week</small></div>
   <div class="k1"><span>Active users</span><b>{{ stats.users }}</b><small>{{ stats.disabled }} account(s) disabled</small></div>
   {% if stats.repairs_on %}<div class="k1 d"><span>Open repairs</span><b>{{ stats.repairs }}</b><small>Items currently in repair</small></div>{% endif %}
   <div class="k1 w"><span>Reminders (next 30 days)</span><b>{{ stats.soon }}</b><small><a href="{{ url_for('records.reminders') }}" style="color:inherit">See all</a></small></div>
-  <div class="k1"><span>Currently loggedin users</span><b>{{ stats.sessions }}</b><small><a href="{{ url_for('admin.sessions') }}" style="color:inherit">See all</a></small></div>
+  <div class="k1"><span>Logged in now</span><b>{{ stats.sessions }}</b><small><a href="{{ url_for('admin.sessions') }}" style="color:inherit">See all</a></small></div>
+</div>{% endif %}
+<div class="tw"><div class="stack">
+  {% if dsettings.show.records_by_dept %}<div class="card"><h2>Records by department</h2>
+    {% if by_dept %}
+      {% if dsettings.chart.records_by_dept == 'pie' %}
+        {% if pie_records %}<div class="pie">{{ pie_records|safe }}</div>
+        <div class="pleg">{% for d in by_dept %}{% if d['n'] > 0 %}<span class="pl"><em style="background:{{ dept_colours[d['id']] }}"></em>{{ d['name'] }} <b style="color:{{ dept_colours[d['id']] }}">{{ d['n'] }}</b></span>{% endif %}{% endfor %}<span class="pl total">Total <b>{{ total_by_dept }}</b></span></div>
+        {% else %}<p class="hint">No records yet.</p>{% endif %}
+      {% else %}
+        <div class="vbars">{% for d in by_dept %}<div class="vbar" style="height:{{ (100 * d['n'] / max_dept)|round(1) }}%;background:{{ dept_colours[d['id']] }}"></div>{% endfor %}</div>
+        <div class="vbarlab">{% for d in by_dept %}<span>{{ d['name'] }}</span>{% endfor %}</div>
+      {% endif %}
+    {% else %}<p class="hint">No departments yet.</p>{% endif %}</div>{% endif %}
+  {% if dsettings.show.ddb %}<div class="card"><h2>Department database</h2><p class="hint" style="margin:-8px 0 12px">Rows in each department, by tab</p>
+    {% if total_ddb > 0 %}
+      {% if dsettings.chart.ddb == 'pie' %}
+        <div class="pie">{{ pie_ddb|safe }}</div>
+        <div class="pleg">{% for e in ddb %}{% if e['total'] > 0 %}<span class="pl"><em style="background:{{ e['colour'] }}"></em>{{ e['name'] }} <b style="color:{{ e['colour'] }}">{{ e['total'] }}</b></span>{% endif %}{% endfor %}<span class="pl total">Total <b>{{ total_ddb }}</b></span></div>
+      {% else %}
+        <div class="vbars">{% for e in ddb %}<div class="vbar" style="height:{{ (100 * e['total'] / max_ddb)|round(1) }}%;background:{{ e['colour'] }}"></div>{% endfor %}</div>
+        <div class="vbarlab">{% for e in ddb %}<span>{{ e['name'] }}</span>{% endfor %}</div>
+      {% endif %}
+      <div style="margin-top:12px">{% for e in ddb %}{% if e['total'] > 0 %}<div class="ddbrow"><b>{{ e['name'] }} &middot; {{ e['total'] }} rows</b><span class="mut"> &mdash; {% for t in e['tabs'] %}{{ t['name'] }} {{ t['n'] }}{% if not loop.last %} &middot; {% endif %}{% endfor %}</span></div>{% endif %}{% endfor %}</div>
+    {% else %}<p class="hint">No Department Database rows yet.</p>{% endif %}</div>{% endif %}
+  {% if dsettings.show.status %}<div class="card"><h2>Records by status</h2>
+    {% if status %}
+      <div class="pie">{{ pie_status|safe }}</div>
+      <div class="pleg">{% for s in status %}<span class="pl"><em style="background:{{ colors[loop.index0] }}"></em>{{ s['label'] }} <b style="color:{{ colors[loop.index0] }}">{{ s['n'] }}</b></span>{% endfor %}<span class="pl total">Total <b>{{ total_status }}</b></span></div>
+      <p class="hint" style="text-align:center;margin:10px 0 0">{{ total_status }} records in total.</p>
+    {% else %}<p class="hint">No "Status" column has data yet. Add a column named Status to a department to see this chart.</p>{% endif %}</div>{% endif %}
+  {% if dsettings.show.recent %}<div class="card"><h2>Recent activity</h2>
+    <div class="tb" style="box-shadow:none"><table><tbody>{% for a in recent %}<tr class="r"><td><b>{{ a['username'] or 'system' }}</b></td><td>{{ a['action'] }}<div class="sub">{{ a['details'] or '' }}</div></td><td class="sub">{{ a['created_at'][5:16] }}</td></tr>{% else %}<tr><td class="empty">No activity yet.</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
 </div>
-<div class="g2">
-  <div class="card"><h2>Records by department</h2>
-    {% for d in by_dept %}<div class="br"><span>{{ d['name'] }}</span><i style="width:{{ (100 * d['n'] / max_dept)|round(1) }}%;min-width:{{ 4 if d['n'] else 0 }}px"></i><b>{{ d['n'] }}</b></div>{% else %}<p class="hint">No departments yet.</p>{% endfor %}</div>
-  <div class="card"><h2>Records by status</h2>
-    {% if status %}<div class="dn" style="background:{{ donut_css }}" data-total="{{ total_status }}"></div>
-    <div class="lg2">{% for s in status %}<span><em style="background:{{ colors[loop.index0] }}"></em>{{ s['label'] }} {{ s['n'] }}</span>{% endfor %}</div>
-    {% else %}<p class="hint">No "Status" column has data yet. Add a column named Status to a department to see this chart.</p>{% endif %}</div>
-</div>
-<div class="g3">
-  <div class="card"><h2>Reminders coming up</h2>
-    {% if soon %}<div class="tb" style="box-shadow:none"><table><thead><tr><th>Record</th><th>Department</th><th>Date</th></tr></thead><tbody>
-    {% for r in soon %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></td><td>{{ r['department_name'] }}</td><td><span class="s a">{{ r['reminder_date']|showdt }}</span></td></tr>{% endfor %}</tbody></table></div>
-    {% else %}<p class="hint">Nothing due soon.</p>{% endif %}</div>
-  <div class="card"><h2>Recent activity</h2>
-    <div class="tb" style="box-shadow:none"><table><tbody>{% for a in recent %}<tr class="r"><td><b>{{ a['username'] or 'system' }}</b></td><td>{{ a['action'] }}<div class="sub">{{ a['details'] or '' }}</div></td><td class="sub">{{ a['created_at'][5:16] }}</td></tr>{% else %}<tr><td class="empty">No activity yet.</td></tr>{% endfor %}</tbody></table></div></div>
-</div>
+{% if dsettings.show.logged_in or dsettings.show.reminders or dsettings.show.quick %}<div class="stack rail">
+  {% if dsettings.show.logged_in %}<div class="card"><h2>Logged in now · {{ stats.sessions }} <a href="{{ url_for('admin.sessions') }}" style="float:right;font-size:.82rem">See all</a></h2>
+    {% if logged_in %}{% for s in logged_in %}<div class="ritem"><span class="dot"></span><span><b>{{ s['full_name'] }}</b><small>{{ s['dept_name'] }} · {{ s['last_seen'][11:16] }}</small></span></div>{% endfor %}
+    {% else %}<p class="hint">Nobody is logged in right now.</p>{% endif %}</div>{% endif %}
+  {% if dsettings.show.reminders %}<div class="card"><h2>Reminders coming up</h2>
+    {% if soon %}{% for r in soon[:3] %}<div class="fup"><span class="date">{{ r['day'] }}<small>{{ r['mon'] }}</small></span><span><b><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></b><small>{{ r['department_name'] }} · {{ r['reminder_date']|showdt }}</small></span></div>{% endfor %}
+    {% else %}<p class="hint">Nothing due soon.</p>{% endif %}
+    <p style="margin-top:10px"><a href="{{ url_for('records.reminders') }}">See all reminders</a></p></div>{% endif %}
+  {% if dsettings.show.quick %}<div class="card"><h2>Quick actions</h2>
+    <a class="b p wide" style="margin-bottom:8px" href="{{ url_for('records.new_record') }}">+ Add record</a>
+    <a class="b wide" style="margin-bottom:8px" href="{{ url_for('bulk.reports') }}">Reports</a>
+    <a class="b wide" href="{{ url_for('bulk.export_admin', fmt='xlsx') }}">Export Excel</a></div>{% endif %}
+</div>{% endif %}</div>
 {% endblock %}

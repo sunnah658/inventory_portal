@@ -1,8 +1,17 @@
 {% extends "base.html" %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Notifications{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Notifications</h1><p class="hint">Shares, comments, replaced files, owner changes and reminders.</p></div>
   <div class="acts">{% if rows %}<button class="b" type="button" id="selectBtn">Select</button><form method="post" action="{{ url_for('flow.notifications_mark_read') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Mark all as read</button></form><form method="post" action="{{ url_for('flow.notifications_clear') }}" onsubmit="return confirm('Clear all notifications?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg" type="submit">Clear all</button></form>{% endif %}</div></div>
+{% set ns = namespace(unread=0) %}
+{% for n in rows %}{% if not n['read_at'] %}{% set ns.unread = ns.unread + 1 %}{% endif %}{% endfor %}
+<div class="kp">
+  {{ kpi('Notifications', rows|length) }}
+  {{ kpi('Unread', ns.unread) }}
+  {{ kpi('Warn me', warn_days ~ ' days ahead') }}
+</div>
+<div class="tw"><div>
 <div class="card" style="margin-bottom:16px"><form method="post" action="{{ url_for('flow.notification_settings') }}" class="acts" style="align-items:flex-end"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="fd" style="margin:0;min-width:220px"><label for="wd">Warn me before a reminder date</label>
     <select id="wd" name="warn_days">{% for n in choices %}<option value="{{ n }}" {{ 'selected' if n == warn_days }}>{{ n }} day{{ '' if n == 1 else 's' }} ahead</option>{% endfor %}</select></div>
@@ -11,7 +20,7 @@
 <div class="tb">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_mark_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div id="selActions" class="acts" style="display:none;margin-bottom:10px"><button class="b p" type="submit">Mark as read</button><button class="b dg" type="submit" formaction="{{ url_for('flow.notifications_clear_selected') }}" onclick="return confirm('Clear the selected notifications?');">Clear</button></div>
 <table><thead><tr><th class="selcol" style="display:none"></th><th>Message</th><th>When</th></tr></thead><tbody>
-{% for n in rows %}<tr class="r"><td class="selcol" style="display:none"><input type="checkbox" name="nid" value="{{ n['id'] }}"></td><td>{% if not n['read_at'] %}<span class="badge" style="margin-right:6px">New</span>{% endif %}{% if n['link'] %}<a href="{{ n['link'] }}">{{ n['text'] }}</a>{% else %}{{ n['text'] }}{% endif %}</td><td>{{ n['created_at'] }}</td></tr>{% endfor %}
+{% for n in rows %}<tr class="r"><td class="selcol" style="display:none"><input type="checkbox" name="nid" value="{{ n['id'] }}"></td><td class="msg">{% if not n['read_at'] %}<span class="badge" style="margin-right:6px">New</span>{% endif %}{% if n['link'] %}<a href="{{ n['link'] }}">{{ n['text'] }}</a>{% else %}{{ n['text'] }}{% endif %}</td><td>{{ n['created_at'] }}</td></tr>{% endfor %}
 </tbody></table></form>{% else %}<div class="empty">No notifications.</div>{% endif %}</div>
 <script>
 (function(){
@@ -25,4 +34,16 @@
   });
 })();
 </script>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Who gets told what</h2>
+    <p class="hint">Nobody is told about the portal admin's tasks. The portal admin is told about permission-user and department-admin tasks. A permission user is told about department-admin tasks. A department admin is told when a user in their department adds, edits, shares or deletes a Department Database row.</p>
+    <p class="hint">Creating or editing an invoice draft, finalising an invoice, or changing its public QR tells nobody.</p></div>
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([
+    ('My records', url_for('records.list_records'), True),
+    ('Reminders', url_for('records.reminders'), False),
+  ] | select) }}
+</div></div>
 {% endblock %}

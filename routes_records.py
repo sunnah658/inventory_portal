@@ -26,8 +26,8 @@ from utils import is_portal_admin, is_true_admin
 import scanner
 from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
-                  column_names, create_record, dept_member_ids, filter_clause, get_columns, get_record,
-                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, purge_record, purge_user_account, rec_select, reminder_rows,
+                  column_names, col_weight, create_record, dept_member_ids, filter_clause, get_columns, get_record,
+                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_record, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
                   update_record, values_for, viewable_departments)
 from models import get_db, log
@@ -166,6 +166,9 @@ def _department_tab_view(db, user, tabs, counts, q, args):
         by_tab[r["tab_id"]]["rows"].append(r)
     for g in groups:
         g["vmap"], g["urls"] = _ddb_display_map(db, g["rows"], g["cols"])
+        # Print widths for this tab's columns (no trailing column here: the
+        # rows are the user's own, so there is no Added by column).
+        g["widths"] = print_col_widths([col_weight(c["col_type"]) for c in g["cols"]])
     keep = {k: v for k, v in args.items() if k != "page"}
     return render_template("records_department.html", tabs=tabs, tab="department",
                            counts=counts, q=q, groups=groups, total=total,
@@ -180,6 +183,12 @@ def _download_department_csv(db, user, q):
         "SELECT r.*, t.name AS tab_name, t.position AS tab_pos FROM ddb_rows r "
         "JOIN ddb_tabs t ON t.id=r.tab_id WHERE " + where +
         " ORDER BY t.position, t.id, r.updated_at DESC, r.id DESC", params).fetchall()
+    # A selection (ids=1,2,3) downloads only those rows; without it, all of
+    # the user's rows are downloaded, as before.
+    ids = request.args.get("ids")
+    if ids:
+        idset = {x for x in ids.split(",") if x.isdigit()}
+        rows = [r for r in rows if str(r["id"]) in idset]
     cols, seen = [], set()
     for r in rows:
         for c in ddb_columns(db, user["department_id"], tab_id=r["tab_id"]):
@@ -289,6 +298,12 @@ def download():
     fq, order, fp, op, _info = list_options(db, g.user, request.args)
     rows = db.execute(rec_select() + " WHERE " + where + sq + fq + " ORDER BY " + order,
                       params + sp + fp + op).fetchall()
+    # A selection (ids=1,2,3) downloads only those records; without it, all
+    # the records the current filters match are downloaded, as before.
+    ids = request.args.get("ids")
+    if ids:
+        idset = {x for x in ids.split(",") if x.isdigit()}
+        rows = [r for r in rows if str(r["id"]) in idset]
     header, out = build_csv(db, rows, with_owner=False)
     log(db, "download_csv", f"{len(rows)} records ({tab})")
     db.commit()

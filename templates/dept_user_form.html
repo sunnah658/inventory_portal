@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% from "_design6.html" import followups_card, recent_card, quick_card with context %}
 {% block title %}Add user — {{ dept['name'] }}{% endblock %}
 {% block content %}
+<div class="tw"><div>
 <div class="card medium"><h1>Add user — {{ dept['name'] }}</h1>
   <p class="hint" style="margin-bottom:18px">This account is for your department only, as a regular user. It cannot log in until the portal admin (or a user with portal administrative permission) approves it. The user must change the temporary password at first login.</p>
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -12,4 +14,12 @@
     <div class="fd"><label for="password">Temporary password</label><input id="password" name="password" type="text" minlength="8" autocomplete="off"><div class="sub">Leave empty and the portal creates a random one.</div></div>
     <div class="acts" style="margin-top:14px"><button class="b p" type="submit">Create user (waiting for approval)</button><a class="b" href="{{ url_for('admin.dept_users') }}">Cancel</a></div>
   </form></div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>About this account</h2>
+    <p class="hint">This account is for your department only, as a regular user. It cannot log in until the portal admin approves it. The user must change the temporary password at first login.</p></div>
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([('Users in my department', url_for('admin.dept_users'), True)]) }}
+</div></div>
 {% endblock %}

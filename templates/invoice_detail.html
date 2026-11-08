@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}{{ inv['number'] or 'Draft invoice' }}{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>{{ inv['title'] }} {% if inv['number'] %}· {{ inv['number'] }}{% else %}· Draft{% endif %}</h1>
@@ -10,6 +11,13 @@
 {% if can_manage and inv['status']=='issued' %}<form method="post" action="{{ url_for('invoices.invoice_paid', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Mark Paid</button></form>{% endif %}
 {% if can_manage and inv['status'] in ('issued','paid') %}<form method="post" action="{{ url_for('invoices.invoice_void', iid=inv['id']) }}" onsubmit="return confirm('Void this invoice? Its number is kept and never reused.')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="reason" value="Voided by owner / dept admin"><button class="b dg" type="submit">Void</button></form>{% endif %}
 </div></div>
+<div class="kp">
+  {{ kpi('Grand total', '%.2f'|format(inv['total']) ~ ' ' ~ inv['currency']) }}
+  {{ kpi('Status', inv['status']|title) }}
+  {{ kpi('Public QR views', inv['public_views'] or 0) }}
+  {{ kpi('Lines', lines|length) }}
+</div>
+<div class="tw"><div>
 <div class="card"><div><span class="s {{ 'g' if inv['status'] in ('issued','paid') else 'a' if inv['status']=='draft' else 'r' }}">{{ inv['status']|title }}</span>
 {% if inv['status']=='draft' %}<span class="hint"> Draft has no number and no public QR yet.</span>{% endif %}
 {% if inv['void_reason'] %}<div class="hint">Void reason: {{ inv['void_reason'] }}</div>{% endif %}</div>
@@ -19,7 +27,9 @@
 <div style="margin-top:14px;text-align:right">Subtotal: <b>{{ '%.2f'|format(inv['subtotal']) }} {{ inv['currency'] }}</b><br>{% if inv['vat_amount'] %}VAT: <b>{{ '%.2f'|format(inv['vat_amount']) }} {{ inv['currency'] }}</b><br>{% endif %}Grand total: <b>{{ '%.2f'|format(inv['total']) }} {{ inv['currency'] }}</b><br><span class="hint">{{ inv['amount_in_words'] }}</span></div>
 {% if inv['notes'] %}<p class="hint" style="margin-top:10px">Terms: {{ inv['notes'] }}</p>{% endif %}
 </div>
-<div class="card" style="margin-top:16px"><h2>Public QR</h2>
+</div>
+<div class="stack rail">
+<div class="card"><h2>Public QR</h2>
 <p class="hint">Generate a public QR to share this invoice. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the invoice number. Quote the invoice number for payment and accounts. Searching the share code, viewing it and downloading its PDF all need a login.</p>
 {% if inv['status'] not in ('issued','paid') %}<div class="alert">Draft and Void invoices do not get a live QR.</div>
 {% else %}
@@ -38,4 +48,20 @@
 <form method="post" action="{{ url_for('invoices.invoice_public', iid=inv['id']) }}" onsubmit="return confirm('New scan link: the old code stops working. Continue?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New scan link</button></form></div>{% endif %}{% endif %}
 {% endif %}
 </div>
+<div class="card"><h2>Details</h2>
+  <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Template</b>{{ tpl['name'] if tpl else '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Owner</b>{{ owner_name }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Invoice date</b>{{ inv['invoice_date'] or '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currency</b>{{ inv['currency'] }}</div>
+</div>
+{{ followups_card() }}
+{{ recent_card() }}
+{{ quick_card([
+  ('Download PDF', url_for('invoices.invoice_pdf', iid=inv['id']), True),
+  ('Edit draft', url_for('invoices.invoice_edit', iid=inv['id']), False) if can_edit else None,
+  ('Share with a department', url_for('invoices.share_department'), False) if can_manage else None,
+  ('Print', 'print', False),
+  ('Back to Invoices', url_for('ddb.index', dept=inv['department_id'], tab='invoices'), False),
+] | select) }}
+</div></div>
 {% endblock %}

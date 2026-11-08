@@ -9,6 +9,7 @@
   <title>{% block title %}Portal{% endblock %} - {{ company_name }}</title>
   <link rel="icon" href="{{ icon_url }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
   <script>(function(){var h=document.documentElement;if(h.getAttribute('data-theme')==='auto'){h.setAttribute('data-theme',window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}})();</script>
 </head>
 <body>
@@ -75,6 +76,79 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   var b=document.getElementById('menuBtn'),n=document.getElementById('mainNav');
   if(b&&n)b.addEventListener('click',function(){n.classList.toggle('open');b.setAttribute('aria-expanded',n.classList.contains('open'));});
+  /* Row selection for the Department Database and My records lists: Select
+     shows the tick boxes, Select all ticks every row on the page, and Export
+     and Print then use only the ticked rows. */
+  var selBtn=document.querySelector('.selToggle'),selAllBtn=document.querySelector('.selAllBtn');
+  if(selBtn){
+    var err=document.getElementById('printErr'),
+        countEl=document.querySelector('.selcount-text'),
+        printEl=document.querySelector('.selprint-n');
+    function selIds(){var a=[];document.querySelectorAll('input.rowck').forEach(function(b){if(b.checked)a.push(b.value);});return a;}
+    function updateSel(){
+      var ids=selIds(),n=ids.length;
+      if(countEl)countEl.textContent=n===0?'No rows selected':n===1?'1 row selected':n+' rows selected';
+      if(printEl)printEl.textContent=n;
+      if(err&&n>0)err.hidden=true;
+      document.querySelectorAll('a.explink').forEach(function(l){
+        if(!l.dataset.base)l.dataset.base=l.getAttribute('href');
+        l.setAttribute('href',n>0?l.dataset.base+(l.dataset.base.indexOf('?')>=0?'&':'?')+'ids='+ids.join(','):l.dataset.base);
+      });
+    }
+    function setSelMode(on){
+      document.body.classList.toggle('sel-on',on);
+      selBtn.textContent=on?'Cancel':'Select';
+      if(!on){document.querySelectorAll('input.rowck').forEach(function(b){b.checked=false;});
+        document.querySelectorAll('input.selall').forEach(function(b){b.checked=false;});}
+      updateSel();
+    }
+    selBtn.addEventListener('click',function(){setSelMode(!document.body.classList.contains('sel-on'));});
+    if(selAllBtn)selAllBtn.addEventListener('click',function(){
+      setSelMode(true);
+      document.querySelectorAll('input.rowck').forEach(function(b){b.checked=true;});
+      document.querySelectorAll('input.selall').forEach(function(b){b.checked=true;});
+      updateSel();
+    });
+    document.addEventListener('change',function(e){
+      var t=e.target;
+      if(t.classList.contains('rowck'))updateSel();
+      if(t.classList.contains('selall')){
+        t.closest('table').querySelectorAll('input.rowck').forEach(function(b){b.checked=t.checked;});
+        updateSel();
+      }
+    });
+    /* Print with nothing selected shows an error instead of printing. */
+    document.querySelectorAll('.printguard').forEach(function(p){
+      p.addEventListener('click',function(){
+        if(selIds().length===0){if(err)err.hidden=false;return;}
+        window.print();
+      });
+    });
+    /* Whichever way printing starts, only the ticked rows print. */
+    window.addEventListener('beforeprint',function(){
+      if(selIds().length===0)return;
+      document.querySelectorAll('input.rowck:not(:checked)').forEach(function(b){
+        var tr=b.closest('tr');if(tr)tr.classList.add('hideme');
+      });
+    });
+    window.addEventListener('afterprint',function(){
+      document.querySelectorAll('tr.hideme').forEach(function(tr){tr.classList.remove('hideme');});
+    });
+    updateSel();
+  }
+  /* Password eye: tap to show the password, tap again to hide it. The
+     button is type="button" so it never submits the form, and the
+     password starts hidden every time the page opens. */
+  document.querySelectorAll('.pw-eye').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var wrap=btn.closest('.pw-wrap'),inp=wrap?wrap.querySelector('input'):null;
+      if(!inp)return;
+      var show=inp.type==='password';
+      inp.type=show?'text':'password';
+      if(wrap)wrap.classList.toggle('show',show);
+      btn.setAttribute('aria-label',show?'Hide password':'Show password');
+    });
+  });
 });
 </script>
 </body>

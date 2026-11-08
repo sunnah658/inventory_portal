@@ -1,0 +1,45 @@
+{# Design 6 shared pieces: KPI card, week chart, right-rail cards.
+   The rail data comes from the `design` dict the context processor injects
+   (follow-ups, recent rows, rows added this week). Every card hides itself
+   gracefully when there is nothing to show, so a page never breaks. #}
+{% macro kpi(label, value, trend='', cls='') %}
+<div class="k1 {{ cls }}"><span>{{ label }}</span><b>{{ value }}</b><small>{{ trend }}</small></div>
+{% endmacro %}
+
+{% macro week_chart(title='Rows added this week') %}
+{% if design and design.week %}
+<div class="card"><h2>{{ title }}</h2>
+  <div class="vbars">{% for b in design.week %}<div class="vbar{{ ' hot' if b.hot }}" style="height:{{ b.pct }}%"></div>{% endfor %}</div>
+  <div class="vbarlab">{% for b in design.week %}<span>{{ b.label }}</span>{% endfor %}</div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro followups_card() %}
+<div class="card"><h2>Follow-ups due</h2>
+  {% if design and design.followups %}
+    {% for f in design.followups %}
+    <div class="fup"><span class="date">{{ f.day }}<small>{{ f.mon }}</small></span><span><b><a href="{{ f.link }}">{{ f.title }}</a></b><small>{{ f.detail }}</small></span></div>
+    {% endfor %}
+  {% else %}<p class="hint">Nothing due in the next 7 days.</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro recent_card() %}
+<div class="card"><h2>Recent activity</h2>
+  {% if design and design.recent %}
+    {% for r in design.recent %}
+    <div class="ritem"><span class="dot"></span><span><b>{{ r.who }}</b> added <b><a href="{{ r.link }}">{{ r.what }}</a></b><small>{{ r.when }}</small></span></div>
+    {% endfor %}
+  {% else %}<p class="hint">No recent changes in this department.</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro quick_card(actions) %}
+<div class="card"><h2>Quick actions</h2>
+  {% for label, url, primary in actions %}
+  {% if url == 'print' %}<button class="b{{ ' p' if primary }} wide printguard" style="margin-bottom:8px" type="button">{{ label }}</button>
+  {% else %}<a class="b{{ ' p' if primary }} wide" style="margin-bottom:8px" href="{{ url }}">{{ label }}</a>{% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}

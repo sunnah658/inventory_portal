@@ -1,9 +1,16 @@
 {% extends "base.html" %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Reminders{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Reminders</h1><p class="hint">Records whose reminder date (for example warranty end) is coming up or has passed.</p></div>
   <form method="get" class="acts"><label for="days" style="margin:0">Look ahead</label>
     <select id="days" name="days" style="width:auto" onchange="this.form.submit()">{% for n in (1, 3, 7, 15, 30, 60, 90, 180, 365) %}<option value="{{ n }}" {{ 'selected' if n == days }}>{{ n }} days</option>{% endfor %}</select></form></div>
+<div class="kp">
+  {{ kpi('Coming up', soon|length) }}
+  {{ kpi('Already passed', expired|length) }}
+  {{ kpi('Look ahead', days ~ ' days') }}
+</div>
+<div class="tw"><div>
 <h2>Coming up in the next {{ days }} day{{ '' if days == 1 else 's' }} ({{ soon|length }})</h2>
 <div class="tb" style="margin-bottom:22px">{% if soon %}<table><thead><tr><th>Record</th><th>Department</th><th>Owner</th><th>Date</th><th>Days left</th></tr></thead><tbody>
 {% for r in soon %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a><div class="sub">{{ r['reminder_name'] }}</div></td><td>{{ r['department_name'] }}</td><td>{{ r['owner_name'] }}</td>
@@ -14,4 +21,16 @@
 {% for r in expired %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a><div class="sub">{{ r['reminder_name'] }}</div></td><td>{{ r['department_name'] }}</td><td>{{ r['owner_name'] }}</td>
 <td>{{ r['reminder_date']|showdt }}</td><td><span class="s r">{{ -r['left'] }} day{{ '' if r['left'] == -1 else 's' }}</span></td></tr>{% endfor %}</tbody></table>
 {% else %}<div class="empty">Nothing has passed.</div>{% endif %}</div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>How reminders work</h2>
+    <p class="hint">A reminder date on a record warns its owner 1 day before and on the day itself (from 7:00 in the morning), plus once more at the number of days you choose in Notifications.</p>
+    <p class="hint">Department Database meetings warn the row owner and every department admin 7, 3 and 1 days before, and again on the morning of the meeting.</p></div>
+  {{ followups_card() }}
+  {{ recent_card() }}
+  {{ quick_card([
+    ('My records', url_for('records.list_records'), True),
+    ('Notifications', url_for('flow.notifications'), False),
+  ] | select) }}
+</div></div>
 {% endblock %}

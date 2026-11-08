@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
 {% block title %}{{ 'Edit invoice' if inv else 'New invoice' }}{% endblock %}
 {% block content %}
 {% if not tpl %}<div class="card"><h1>Choose a format first</h1><p class="hint">Go to the Invoices tab and press Create on a format card.</p><a class="b p" href="{{ url_for('invoices.list_invoices') }}">Back to Invoices</a></div>
 {% else %}
+<div class="tw"><div>
 <div class="hd"><div><h1>{{ tpl['name'] }} {% if inv %}· {{ inv['number'] or 'Draft' }}{% endif %}</h1><p class="hint">Live totals update as you type. Finalize locks the invoice and gives it a number — a draft can still be changed.</p></div></div>
 <form method="post" class="card" id="invForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
@@ -88,5 +90,20 @@ document.getElementById('curSel').addEventListener('change', recalc);
 function addLine(){var first=document.querySelector('#lines .line'); if(!first) return; var c=first.cloneNode(true); c.querySelectorAll('input').forEach(function(i){i.value='';}); document.getElementById('lines').appendChild(c); recalc();}
 recalc();
 </script>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Template: {{ tpl['name'] }}</h2>
+    <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ tpl['kind']|title }}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currency</b>{{ tpl['default_currency'] }}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Tax</b>{% if tpl['show_tax'] %}VAT {{ tpl['vat_percent'] }}%{% else %}Off{% endif %}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Numbering</b>{{ tpl['number_prefix'] }}-0001…</div>
+  </div>
+  <div class="card"><h2>How it works</h2>
+    <p class="hint">Live totals update as you type. Save draft to keep working on it. Finalize locks the invoice and gives it a number — a draft can still be changed, an issued invoice keeps the format it was made with.</p></div>
+  {{ quick_card([
+    ('Back to Invoices', url_for('invoices.list_invoices'), True),
+    ('Invoice templates', url_for('invoices.templates'), False),
+  ]) }}
+</div></div>
 {% endif %}
 {% endblock %}

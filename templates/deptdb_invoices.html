@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import pager with context %}
+{% from "_design6.html" import kpi, followups_card, recent_card, quick_card with context %}
 {% block title %}Department database · Invoices{% endblock %}
 {% block content %}
 <div class="hd">
@@ -10,6 +11,13 @@
     <button class="b" type="button" onclick="window.print()">Print</button>
   </div>
 </div>
+<div class="kp">
+  {{ kpi('All invoices', counts.all) }}
+  {{ kpi('My invoices', counts.mine) }}
+  {{ kpi('Issued', counts.issued) }}
+  {{ kpi('Paid', counts.paid) }}
+</div>
+<div class="tw"><div>
 {% if depts %}<form method="get" class="tools" style="margin-bottom:10px"><label for="dsel" style="margin:0">Department</label>
   <select id="dsel" name="dept" style="width:auto" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept['id'] }}>{{ d['name'] }}</option>{% endfor %}</select><input type="hidden" name="tab" value="invoices"></form>{% endif %}
 <form class="tools" method="get" action="{{ url_for('ddb.index') }}">
@@ -49,4 +57,20 @@
   <div class="tb"><div class="empty">{% if q or user_filter or status %}Nothing matches your filter.{% else %}No invoices yet. Choose a format above to create one.{% endif %}</div></div>
 {% endif %}
 <p class="hint" style="margin-top:10px">Draft has no public code yet. Void keeps its number — it is never reused. Currency is shown beside every amount. When a dept admin creates a new invoice type, its sub-tab appears here automatically.</p>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Invoices by status</h2>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Draft</b>{{ counts.draft }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Issued</b>{{ counts.issued }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Paid</b>{{ counts.paid }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Void</b>{{ counts.void }}</div>
+  </div>
+  <div class="card"><h2>About share codes</h2>
+    <p class="hint">The invoice number (BIL-0001) is the official number to quote for payment and accounts. The share code (HRC-#####) is only for scanning and searching — it is not the invoice number.</p></div>
+  {{ quick_card([
+    ('+ New invoice', url_for('invoices.invoice_new', template=create_templates[0]['id']), True) if create_templates else None,
+    ('Invoice templates', url_for('invoices.templates'), False) if is_admin else None,
+    ('Shared with my dept', url_for('invoices.shared_list'), False),
+  ] | select) }}
+</div></div>
 {% endblock %}

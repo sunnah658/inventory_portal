@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% from "_macros.html" import record_fields with context %}
+{% from "_design6.html" import quick_card with context %}
 {% block title %}{{ 'Edit row' if row else 'Add row' }}{% endblock %}
 {% block content %}
+<div class="tw"><div>
 <div class="card medium">
   <h1>{{ 'Edit row' if row else 'Add row' }}</h1>
   <p class="hint" style="margin-bottom:18px">{{ dept['name'] }} database · {{ tab['name'] }}. {% if source and not row %}Values were copied from your record #{{ source }}; check them before saving. {% endif %}Fill only what you know. <span class="req">*</span> means required.</p>
@@ -19,4 +21,13 @@
       <a class="b" href="{{ url_for('ddb.row_detail', rid=row['id']) if row else url_for('ddb.index', dept=dept['id']) }}">Cancel</a></div>
   </form>
 </div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>About this row</h2>
+    <p class="hint">Everyone in {{ dept['name'] }} can see this row once it is saved. Only the row's owner can edit it, unless the owner shares it. A date with a time on a meeting tab is a meeting schedule — the owner and the dept admins are notified before it.</p></div>
+  {{ quick_card([
+    ('Back to the row', url_for('ddb.row_detail', rid=row['id']), True) if row else ('Back to the tab', url_for('ddb.index', dept=dept['id'], tab=tab['id']), True),
+    ('Tabs', url_for('ddb.tabs', dept=dept['id']), False),
+  ] | select) }}
+</div></div>
 {% endblock %}
