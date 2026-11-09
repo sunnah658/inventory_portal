@@ -31,6 +31,7 @@
 <div class="tabs">
   {% for tb in tabs %}<a class="tab {{ 'on' if tb['id'] == tab['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
   <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
+  <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>
 </div>
 <div class="subtabs">
 <div class="tabs">
@@ -73,7 +74,7 @@
   ] | select) }}
 </div></div>
 {% else %}
-  <div class="tabs"><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a></div>
+  <div class="tabs"><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a></div>
   <div class="tb"><div class="empty">This department database has no tabs yet.{% if is_admin %} <a href="{{ url_for('ddb.tabs', dept=dept['id']) }}">Create the first tab</a>.{% else %} Ask the department admin to create one.{% endif %}</div></div>
 {% endif %}
 {% endblock %}

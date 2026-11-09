@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}{{ 'Edit kind' if kind else 'New kind' }}{% endblock %}
+{% block content %}
+<div class="tw"><div>
+<div class="hd"><div><h1>{{ 'Edit kind' if kind else 'New kind' }}{% if kind %} · {{ kind['name'] }}{% endif %}</h1><p class="hint">Everything on the request is decided here. Changes apply to new requests only.</p></div></div>
+<form method="post" enctype="multipart/form-data" class="card">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<h2>1 · General</h2><div class="fm">
+<div class="fd"><label>Kind name</label><input type="text" name="name" value="{{ kind['name'] if kind else '' }}" required placeholder="Office Supplies Request"></div>
+<div class="fd"><label>Request number prefix</label><input type="text" name="number_prefix" value="{{ kind['number_prefix'] if kind else 'REQ' }}"></div>
+<div class="fd"><label>Default currency (beside every amount)</label><select name="currency">{% for c in currencies %}<option {{ 'selected' if kind and kind['default_currency']==c }}>{{ c }}</option>{% endfor %}</select></div>
+<div class="fd"><label>Status</label><select name="status"><option value="active" {{ 'selected' if not kind or kind['status']=='active' }}>Active</option><option value="draft" {{ 'selected' if kind and kind['status']=='draft' }}>Draft (hidden from employees)</option></select></div>
+</div>
+<h2>2 · Heading</h2><div class="fm">
+<div class="fd"><label>Company name (top of the request)</label><input type="text" name="company_name" value="{{ kind['company_name'] if kind and kind['company_name'] else default_company_name }}" placeholder="HRC Technologies Limited"></div>
+<div class="fd"><label>Address (under the company name)</label><input type="text" name="company_address" value="{{ kind['company_address'] if kind and kind['company_address'] else default_company_address }}" placeholder="Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100"></div>
+</div>
+<p class="hint">Whatever is typed here appears at the top of requests made from this kind, next to the logo. Type the phone number in the address if you want it shown. No email is ever shown. Leave a box empty to use the portal's company name and address.</p>
+<label class="ck"><input type="checkbox" name="show_company_logo" {{ 'checked' if not kind or kind['show_company_logo'] }}> Show company logo</label>
+<label class="ck"><input type="checkbox" name="show_address" {{ 'checked' if not kind or kind['show_address'] }}> Show company address and contact</label>
+<h2>Logos — two top corners</h2><p class="hint">Left logo: company. Right logo: department / branch. The request always shows two logos on the two top corners — when no right logo is uploaded, the portal logo fills the right corner. "Item Request" stays centred at the top.</p>
+<div class="fm"><div class="fd"><label>Left logo</label><input type="file" name="logo_left" accept=".png,.jpg,.jpeg,.webp">{% if kind and kind['logo_left'] %}<div class="sub">Current: {{ kind['logo_left'] }}</div>{% endif %}</div>
+<div class="fd"><label>Right logo</label><input type="file" name="logo_right" accept=".png,.jpg,.jpeg,.webp">{% if kind and kind['logo_right'] %}<div class="sub">Current: {{ kind['logo_right'] }}</div>{% endif %}</div></div>
+<h2>3 · Totals</h2>
+<label class="ck"><input type="checkbox" name="amount_in_words" {{ 'checked' if not kind or kind['show_amount_in_words'] }}> Amount in words</label>
+<h2>4 · Notes and terms</h2><div class="fd"><textarea name="notes">{{ kind['notes'] if kind else '' }}</textarea></div>
+<h2>5 · Signatures</h2><p class="hint">How many signatures, with title, person name and designation. Add as many as you want — press "+ Add signature" for another row. The request shows every signature you set, lower on the page. Leave a row blank to skip it.</p>
+<div id="sigs">
+{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm sigrow"><div class="fd"><label>Signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Requested by"></div><div class="fd"><label>Person name</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
+</div>
+<button class="b" type="button" onclick="addSig()">+ Add signature</button>
+<script>
+function addSig(){var rows=document.querySelectorAll('#sigs .sigrow'); var last=rows[rows.length-1]; var c=last.cloneNode(true); c.querySelectorAll('input').forEach(function(i){i.value='';}); var n=rows.length+1; c.querySelectorAll('label').forEach(function(l){l.textContent=l.textContent.replace(/Signature \d+/, 'Signature '+n);}); document.getElementById('sigs').appendChild(c);}
+</script>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save kind</button><a class="b" href="{{ url_for('requests.kinds') }}">Cancel</a></div>
+</form>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>How it works</h2>
+    <p class="hint">The kind is frozen into each request when it is sent, so changing the kind later never changes a sent request. The request number is per-kind and never reused. Requests are sent only to HR &amp; Admin Department users.</p></div>
+  <div class="card"><h2>Sections</h2>
+    <p class="hint">1 General · 2 Heading · 3 Totals · 4 Notes and terms · 5 Signatures</p></div>
+  {{ quick_card([
+    ('Back to kinds', url_for('requests.kinds'), True),
+  ]) }}
+</div></div>
+{% endblock %}

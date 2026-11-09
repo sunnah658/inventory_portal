@@ -1,12 +1,74 @@
 {% extends "base.html" %}
-{% block title %}New request{% endblock %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}New item request{% endblock %}
 {% block content %}
-<div class="card medium"><h1>New request</h1>
-  <p class="hint" style="margin-bottom:18px">Your department admin and the admin get a notification and will answer you.</p>
-  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="fm"><div class="fd"><label for="kind">Type</label><select id="kind" name="kind"><option value="new_item" {{ 'selected' if form.get('kind') == 'new_item' }}>New item</option><option value="repair" {{ 'selected' if form.get('kind') == 'repair' }}>Repair</option><option value="other" {{ 'selected' if form.get('kind') == 'other' }}>Other</option></select></div>
-      <div class="fd"><label for="title">Short title</label><input id="title" name="title" type="text" maxlength="150" required value="{{ form.get('title', '') }}"></div></div>
-    <div class="fd"><label for="details">Details</label><textarea id="details" name="details" maxlength="2000">{{ form.get('details', '') }}</textarea></div>
-    <div class="acts"><button class="b p" type="submit">Send request</button><a class="b" href="{{ url_for('flow.requests_page') }}">Cancel</a></div>
-  </form></div>
+{% if not kind %}<div class="card"><h1>Choose a kind first</h1><p class="hint">Go to the Request items tab and press Create on a kind card.</p><a class="b p" href="{{ url_for('requests.list_requests') }}">Back to Request items</a></div>
+{% else %}
+<div class="tw"><div>
+<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Live totals update as you type. Sending gives the request a number ({{ kind['number_prefix'] }}-0001…) and notifies the HR &amp; Admin user you send it to. A new request starts as Pending.</p></div></div>
+<form method="post" class="card" id="reqForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm">
+<div class="fd"><label>Send to (HR &amp; Admin Department user)</label><select name="recipient_id" required>
+{% if not recipients %}<option value="">No HR &amp; Admin user found</option>
+{% else %}<option value="">Choose a recipient…</option>{% for r in recipients %}<option value="{{ r['id'] }}">{{ r['full_name'] }} ({{ r['username'] }})</option>{% endfor %}{% endif %}
+</select><div class="sub">Requests can only be sent to a user in the HR &amp; Admin Department.</div></div>
+<div class="fd"><label>Date</label><input type="date" name="request_date" value=""></div>
+<div class="fd"><label>Currency — beside every amount</label><select name="currency" id="curSel">{% for c in currencies %}<option {{ 'selected' if kind['default_currency']==c }}>{{ c }}</option>{% endfor %}</select><div class="sub">One currency per request. Totals and amount in words use this currency. No auto-conversion.</div></div>
+</div>
+<h2>Items</h2>
+<div id="lines">
+<div class="fm line">
+<div class="fd"><label>Description</label><input type="text" name="description"></div>
+<div class="fd"><label>Qty</label><input type="number" step="0.01" name="qty" class="qty" value="1"></div>
+<div class="fd"><label>Rate (<span class="curLabel">{{ kind['default_currency'] }}</span>)</label><input type="number" step="0.01" name="rate" class="rate"></div>
+<div class="fd"><label>Amount (<span class="curLabel">{{ kind['default_currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" readonly></div>
+</div>
+</div>
+<button class="b" type="button" onclick="addLine()">+ Add item</button>
+<div class="card" style="margin-top:16px">
+<div>Subtotal: <b id="subT">0.00</b> <span class="curLabel">{{ kind['default_currency'] }}</span></div>
+<div>Grand total: <b id="grandT">0.00</b> <span class="curLabel">{{ kind['default_currency'] }}</span></div>
+<div class="sub" id="wordsT"></div>
+</div>
+<h2 style="margin-top:16px">Notes / terms</h2><textarea name="notes">{{ kind['notes'] }}</textarea>
+<h2 style="margin-top:16px">Signatures (set by dept admin, shown here)</h2>
+<p class="hint">Signatures from the kind are shown on the PDF. "Requested by" is filled with your name and "Received by" with the recipient's name when left blank.</p>
+{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm"><div class="fd"><label>Signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Requested by"></div><div class="fd"><label>Person</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit" {{ 'disabled' if not recipients }}>Send request</button><a class="b" href="{{ url_for('requests.list_requests') }}">Cancel</a></div>
+</form>
+<script>
+function fmt(n){return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function words(n){var o=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"],t=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];function w(x){if(x==0)return "Zero";if(x<20)return o[x];if(x<100)return t[Math.floor(x/10)]+(x%10?"-"+o[x%10]:"");if(x<1000)return o[Math.floor(x/100)]+" Hundred"+(x%100?" "+w(x%100):"");if(x<1000000)return w(Math.floor(x/1000))+" Thousand"+(x%1000?" "+w(x%1000):"");return w(Math.floor(x/1000000))+" Million"+(x%1000000?" "+w(x%1000000):"");}return w(Math.floor(n));}
+function recalc(){
+  var sub=0;
+  document.querySelectorAll('#lines .line').forEach(function(row){
+    var q=row.querySelector('.qty'), r=row.querySelector('.rate'), a=row.querySelector('.amt');
+    if(q && r && a){var v=(parseFloat(q.value)||0)*(parseFloat(r.value)||0); a.value=v.toFixed(2); sub+=v;}
+    else if(a){sub+=parseFloat(a.value)||0;}
+  });
+  document.getElementById('subT').textContent=fmt(sub); document.getElementById('grandT').textContent=fmt(sub);
+  var cur=document.getElementById('curSel').value, word={BDT:'Taka',USD:'Dollars',EUR:'Euros',GBP:'Pounds',INR:'Rupees'}[cur]||cur;
+  document.getElementById('wordsT').textContent='In words: '+word+' '+words(sub)+' Only';
+  document.querySelectorAll('.curLabel').forEach(function(e){e.textContent=cur;});
+}
+document.getElementById('reqForm').addEventListener('input', recalc);
+document.getElementById('curSel').addEventListener('change', recalc);
+function addLine(){var first=document.querySelector('#lines .line'); if(!first) return; var c=first.cloneNode(true); c.querySelectorAll('input').forEach(function(i){i.value='';}); document.getElementById('lines').appendChild(c); recalc();}
+recalc();
+</script>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Kind: {{ kind['name'] }}</h2>
+    <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currency</b>{{ kind['default_currency'] }}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Numbering</b>{{ kind['number_prefix'] }}-0001…</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Send to</b>HR &amp; Admin user only</div>
+  </div>
+  <div class="card"><h2>How it works</h2>
+    <p class="hint">Live totals update as you type. Sending gives the request a number and notifies the recipient. The recipient sees it in "Other's request", can print it and download its PDF, and changes the status — you are notified of the change and can see it in "My request".</p></div>
+  {{ quick_card([
+    ('Back to Request items', url_for('requests.list_requests'), True),
+    ('Item Request kinds', url_for('requests.kinds'), False),
+  ]) }}
+</div></div>
+{% endif %}
 {% endblock %}

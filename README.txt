@@ -2338,3 +2338,142 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 49. REQUEST ITEMS — DEFAULT TAB IN DEPARTMENT DATABASE (2026-11-08)
+==============================================================================
+ 1. A new default tab "Request items" inside Department Database, always
+    there for every department (like Invoices), cannot be deleted or
+    customised. Sub-tabs: My request, All request, Other's request.
+ 2. Item Request kind (new file routes_requests.py, templates
+    request_kinds.html / request_kind_form.html): the dept admin makes the
+    format for request items, just like invoice templates (dept-admin-only
+    page). Fields: kind name, number prefix (REQ), default currency,
+    company name / address, show address, two logos, notes, signatures,
+    status (active / draft). The dept admin can add as many signature
+    blocks as he wants ("+ Add signature" adds a row). A "Create starter
+    kind" button makes an "Office Supplies Request" kind (REQ, BDT,
+    Requested by / Received by / Approved by). The kind appears as a
+    Create card in the Request items tab, so a user can make a request
+    from there. New tables: item_request_kinds, item_requests,
+    item_request_lines (models.py).
+ 3. Creating and sending a request (templates/request_form.html): a user
+    picks a kind, adds items (Description / Qty / Rate / Amount, live
+    totals, amount in words, one currency, no tax), and sends it to ONE
+    specific user. The recipient can ONLY be a user in the HR & Admin
+    Department (the dropdown lists only active, approved HR & Admin
+    users; any other recipient is refused). Sending gives the request a
+    number (REQ-0001, sequential per kind, never reused) and the status
+    Pending, and notifies the recipient. The request then appears in the
+    recipient's "Other's request" sub-tab.
+ 4. The recipient can print the request and download its PDF, and can
+    change its status: Pending, Issued, Paid, Handovered (detail page,
+    recipient only — POST /requests/<id>/status). When the status
+    changes, the creator is notified and can see the new status in "My
+    request". The creator can also print and download the PDF.
+ 5. All request visibility: the portal admin, administrative permission
+    users and HR & Admin Department users see ALL departments' requests;
+    users of other departments see only their own department's requests.
+    Filter is BOTH department and status, with a search bar — anyone can
+    search by name (creator, recipient, kind) or Department, and only
+    matching records appear. The department filter is shown only to
+    users who see all departments.
+ 6. Request document (exports.request_pdf, format approved in
+    item-request-format-v3.jpg): two logos on the two top corners (HRC
+    logo top-left with company + address, second logo top-right — the
+    portal logo fills the right corner when the kind has no right logo),
+    "Item Request" centred at the top with the kind name under it,
+    coloured rule, Request No. / Date / Status and Requested by /
+    Department / Requested to, kind name on top of the table, Qty / Rate
+    / Amount with the currency beside every amount, Subtotal and Grand
+    Total, amount in words, signatures lower on the page (a bigger gap
+    than on an invoice) with as many blocks as the dept admin set, QR
+    (1.9 cm) and "Share code: HRC-#####" at the very bottom left of
+    every page and "Page 1" at the bottom right.
+ 7. Public QR (like invoices): a request can get a public QR — random
+    HRC-##### code, turn on / off / new scan link (regenerating kills
+    the old code). Searching the code, viewing it and downloading its
+    PDF all need a login (routes /requests/code/<code> and
+    /requests/code/<code>/pdf). The Request items tab is exempt from
+    the DeptDB share-code redirect, like the Invoices tab.
+ 8. NOTHING ELSE CHANGED. This build also carries the whole of build 29
+    (login heading "Welcome"), build 28 (notification lines gone at the
+    source), build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (new tables are
+   created automatically on first start). Apply only this
+   latest zip, not the older ones in order.
+
+ 50. REQUEST ITEMS — KIND NAME OFF THE DOCUMENT (2026-11-08)
+==============================================================================
+ 1. The Item Request document (PDF) no longer shows the kind name at
+    all — neither as the small line under "Item Request" at the top, nor
+    as the heading above the table. The document is just "Item Request",
+    then the request number, the table, and the rest (exports.request_pdf
+    and routes_requests._build_pdf). The kind name still appears in the
+    Request items tab, on the Create card, so a user can pick which kind
+    to make a request from — it is only the printed document that no
+    longer carries it.
+ 2. The Request items tab's top heading cards (All requests, My
+    requests, Pending, Handovered) already use the exact same code as
+    the Invoices tab, so in a real browser they sit side by side in one
+    row, like the Invoices tab. No code change was needed there — the
+    stacked look in the build-30 proof JPG was a fault of the picture
+    tool (WeasyPrint cannot do the auto-fit grid, so it stacks the
+    cards in the picture only).
+ 3. NOTHING ELSE CHANGED. This build also carries the whole of build 30
+    (Request Items) and build 29 (login heading "Welcome"), build 28
+    (notification lines gone at the source), build 27 (Dashboard Recent
+    activity removed) and build 26 (stylesheet cache-busting, inline
+    flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (the request tables
+   are created automatically on first start). Apply only this
+   latest zip, not the older ones in order.
+
+ 51. REQUEST ITEMS — EDIT, EDIT LOG AND UPDATES (2026-11-08)
+==============================================================================
+ 1. The owner (the user who made the request) AND the recipient (the
+    HR & Admin user it was sent to) can now both edit the request.
+    An "Edit" button sits on the request detail page for both of them.
+    Only the items (description, qty, rate — add, remove or change
+    lines) and the notes can be changed. The request number, the date,
+    the kind and the recipient stay the same and are not editable.
+    Saving recalculates the totals and the amount in words, and the
+    PDF shows the updated values. Nobody else can edit — not the portal
+    admin, not other users in the department (they get a 403).
+ 2. The status is still changed only by the recipient (Pending, Issued,
+    Paid, Handovered), as before. The owner cannot change the status.
+ 3. Updates on the notification page: when the recipient edits the
+    request or changes its status, the owner is notified; when the
+    owner edits the request, the recipient is notified. Each
+    notification links to the request.
+ 4. Edit log in activities: every edit is written to a new
+    item_request_history table — who edited it, when, and what changed,
+    line by line (old value struck through, new value beside it), plus
+    the creation of the request as the first entry. The log shows as an
+    "Edit history" section on the request detail page, in the same style
+    as the record edit history, and every edit is also written to the
+    portal Activity log (action "request_edit"), so the portal admin
+    can see it on the Activity page.
+ 5. NOTHING ELSE CHANGED. This build also carries the whole of build 31
+    (kind name off the request document), build 30 (Request Items),
+    build 29 (login heading "Welcome"), build 28 (notification lines
+    gone at the source), build 27 (Dashboard Recent activity removed)
+    and build 26 (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (the edit-log table
+   is created automatically on first start). Apply only this
+   latest zip, not the older ones in order.

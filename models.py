@@ -468,6 +468,77 @@ CREATE TABLE IF NOT EXISTS invoice_dept_shares (
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_records_owner   ON records(owner_id);
+
+-- ======================= Item Requests (dept-admin kinds, user requests to HR & Admin) =======================
+CREATE TABLE IF NOT EXISTS item_request_kinds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    created_by    INTEGER REFERENCES users(id),
+    name          TEXT NOT NULL,
+    number_prefix TEXT NOT NULL DEFAULT 'REQ',
+    next_number   INTEGER NOT NULL DEFAULT 1,
+    default_currency TEXT NOT NULL DEFAULT 'BDT',
+    show_amount_in_words INTEGER NOT NULL DEFAULT 1,
+    notes         TEXT,
+    show_company_logo INTEGER NOT NULL DEFAULT 1,
+    show_address  INTEGER NOT NULL DEFAULT 1,
+    company_name  TEXT NOT NULL DEFAULT '',
+    company_address TEXT NOT NULL DEFAULT '',
+    logo_left     TEXT,
+    logo_right    TEXT,
+    signatures_json TEXT NOT NULL DEFAULT '[]',
+    status        TEXT NOT NULL DEFAULT 'active',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS item_requests (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    kind_id       INTEGER REFERENCES item_request_kinds(id),
+    owner_id      INTEGER NOT NULL REFERENCES users(id),
+    recipient_id  INTEGER REFERENCES users(id),
+    number        TEXT,
+    currency      TEXT NOT NULL DEFAULT 'BDT',
+    request_date  TEXT,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    subtotal      REAL NOT NULL DEFAULT 0,
+    total         REAL NOT NULL DEFAULT 0,
+    amount_in_words TEXT,
+    notes         TEXT,
+    signatures_json TEXT NOT NULL DEFAULT '[]',
+    kind_snapshot_json TEXT NOT NULL DEFAULT '{}',
+    public_code   TEXT UNIQUE,
+    public_enabled INTEGER NOT NULL DEFAULT 0,
+    public_views  INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS item_request_lines (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id    INTEGER NOT NULL REFERENCES item_requests(id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL DEFAULT 0,
+    description   TEXT,
+    qty           REAL NOT NULL DEFAULT 1,
+    rate          REAL NOT NULL DEFAULT 0,
+    amount        REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_req_owner ON item_requests(owner_id);
+CREATE INDEX IF NOT EXISTS idx_req_recip ON item_requests(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_req_dept  ON item_requests(department_id);
+CREATE INDEX IF NOT EXISTS idx_req_code  ON item_requests(public_code);
+CREATE TABLE IF NOT EXISTS item_request_history (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id INTEGER NOT NULL REFERENCES item_requests(id) ON DELETE CASCADE,
+    user_id    INTEGER,
+    username   TEXT,
+    full_name  TEXT,
+    action     TEXT NOT NULL,
+    field      TEXT,
+    old_value  TEXT,
+    new_value  TEXT,
+    at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_req_hist ON item_request_history(request_id);
 CREATE INDEX IF NOT EXISTS idx_records_dept    ON records(department_id);
 CREATE INDEX IF NOT EXISTS idx_values_column   ON record_values(column_id);
 CREATE INDEX IF NOT EXISTS idx_history_record  ON record_history(record_id);

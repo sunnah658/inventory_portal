@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}Edit item request {{ req['number'] }}{% endblock %}
+{% block content %}
+<div class="tw"><div>
+<div class="hd"><div><h1>Edit item request · {{ req['number'] }}</h1><p class="hint">Only the items and the notes can be changed. The request number, the date, the kind and the recipient stay the same. Live totals update as you type. Saving writes an edit log entry for every change, and notifies the other party — the owner is told when the recipient edits, the recipient is told when the owner edits.</p></div></div>
+<form method="post" class="card" id="reqForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" id="curSel" value="{{ req['currency'] }}">
+<div class="fm">
+<div class="fd"><label>Kind</label><input type="text" value="{{ kind['name'] if kind else '—' }}" readonly></div>
+<div class="fd"><label>Requested to (HR &amp; Admin Department user)</label><input type="text" value="{{ recipient_name }}" readonly></div>
+<div class="fd"><label>Date</label><input type="text" value="{{ req['request_date'] or '' }}" readonly></div>
+<div class="fd"><label>Currency — beside every amount</label><input type="text" value="{{ req['currency'] }}" readonly><div class="sub">One currency per request. Totals and amount in words use this currency. No auto-conversion.</div></div>
+</div>
+<h2>Items</h2>
+<div id="lines">
+{% for l in lines %}<div class="fm line">
+<div class="fd"><label>Description</label><input type="text" name="description" value="{{ l['description'] }}"></div>
+<div class="fd"><label>Qty</label><input type="number" step="0.01" name="qty" class="qty" value="{{ l['qty'] }}"></div>
+<div class="fd"><label>Rate (<span class="curLabel">{{ req['currency'] }}</span>)</label><input type="number" step="0.01" name="rate" class="rate" value="{{ l['rate'] }}"></div>
+<div class="fd"><label>Amount (<span class="curLabel">{{ req['currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" value="{{ '%.2f'|format(l['amount']) }}" readonly></div>
+</div>{% endfor %}
+</div>
+<button class="b" type="button" onclick="addLine()">+ Add item</button>
+<div class="card" style="margin-top:16px">
+<div>Subtotal: <b id="subT">{{ '%.2f'|format(req['subtotal']) }}</b> <span class="curLabel">{{ req['currency'] }}</span></div>
+<div>Grand total: <b id="grandT">{{ '%.2f'|format(req['total']) }}</b> <span class="curLabel">{{ req['currency'] }}</span></div>
+<div class="sub" id="wordsT">{% if req['amount_in_words'] %}In words: {{ req['amount_in_words'] }}{% endif %}</div>
+</div>
+<h2 style="margin-top:16px">Notes / terms</h2><textarea name="notes">{{ req['notes'] }}</textarea>
+<p class="hint">Signatures stay as set by the dept admin — they are not changed here.</p>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save changes</button><a class="b" href="{{ url_for('requests.detail', rid=req['id']) }}">Cancel</a></div>
+</form>
+<script>
+function fmt(n){return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function words(n){var o=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"],t=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];function w(x){if(x==0)return "Zero";if(x<20)return o[x];if(x<100)return t[Math.floor(x/10)]+(x%10?"-"+o[x%10]:"");if(x<1000)return o[Math.floor(x/100)]+" Hundred"+(x%100?" "+w(x%100):"");if(x<1000000)return w(Math.floor(x/1000))+" Thousand"+(x%1000?" "+w(x%1000):"");return w(Math.floor(x/1000000))+" Million"+(x%1000000?" "+w(x%1000000):"");}return w(Math.floor(n));}
+function recalc(){
+  var sub=0;
+  document.querySelectorAll('#lines .line').forEach(function(row){
+    var q=row.querySelector('.qty'), r=row.querySelector('.rate'), a=row.querySelector('.amt');
+    if(q && r && a){var v=(parseFloat(q.value)||0)*(parseFloat(r.value)||0); a.value=v.toFixed(2); sub+=v;}
+    else if(a){sub+=parseFloat(a.value)||0;}
+  });
+  document.getElementById('subT').textContent=fmt(sub); document.getElementById('grandT').textContent=fmt(sub);
+  var cur=document.getElementById('curSel').value, word={BDT:'Taka',USD:'Dollars',EUR:'Euros',GBP:'Pounds',INR:'Rupees'}[cur]||cur;
+  document.getElementById('wordsT').textContent='In words: '+word+' '+words(sub)+' Only';
+  document.querySelectorAll('.curLabel').forEach(function(e){e.textContent=cur;});
+}
+document.getElementById('reqForm').addEventListener('input', recalc);
+function addLine(){var first=document.querySelector('#lines .line'); if(!first) return; var c=first.cloneNode(true); c.querySelectorAll('input').forEach(function(i){i.value='';}); document.getElementById('lines').appendChild(c); recalc();}
+recalc();
+</script>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Request: {{ req['number'] }}</h2>
+    <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Requested by</b>{{ owner_name }}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Requested to</b>{{ recipient_name }} (HR &amp; Admin)</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Status</b>{{ req['status']|title }}</div>
+  </div>
+  <div class="card"><h2>How editing works</h2>
+    <p class="hint">You and the recipient can both edit this request. Every change is written to the edit log on the request detail page, and the other party is notified. Only the recipient can change the status.</p></div>
+  {{ quick_card([
+    ('Back to the request', url_for('requests.detail', rid=req['id']), True),
+    ('Back to Request items', url_for('ddb.index', dept=req['department_id'], tab='requests'), False),
+  ]) }}
+</div></div>
+{% endblock %}

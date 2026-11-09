@@ -1,4 +1,80 @@
 ==============================================================================
+ UPDATE: REQUEST ITEMS — EDIT, EDIT LOG AND UPDATES (2026-11-08)
+==============================================================================
+ 1. The owner AND the recipient can now both edit a request — an "Edit"
+    button on the request detail page. Only the items and the notes can
+    be changed; the request number, the date, the kind and the recipient
+    stay the same. Saving recalculates the totals and the amount in
+    words, and the PDF shows the updated values. Nobody else can edit.
+ 2. The status is still changed only by the recipient, as before.
+ 3. Updates on the notification page: when the recipient edits or
+    changes the status, the owner is notified; when the owner edits,
+    the recipient is notified. Each notification links to the request.
+ 4. Edit log in activities: every edit is written to an edit log — who
+    edited it, when, and what changed, line by line — shown as an "Edit
+    history" section on the request detail page, and also written to the
+    portal Activity log, so the portal admin can see it there too.
+ 5. NOTHING ELSE CHANGED. This build also carries the whole of build 31
+    (kind name off the request document), build 30 (Request Items),
+    build 29 (login heading "Welcome"), build 28 (notification lines
+    gone at the source), build 27 (Dashboard Recent activity removed)
+    and build 26 (stylesheet cache-busting, inline flat-table style).
+
+==============================================================================
+ UPDATE: REQUEST ITEMS — KIND NAME OFF THE DOCUMENT (2026-11-08)
+==============================================================================
+ 1. The Item Request document (PDF) no longer shows the kind name at
+    all — neither as the small line under "Item Request" at the top, nor
+    as the heading above the table. The document is just "Item Request",
+    then the request number, the table, and the rest. The kind name
+    still appears in the Request items tab, on the Create card, so a
+    user can pick which kind to make a request from.
+ 2. The Request items tab's top heading cards already use the exact same
+    code as the Invoices tab, so in a real browser they sit side by side
+    in one row, like the Invoices tab. No code change was needed there —
+    the stacked look in the build-30 proof picture was a fault of the
+    picture tool only.
+ 3. NOTHING ELSE CHANGED. This build also carries the whole of build 30
+    (Request Items) and build 29 (login heading "Welcome"), build 28
+    (notification lines gone at the source), build 27 (Dashboard Recent
+    activity removed) and build 26 (stylesheet cache-busting, inline
+    flat-table style).
+
+==============================================================================
+ UPDATE: REQUEST ITEMS — DEFAULT TAB IN DEPARTMENT DATABASE (2026-11-08)
+==============================================================================
+ 1. A new default tab "Request items" inside Department Database, always
+    there for every department (like Invoices), with three sub-tabs: My
+    request, All request and Other's request.
+ 2. Department admins make an Item Request kind (like an invoice
+    template) — kind name, number prefix (REQ), currency, company
+    header, two logos and as many signature blocks as they want. The
+    kind appears as a Create card in the Request items tab, so a user
+    can make a request from there. A "Create starter kind" button
+    makes an "Office Supplies Request" kind.
+ 3. A user creates a request and sends it to ONE specific user — only
+    a user in the HR & Admin Department. The recipient is notified,
+    sees it in "Other's request", and can print it, download its PDF
+    and change its status: Pending, Issued, Paid, Handovered. The
+    creator is notified of every status change and sees it in "My
+    request". The creator can also print and download the PDF.
+ 4. In All request, the portal admin, administrative permission users
+    and HR & Admin users see ALL departments' requests; other
+    departments' users see only their own department's requests. The
+    filter is BOTH department and status, with a search bar (search by
+    name or Department).
+ 5. The request document follows the approved JPG: two logos on the
+    two top corners, "Item Request" centred at the top, kind name on
+    top of the table, currency beside every amount, amount in words,
+    signatures lower on the page, QR and share code (HRC-#####) at the
+    very bottom left and "Page 1" at the bottom right. A public QR can
+    be generated for a request, like for an invoice.
+ 6. NOTHING ELSE CHANGED. This build also carries the whole of build 29
+    (login heading "Welcome"), build 28 (notification lines gone at the
+    source), build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+==============================================================================
  UPDATE: LOGIN HEADING "WELCOME BACK" BECOMES "WELCOME" (2026-11-08)
 ==============================================================================
  1. The heading on the login page now reads "Welcome" instead of

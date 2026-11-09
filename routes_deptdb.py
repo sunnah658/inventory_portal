@@ -315,13 +315,16 @@ def _filters(db, dept, tab, is_admin, args):
 def index():
     db, dept, is_admin = _dept()
     _wanted = parse_code_text(request.args.get("q"))
-    # The Invoices tab has its own share-code search (customer / invoice number /
-    # share code, filtered to that department's invoices). Do not hijack it with
-    # the record-code redirect, which would 404 for an invoice share code.
-    if _wanted is not None and request.args.get("tab") != "invoices":
+    # The Invoices and Request items tabs have their own share-code search
+    # (filtered to that department's invoices / requests). Do not hijack it
+    # with the record-code redirect, which would 404 for an invoice or
+    # request share code.
+    if _wanted is not None and request.args.get("tab") not in ("invoices", "requests"):
         return redirect(url_for("public.code_page", code=_wanted))
     if request.args.get("tab") == "invoices":
         return _invoice_tab_view(db, dept, is_admin, request.args)
+    if request.args.get("tab") == "requests":
+        return _request_tab_view(db, dept, is_admin, request.args)
     show_mine = _show_mine(dept)
     args = request.args.copy()
     if not show_mine:
@@ -495,6 +498,95 @@ def _invoice_tab_view(db, dept, is_admin, args):
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                            if is_portal_admin(g.user) else [],
                            can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] == "draft")
+
+
+# ---------------------------------------------------------------- Request items tab (default tab inside Department Database)
+def _request_tab_view(db, dept, is_admin, args):
+    """The Request items page, as a default tab inside Department Database
+    (like Invoices). Sub-tabs: My request (only the current user's
+    requests), All request, Other's request (only requests sent TO the
+    current user). In All request, the portal admin, administrative
+    permission users and HR & Admin users see ALL departments' requests;
+    users of other departments see only their own department's requests.
+    The filter is BOTH department and status, with a search bar (search
+    by name or Department). A request is sent to one specific HR & Admin
+    user; the recipient can print it, download its PDF and change its
+    status (Pending / Issued / Paid / Handovered)."""
+    from routes_requests import STATUSES, can_see_all_departments
+    can_all = can_see_all_departments(db, g.user)
+    show_mine = _show_mine(dept)
+    reqtab = args.get("reqtab") or "all"
+    if reqtab not in ("my", "all", "others"):
+        reqtab = "all"
+    if not show_mine and reqtab in ("my", "others"):
+        reqtab = "all"   # a bookmarked my/others just shows All
+    # Departments this viewer may see in All request.
+    if can_all:
+        all_depts = [r["id"] for r in db.execute("SELECT id FROM departments ORDER BY id").fetchall()]
+    else:
+        all_depts = [g.user["department_id"]]
+    fdept = args.get("fdept", type=int)
+    if fdept and can_all and fdept in all_depts:
+        scope = [fdept]
+    elif fdept and not can_all:
+        scope = [g.user["department_id"]]
+    else:
+        scope = list(all_depts)
+    qmarks = ",".join("?" * len(scope))
+    # counts per sub-tab (scope only, before status/search filters)
+    counts = {}
+    counts["all"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks})", scope).fetchone()[0]
+    counts["mine"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND owner_id=?",
+                                scope + [g.user["id"]]).fetchone()[0]
+    counts["others"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND recipient_id=?",
+                                  scope + [g.user["id"]]).fetchone()[0]
+    for st in STATUSES:
+        counts[st] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND status=?",
+                                scope + [st]).fetchone()[0]
+    # filters: status, department, search, sort — on top of the sub-tab
+    status = args.get("status") or ""
+    q = (args.get("q") or "").strip()
+    sort = args.get("sort") or "newest"
+    where = [f"r.department_id IN ({qmarks})"]
+    params = list(scope)
+    if reqtab == "my":
+        where.append("r.owner_id=?"); params.append(g.user["id"])
+    elif reqtab == "others":
+        where.append("r.recipient_id=?"); params.append(g.user["id"])
+    if status in STATUSES:
+        where.append("r.status=?"); params.append(status)
+    if q:
+        like = like_pattern(q)
+        where.append("(u.full_name LIKE ? ESCAPE '\\' OR ru.full_name LIKE ? ESCAPE '\\' OR k.name LIKE ? ESCAPE '\\' "
+                     "OR r.number LIKE ? ESCAPE '\\' OR r.public_code LIKE ? ESCAPE '\\' OR d.name LIKE ? ESCAPE '\\')")
+        params += [like] * 6
+    order = {"newest": "r.id DESC", "oldest": "r.id ASC", "amount_desc": "r.total DESC, r.id DESC",
+             "amount_asc": "r.total ASC, r.id ASC", "date_desc": "r.request_date DESC, r.id DESC"}.get(sort, "r.id DESC")
+    if sort not in ("newest", "oldest", "amount_desc", "amount_asc", "date_desc"):
+        sort = "newest"
+    sql_where = " WHERE " + " AND ".join(where)
+    total = db.execute("SELECT COUNT(*) FROM item_requests r LEFT JOIN users u ON u.id=r.owner_id "
+                       "LEFT JOIN users ru ON ru.id=r.recipient_id LEFT JOIN item_request_kinds k ON k.id=r.kind_id "
+                       "LEFT JOIN departments d ON d.id=r.department_id" + sql_where, params).fetchone()[0]
+    page, pages, offset = page_info(total, args.get("page", 1, type=int), config.PER_PAGE)
+    rows = db.execute("SELECT r.*, k.name AS kind_name, u.full_name AS owner_name, ru.full_name AS recipient_name, d.name AS dept_name "
+                      "FROM item_requests r LEFT JOIN item_request_kinds k ON k.id=r.kind_id "
+                      "LEFT JOIN users u ON u.id=r.owner_id LEFT JOIN users ru ON ru.id=r.recipient_id "
+                      "LEFT JOIN departments d ON d.id=r.department_id"
+                      + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
+    keep = {k: v for k, v in args.items() if k not in ("page",) and not (k == "reqtab" and v in ("my", "others") and not show_mine)}
+    if is_portal_admin(g.user):
+        keep["dept"] = dept["id"]
+    keep["tab"] = "requests"
+    create_kinds = db.execute("SELECT * FROM item_request_kinds WHERE department_id=? AND status='active' ORDER BY id",
+                              (dept["id"],)).fetchall()
+    return render_template("deptdb_requests.html", dept=dept, tabs=ddb_tabs(db, dept["id"]), is_admin=is_admin,
+                           reqtab=reqtab, counts=counts, rows=rows,
+                           status=status, q=q, sort=sort, fdept=fdept or "",
+                           total=total, page=page, pages=pages, keep=keep, create_kinds=create_kinds,
+                           show_mine=show_mine, can_all=can_all,
+                           depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_all else [],
+                           can_status=lambda r: r["recipient_id"] == g.user["id"])
 
 
 # ---------------------------------------------------------------- tabs (admins / delegates)

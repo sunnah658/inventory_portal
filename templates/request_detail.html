@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% from "_macros.html" import history_line with context %}
+{% block title %}{{ req['number'] or 'Item request' }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Item Request {% if req['number'] %}· {{ req['number'] }}{% endif %}</h1>
+<p class="hint">{{ kind['name'] if kind else '' }} · {{ req['request_date'] or '' }} · Requested by: {{ owner_name }} · Requested to: {{ recipient_name }}</p></div>
+<div class="acts noprint">
+{% if can_edit %}<a class="b" href="{{ url_for('requests.request_edit', rid=req['id']) }}">Edit</a>{% endif %}
+<a class="b p" href="{{ url_for('requests.request_pdf', rid=req['id']) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>
+</div></div>
+<div class="kp">
+  {{ kpi('Grand total', '%.2f'|format(req['total']) ~ ' ' ~ req['currency']) }}
+  {{ kpi('Status', req['status']|title) }}
+  {{ kpi('Public QR views', req['public_views'] or 0) }}
+  {{ kpi('Items', lines|length) }}
+</div>
+<div class="tw"><div>
+<div class="card"><div><span class="s {{ 'g' if req['status'] in ('issued','paid','handovered') else 'a' }}">{{ req['status']|title }}</span>
+<span class="hint"> Requested by {{ owner_name }} · Requested to {{ recipient_name }} (HR &amp; Admin)</span></div>
+{% if can_status %}
+<form method="post" action="{{ url_for('requests.change_status', rid=req['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm"><div class="fd"><label>Change status (only you, the recipient, can change it)</label><select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if req['status']==s }}>{{ labels[s] }}</option>{% endfor %}</select></div></div>
+<button class="b p" type="submit">Save status</button> <span class="hint">The creator is notified of the change.</span></form>
+{% else %}
+<p class="hint" style="margin-top:14px">Only the recipient ({{ recipient_name }}) can change the status.{% if can_edit %} You can edit this request — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
+{% endif %}
+<div class="tb" style="margin-top:14px"><table><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+{% for l in lines %}<tr><td>{{ l['description'] }}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) }} {{ req['currency'] }}</td><td class="num">{{ '%.2f'|format(l['amount']) }} {{ req['currency'] }}</td></tr>{% endfor %}
+</tbody></table></div>
+<div style="margin-top:14px;text-align:right">Subtotal: <b>{{ '%.2f'|format(req['subtotal']) }} {{ req['currency'] }}</b><br>Grand total: <b>{{ '%.2f'|format(req['total']) }} {{ req['currency'] }}</b><br><span class="hint">{{ req['amount_in_words'] }}</span></div>
+{% if req['notes'] %}<p class="hint" style="margin-top:10px">Terms: {{ req['notes'] }}</p>{% endif %}
+</div>
+{% if history %}<div class="card" style="margin-top:16px"><h2>Edit history</h2><div class="tl">{% for h in history %}{{ history_line(h) }}{% endfor %}</div><p class="hint">Every edit is written here — who changed what and when — and in the portal Activity log. The other party is notified of each edit.</p></div>{% endif %}
+</div>
+<div class="stack rail">
+<div class="card"><h2>Public QR</h2>
+<p class="hint">Generate a public QR to share this request. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the request number. Quote the request number for records. Searching the share code, viewing it and downloading its PDF all need a login.</p>
+{% if req['public_code'] and req['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ req['public_views'] }} views · Share code: <b>{{ req['public_code'] }}</b> (not the request number)</div>
+{% if qr_svg %}<div class="qrbox">{{ qr_svg|safe }}<div class="hrc">{{ req['public_code'] }}</div></div><div class="hint">Share code (not the request number)</div>{% endif %}
+<a class="b sm" href="{{ url_for('requests.request_qr', rid=req['id']) }}">Print this QR</a>
+{% else %}<div class="msg error">Public QR is OFF{% if req['public_code'] %} · Share code was {{ req['public_code'] }}{% endif %}</div>{% endif %}
+{% if can_manage %}<form method="post" action="{{ url_for('requests.request_public', rid=req['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
+<button class="b p" type="submit">Turn on / Save public QR</button></form>
+{% if req['public_code'] %}<div class="acts" style="margin-top:10px">
+<form method="post" action="{{ url_for('requests.request_public', rid=req['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="off"><button class="b sm dg" type="submit">Turn off</button></form>
+<form method="post" action="{{ url_for('requests.request_public', rid=req['id']) }}" onsubmit="return confirm('New scan link: the old code stops working. Continue?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New scan link</button></form></div>{% endif %}{% endif %}
+</div>
+<div class="card"><h2>Details</h2>
+  <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Requested by</b>{{ owner_name }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Requested to</b>{{ recipient_name }} (HR &amp; Admin)</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Date</b>{{ req['request_date'] or '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currency</b>{{ req['currency'] }}</div>
+</div>
+{{ quick_card([
+  ('Download PDF', url_for('requests.request_pdf', rid=req['id']), True),
+  ('Print', 'print', False),
+  ('Back to Request items', url_for('ddb.index', dept=req['department_id'], tab='requests'), False),
+] | select) }}
+</div></div>
+{% endblock %}

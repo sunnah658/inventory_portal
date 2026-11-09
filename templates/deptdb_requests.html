@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager with context %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% block title %}Department database · Request items{% endblock %}
+{% block content %}
+<div class="hd">
+  <div><h1>{{ dept['name'] }} database · Request items</h1>
+    <p class="hint">Send an Item Request to a user in the HR &amp; Admin Department. The recipient is notified, sees it in "Other's request", and changes its status — Pending, Issued, Paid or Handovered — and you are notified of the change.</p></div>
+  <div class="acts">
+    {% if is_admin %}<a class="b" href="{{ url_for('requests.kinds') }}">Item Request kinds</a>{% endif %}
+    <button class="b" type="button" onclick="window.print()">Print</button>
+  </div>
+</div>
+<div class="kp">
+  {{ kpi('All requests', counts.all) }}
+  {{ kpi('My requests', counts.mine) }}
+  {{ kpi('Pending', counts.pending) }}
+  {{ kpi('Handovered', counts.handovered) }}
+</div>
+<div class="tw"><div>
+{% if depts %}<form method="get" class="tools" style="margin-bottom:10px"><label for="dsel" style="margin:0">Department</label>
+  <select id="dsel" name="dept" style="width:auto" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept['id'] }}>{{ d['name'] }}</option>{% endfor %}</select><input type="hidden" name="tab" value="requests"></form>{% endif %}
+<form class="tools" method="get" action="{{ url_for('ddb.index') }}">
+  <input type="hidden" name="tab" value="requests">{% if depts %}<input type="hidden" name="dept" value="{{ dept['id'] }}">{% endif %}
+  <input type="hidden" name="reqtab" value="{{ reqtab }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by name or Department" aria-label="Search requests">
+  {% if can_all %}<select name="fdept" aria-label="Filter by department"><option value="">All departments</option>
+    {% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if fdept == d['id']|string }}>{{ d['name'] }}</option>{% endfor %}</select>{% endif %}
+  <select name="status" aria-label="Filter by status"><option value="">All statuses</option>
+    {% for s in ['pending','issued','paid','handovered'] %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s|title }}</option>{% endfor %}</select>
+  <select name="sort" aria-label="Sort by"><option value="newest" {{ 'selected' if sort == 'newest' }}>Sort: newest</option><option value="oldest" {{ 'selected' if sort == 'oldest' }}>Sort: oldest</option><option value="date_desc" {{ 'selected' if sort == 'date_desc' }}>Sort: request date</option><option value="amount_desc" {{ 'selected' if sort == 'amount_desc' }}>Sort: amount high to low</option><option value="amount_asc" {{ 'selected' if sort == 'amount_asc' }}>Sort: amount low to high</option></select>
+  <button class="b" type="submit">Apply</button>
+  {% if q or status or fdept or sort != 'newest' %}<a href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab=reqtab) }}">Clear</a>{% endif %}
+</form>
+<div class="tabs">
+  {% for tb in tabs %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
+  <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
+  <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>
+</div>
+<div class="tabs" style="margin-top:8px">
+  <a class="tab {{ 'on' if reqtab == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='all', status=status, q=q, sort=sort, fdept=fdept) }}">All request · {{ counts.all }}</a>
+  {% if show_mine %}<a class="tab {{ 'on' if reqtab == 'my' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='my', status=status, q=q, sort=sort, fdept=fdept) }}">My request · {{ counts.mine }}</a>{% endif %}
+  {% if show_mine %}<a class="tab {{ 'on' if reqtab == 'others' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='others', status=status, q=q, sort=sort, fdept=fdept) }}">Other's request · {{ counts.others }}</a>{% endif %}
+</div>
+{% if create_kinds %}
+<div class="kp">
+{% for t in create_kinds %}<div class="k1"><span>{{ t['name'] }}</span><b style="font-size:1.1rem">Item Request</b><small>Send to an HR &amp; Admin user</small><div style="margin-top:10px"><a class="b p sm" href="{{ url_for('requests.request_new', kind=t['id']) }}">Create</a></div></div>{% endfor %}
+</div>
+{% endif %}
+{% if rows %}
+  <div class="tb"><table>
+    <thead><tr><th>Share code</th><th>Request number</th><th>Kind</th><th>Requested by</th><th>Requested to</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr class="r"><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or '—' }}</td><td>{{ r['kind_name'] or '' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept['id'] %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['recipient_name'] or '—' }}</td><td>{{ r['request_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','handovered') else 'a' }}">{{ r['status']|title }}</span></td><td class="actcell noprint"><a class="b sm" href="{{ url_for('requests.detail', rid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('requests.request_pdf', rid=r['id']) }}">PDF</a>{% if r['public_code'] %}<a class="b sm" href="{{ url_for('requests.code_page', code=r['public_code']) }}">QR</a>{% endif %}{% if can_status(r) %}<a class="b sm" href="{{ url_for('requests.detail', rid=r['id']) }}">Change status</a>{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  {{ pager(page, pages, 'ddb.index', keep) }}
+{% else %}
+  <div class="tb"><div class="empty">{% if q or status or fdept %}Nothing matches your filter.{% else %}No requests yet. Choose a kind above to create one.{% endif %}</div></div>
+{% endif %}
+<p class="hint" style="margin-top:10px">A new request starts as Pending. Only the recipient can change its status — the creator is notified of every change. The request number (REQ-0001) is the official number to quote for records. The share code (HRC-#####) is only for scanning and searching — it is not the request number.</p>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Requests by status</h2>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Pending</b>{{ counts.pending }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Issued</b>{{ counts.issued }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Paid</b>{{ counts.paid }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Handovered</b>{{ counts.handovered }}</div>
+  </div>
+  <div class="card"><h2>About share codes</h2>
+    <p class="hint">The request number (REQ-0001) is the official number to quote for records. The share code (HRC-#####) is only for scanning and searching — it is not the request number.</p></div>
+  {{ quick_card([
+    ('+ New request', url_for('requests.request_new', kind=create_kinds[0]['id']), True) if create_kinds else None,
+    ('Item Request kinds', url_for('requests.kinds'), False) if is_admin else None,
+  ] | select) }}
+</div></div>
+{% endblock %}
