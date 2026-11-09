@@ -2555,3 +2555,55 @@
    No database change is needed for this update (the new columns
    are created automatically on first start). Apply only this
    latest zip, not the older ones in order.
+
+ 53. DEPARTMENT ADMIN NOTIFICATIONS FOR INVOICES AND REQUESTS, PRINT
+     ALIGNMENT FIXED, DEPARTMENT FILTER REMOVED FROM REQUEST ITEMS TAB
+     (2026-11-09)
+==============================================================================
+ 1. The department admin is now told about everything the users in
+    their department do in the Department Database. Before this, a user
+    could create an invoice or send an Item Request and their
+    department admin heard nothing. Now the dept admin is notified when
+    a user in their department creates an invoice draft, finalises
+    (issues) an invoice, sends an Item Request, or edits a request —
+    and when a request from their department has its status changed.
+    Marking an invoice Paid or Void already told the dept admin, and
+    that is unchanged. The notifications the recipient and the creator
+    already got (recipient on send, creator on status change and edit)
+    are unchanged. A dept admin is never told about their own action,
+    and a true portal admin's own actions still tell nobody. The
+    "Who gets told what" help card on the Notifications page is updated
+    to say the same, so it no longer says creating a draft or
+    finalising tells nobody.
+ 2. Department Database print alignment is fixed at the real cause.
+    Build 33 fixed the column widths, and the columns do size correctly
+    in Chrome — but the values still sat to the right of their headings.
+    The cause was the mobile card-view rule, which right-aligns table
+    values on a small screen; it was leaking into print because the
+    print style never set a text alignment, so the data printed
+    right-aligned while the headings stayed left-aligned. The print
+    style now sets the table cells left-aligned, so every heading
+    lines up with its own column's content. Judge the print in real
+    Chrome — the render pictures cannot show this.
+ 3. The extra Department dropdown is gone from the Request items tab.
+    The tab had two department controls: the Department dropdown at
+    the top and the "All departments" filter in the filter row. The
+    top dropdown is removed; the "All departments" filter stays, so
+    requests can still be filtered by department. The Invoices tab
+    and the other Department Database tabs keep their Department
+    dropdown.
+ 4. NOTHING ELSE CHANGED. This build also carries the whole of build 33
+    (Search QR looks all over, public QR for every row, request Item
+    name, Other's request only for HR & Admin, print column widths),
+    build 32 (request editing and edit log), build 31 (kind name off
+    the request document), build 30 (Request Items), build 29 (login
+    heading "Welcome"), build 28 (notification lines gone at the
+    source), build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order.

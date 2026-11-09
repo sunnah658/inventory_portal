@@ -41,7 +41,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import notify
+from core import notify, notify_ddb_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("requests", __name__)
@@ -396,6 +396,12 @@ def request_new():
                 notify(db, [recipient_id],
                        f"{g.user['full_name']} sent you an Item Request {number} ({kind['name']}).",
                        url_for("requests.detail", rid=rid), skip=g.user["id"])
+                # The creator's department admin is told a user in their
+                # department sent a request.
+                _dept = db.execute("SELECT * FROM departments WHERE id=?", (g.user["department_id"],)).fetchone()
+                notify_ddb_task(db, g.user, _dept,
+                                f"{g.user['full_name']} sent Item Request {number} ({kind['name']}) to {rec['full_name'] if rec else 'HR & Admin'}.",
+                                url_for("requests.detail", rid=rid))
                 db.commit()
                 flash(f"Request {number} sent to {rec['full_name'] if rec else 'HR & Admin'}.", "ok")
                 return redirect(url_for("requests.detail", rid=rid))
@@ -453,6 +459,15 @@ def request_edit(rid):
             notify(db, [req["owner_id"]],
                    f"{g.user['full_name']} updated your Item Request {req['number']}.",
                    url_for("requests.detail", rid=rid), skip=g.user["id"])
+        # The creator's department admin is told a request from their
+        # department was updated. The creator is already told above when the
+        # recipient edits, so they are not told twice.
+        _dept_admins = [r[0] for r in db.execute(
+            "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+            (req["department_id"],))]
+        notify(db, [uid for uid in _dept_admins if uid != req["owner_id"]],
+               f"{g.user['full_name']} updated Item Request {req['number']}.",
+               url_for("requests.detail", rid=rid), skip=g.user["id"])
         db.commit()
         flash(f"Request {req['number']} updated. The other party has been notified.", "ok")
         return redirect(url_for("requests.detail", rid=rid))
@@ -503,6 +518,14 @@ def change_status(rid):
     log(db, "request_status", f"{req['number']} -> {new_status}")
     # The creator is told the status changed.
     notify(db, [req["owner_id"]],
+           f"{g.user['full_name']} changed Item Request {req['number']} to {STATUS_LABELS[new_status]}.",
+           url_for("requests.detail", rid=rid), skip=g.user["id"])
+    # The creator's department admin is told the request's status changed.
+    # The creator is already told above, so they are not told twice.
+    _dept_admins = [r[0] for r in db.execute(
+        "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+        (req["department_id"],))]
+    notify(db, [uid for uid in _dept_admins if uid != req["owner_id"]],
            f"{g.user['full_name']} changed Item Request {req['number']} to {STATUS_LABELS[new_status]}.",
            url_for("requests.detail", rid=rid), skip=g.user["id"])
     db.commit()

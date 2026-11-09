@@ -1,4 +1,23 @@
 ==============================================================================
+ UPDATE: DEPT ADMIN NOTIFIED ABOUT INVOICES AND REQUESTS, PRINT ALIGNMENT
+ FIXED, DEPARTMENT FILTER REMOVED FROM REQUEST ITEMS TAB (2026-11-09)
+==============================================================================
+ 1. The department admin is now notified when a user in their department
+    creates an invoice draft, finalises an invoice, sends an Item Request,
+    or edits a request — and when a request from their department has its
+    status changed. Marking an invoice Paid or Void already told the dept
+    admin. The recipient and creator notifications are unchanged.
+ 2. Department Database print alignment is fixed at the real cause: the
+    mobile card-view rule right-aligns table values, and it was leaking
+    into print because the print style never set a text alignment. The
+    print style now left-aligns the table cells, so every heading lines
+    up with its own column's content. Judge it in real Chrome.
+ 3. The extra Department dropdown is gone from the Request items tab.
+    The "All departments" filter in the filter row stays, so requests can
+    still be filtered by department. The Invoices tab and the other tabs
+    keep their Department dropdown.
+
+==============================================================================
  UPDATE: SEARCH QR LOOKS ALL OVER, PUBLIC QR FOR EVERY ROW, REQUEST ITEM
  NAME, OTHER'S REQUEST ONLY FOR HR & ADMIN, PRINT FIXED (2026-11-09)
 ==============================================================================

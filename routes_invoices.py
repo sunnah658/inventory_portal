@@ -37,7 +37,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import display_code, new_random_code_text, notify_ddb_row_task, notify_dept_task
+from core import display_code, new_random_code_text, notify_ddb_row_task, notify_ddb_task, notify_dept_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("invoices", __name__)
@@ -475,7 +475,16 @@ def invoice_new():
             for i, l in enumerate(lines):
                 db.execute("INSERT INTO invoice_lines(invoice_id,position,description,qty,rate,amount,line_date,from_place,to_place,mode,purpose,spec) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (iid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"]), l["line_date"], l["from_place"], l["to_place"], l["mode"], l["purpose"], l["spec"]))
-            log(db, "invoice_draft", f"template {tpl['name']}"); db.commit()
+            log(db, "invoice_draft", f"template {tpl['name']}")
+            # The department admin is told a user in their department made
+            # an invoice (a draft). The watcher router tells the dept admins
+            # for a regular user, the portal admin for a dept-admin or
+            # permission user, and nobody for a true portal admin.
+            _dept = db.execute("SELECT * FROM departments WHERE id=?", (g.user["department_id"],)).fetchone()
+            notify_ddb_task(db, g.user, _dept,
+                            f"{g.user['full_name']} created an invoice draft ({tpl['title']}).",
+                            url_for("invoices.detail", iid=iid))
+            db.commit()
             flash("Draft saved. Finalize it to give it a number.", "ok")
             return redirect(url_for("invoices.detail", iid=iid))
     return render_template("invoice_form.html", tpl=tpl, inv=None, lines=[], sigs=json.loads(tpl["signatures_json"] or "[]") if tpl else [], currencies=CURRENCIES)
@@ -515,7 +524,14 @@ def invoice_finalize(iid):
     number = f"{tpl['number_prefix']}-{tpl['next_number']:04d}"
     db.execute("UPDATE invoice_templates SET next_number=next_number+1 WHERE id=?", (tpl["id"],))
     db.execute("UPDATE invoices SET number=?,status='issued',updated_at=datetime('now','localtime') WHERE id=?", (number, iid))
-    log(db, "invoice_issued", number); db.commit(); flash(f"Invoice finalized and numbered {number}. It is now locked.", "ok")
+    log(db, "invoice_issued", number)
+    # The department admin is told a user in their department finalised
+    # (issued) an invoice.
+    _dept = db.execute("SELECT * FROM departments WHERE id=?", (inv["department_id"],)).fetchone()
+    notify_ddb_task(db, g.user, _dept,
+                    f"{g.user['full_name']} finalised invoice {number}.",
+                    url_for("invoices.detail", iid=iid))
+    db.commit(); flash(f"Invoice finalized and numbered {number}. It is now locked.", "ok")
     return redirect(url_for("invoices.detail", iid=iid))
 
 @bp.route("/invoices/<int:iid>/mark-paid", methods=["POST"])

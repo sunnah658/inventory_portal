@@ -253,7 +253,7 @@ table{font-size:8.5pt}.label{border-style:solid}
 /* List tables fit the page: fixed layout, text wraps inside its cell, and
    the header repeats on every page. Columns past the first 7, which are
    hidden on screen, are shown in print. */
-.tb table{table-layout:fixed;width:100%}.tb th{white-space:normal;font-size:8.5pt}.tb th,.tb td{overflow-wrap:anywhere;word-break:break-word;vertical-align:top;padding:6px 8px}
+.tb table{table-layout:fixed;width:100%}.tb th{white-space:normal;font-size:8.5pt}.tb th,.tb td{overflow-wrap:anywhere;word-break:break-word;vertical-align:top;padding:6px 8px;text-align:left}
 /* The actions column, the tick-box column and rows that were not selected
    never print (these beat the display:revert rule above). */
 .tb col.noprint,.tb th.noprint,.tb td.noprint,.tb th.chk,.tb td.chk,.tb th.selcol,.tb td.selcol,.tb tr.hideme{display:none!important}
