@@ -8,6 +8,11 @@
     <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="name">
       <div class="fd"><label for="company_name">Name</label><input id="company_name" name="company_name" type="text" maxlength="100" value="{{ name }}" required></div>
       <button class="b p" type="submit">Save name</button></form></div>
+  <div class="card"><h2>Public portal address</h2>
+    <p class="hint">The address printed on public QR codes (invoice, request, record and Department Database row). It must be an address a phone on the office network can open — for example the LAN address you open the portal from, such as http://192.168.1.116:8100. Leave it empty and QR codes use the address the portal is opened from at the time.</p>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="public_url">
+      <div class="fd"><label for="public_base_url">Address</label><input id="public_base_url" name="public_base_url" type="text" maxlength="200" placeholder="http://192.168.1.116:8100" value="{{ public_base_url }}"></div>
+      <button class="b p" type="submit">Save address</button></form></div>
   <div class="card"><h2>Logo</h2>
     <p><img src="{{ logo_url }}" alt="Current logo" style="max-height:90px;max-width:100%"></p>
     <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="logo">

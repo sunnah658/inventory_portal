@@ -2607,3 +2607,87 @@
    live .env if it differs, then docker compose up -d --build.
    No database change is needed for this update. Apply only this
    latest zip, not the older ones in order.
+
+ 54. APPROVED WATERMARK SEAL, QR SCAN FIX, THIRD SIGNATURE, NEW INVOICE
+     AND REQUEST FORMAT, AND APPROVED INVOICE STATUS (2026-11-09)
+ 1. The watermark is now a grey APPROVED seal, not the big diagonal
+    green "Approved" text. When the watermark text is Approved, the
+    seal (a new file, static/approved-seal-grey.png) is drawn at the
+    bottom right of the invoice PDF, in the empty space below the
+    signatures, 55 mm across. Any other watermark text still draws
+    the old diagonal green text.
+ 2. Scanning a public QR now works. The printed QRs used to encode
+    the address https://portal, which no phone can open — that was
+    the error after scanning. The QR now encodes the portal's real
+    address. A new setting, Portal settings -> "Public portal
+    address", holds that address (for example
+    http://192.168.1.116:8100); set it once after upgrading, or the
+    QR falls back to the address the portal is reached on. The QR
+    on screen and the QR printed on a PDF both use it.
+ 3. The code pages no longer need a login. Anyone who scans a QR can
+    now see the record, invoice, Item Request or Department Database
+    row behind it, and download its PDF, without signing in. The
+    Search QR page is public too. (A record's code page still shows
+    only the fields the owner made public; the "View full record"
+    button appears only for a signed-in user who may see it.)
+ 4. Every signature on an invoice template now prints. Only the
+    first two used to print; the third (for example Authorized By)
+    was dropped. All of them print now, the owner's own signature
+    first as Prepared By.
+ 5. The invoice and Item Request PDFs have the new format. The
+    company name and address are centred at the top. On the left,
+    stacked, are Invoice No. (or Request No.), Reference / PO (only
+    when the user filled it in — it is hidden everywhere when it is
+    empty), and Bill to (or Requested by / Department / Requested
+    to). The Date is on the right (with the Status on a request).
+    The title (INVOICE / Item Request) sits above the table.
+ 6. There is no text at the bottom between the QR code and the page
+    number any more. The bottom has only the QR with "Share code:
+    HRC-#####" on the left and "Page N" on the right, on every page.
+ 7. The amount in words now reads the currency before Only, for
+    example "One Hundred Eighty Taka Only" (not "Taka One Hundred
+    Eighty Only"). The same change is in Item Requests.
+ 8. Signatures have the new layout on both documents. The title
+    (Prepared By / Checked By / Approved / Authorized By) is on top,
+    then a gap to sign in, then the line, then the name centred
+    under the line, then the designation centred under the name.
+    The title, the name and the designation are all centred in
+    respect to the name. The designation is the one typed in the
+    template's Designation box.
+ 9. NEW — the owner can set an invoice's status to Approved, and
+    the grey APPROVED seal then appears on its PDF. Two ways:
+    while editing a draft, the Status field on the invoice form can
+    be set to Approved; on an issued invoice, the "Mark as
+    approved" button on the invoice detail page sets it. An
+    approved draft can still be finalised, and it keeps its
+    Approved status (and its seal) when it gets its number. An
+    approved invoice can be marked Paid or Void, and it can also
+    get a public QR. The department admin is told when an invoice
+    is approved, the same as when it is finalised or marked Paid.
+    The Invoices tab has an Approved status filter and an Approved
+    count, and Approved shows as a green pill.
+ 10. One fix found while checking the request PDF: its Date and
+    Status were drawn past the right edge of the page and were cut
+    off. They now sit inside the page, on the right, as intended.
+ 11. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 34 (dept-admin notifications for invoices and requests,
+    print alignment, Department dropdown removed from the Request
+    items tab), build 33 (Search QR looks all over, public QR for
+    every row, request Item name, Other's request only for HR &
+    Admin, print column widths), build 32 (request editing and edit
+    log), build 31 (kind name off the request document), build 30
+    (Request Items), build 29 (login heading "Welcome"), build 28
+    (notification lines gone at the source), build 27 (Dashboard
+    Recent activity removed) and build 26 (stylesheet
+    cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   phones can reach. QR links work for anyone on the office Wi-Fi
+   or LAN; a phone on mobile data cannot reach a 192.168 address.

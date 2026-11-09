@@ -925,6 +925,36 @@ def new_random_code_text(db):
     return None
 
 
+def public_base_url(db):
+    """Base address printed on public QR codes (invoice, request, record,
+    Department Database row). The portal admin sets it once in Portal
+    settings (for example http://192.168.1.116:8100, the address the
+    office opens in a browser). When it is not set, the address the
+    portal is being opened from right now is used, so a QR made while
+    browsing the portal still opens. The old hard-coded https://portal
+    host is never used: a phone cannot open it."""
+    from models import setting_get
+    base = (setting_get(db, "public_base_url", "") or "").strip().rstrip("/")
+    if base:
+        return base
+    try:
+        from flask import request
+        return (request.host_url or "").rstrip("/")
+    except Exception:
+        return ""
+
+
+def external_url(db, endpoint, **values):
+    """Full external URL for a public QR code. Uses the public base
+    address when the admin set one, otherwise the current request host."""
+    from flask import url_for
+    base = public_base_url(db)
+    path = url_for(endpoint, **values)
+    if base:
+        return base + path
+    return url_for(endpoint, _external=True, **values)
+
+
 def parse_code(text):
     """'hrc-12', 'HRC 12' or 'HRC12' -> 12. Anything else -> None."""
     m = re.fullmatch(r"\s*HRC[-\s]?(\d{1,12})\s*", text or "", re.IGNORECASE)

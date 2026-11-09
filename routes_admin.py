@@ -891,9 +891,27 @@ def settings():
                               url_for("admin.settings"))
             db.commit()
             flash("The default logo is back.", "ok")
+        elif action == "public_url":
+            # The address printed on public QR codes (invoice, request,
+            # record, Department Database row). It must be an address a
+            # phone on the office network can open, such as the LAN
+            # address the portal is browsed from. Empty clears it, and
+            # QR codes then use the address the portal is opened from.
+            url = (request.form.get("public_base_url") or "").strip().rstrip("/")[:200]
+            if url and not (url.startswith("http://") or url.startswith("https://")):
+                flash("The public address must start with http:// or https://.", "error")
+            else:
+                setting_set(db, "public_base_url", url)
+                log(db, "settings", "public portal address changed to " + (url or "(not set)"))
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} changed the public portal address to '{url or 'not set'}'.",
+                                  url_for("admin.settings"))
+                db.commit()
+                flash("Public portal address saved. New QR codes use it.", "ok")
         return redirect(url_for("admin.settings"))
     return render_template("admin_settings.html",
-                           name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
+                           name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
+                           public_base_url=setting_get(db, "public_base_url", ""))
 
 
 # ================================================================ delete / approve / reject a user

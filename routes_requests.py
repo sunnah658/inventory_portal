@@ -41,7 +41,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import notify, notify_ddb_task
+from core import external_url, notify, notify_ddb_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("requests", __name__)
@@ -77,7 +77,7 @@ def _words(n):
 def amount_in_words(total, cur):
     word = {"BDT": "Taka", "USD": "Dollars", "EUR": "Euros", "GBP": "Pounds", "INR": "Rupees"}.get(cur, cur)
     whole = int(_money(total))
-    return f"{word} {_words(whole)} Only"
+    return f"{_words(whole)} {word} Only"
 
 def _is_dept_admin(user):
     return bool(user and user["is_dept_admin"])
@@ -489,7 +489,7 @@ def detail(rid):
     recipient = db.execute("SELECT full_name FROM users WHERE id=?", (req["recipient_id"],)).fetchone() if req["recipient_id"] else None
     qr_svg = qr_url = None
     if req["public_code"] and req["public_enabled"]:
-        qr_url = url_for("requests.code_page", code=req["public_code"], _external=True)
+        qr_url = external_url(db, "requests.code_page", code=req["public_code"])
         qr_svg = _qr_svg(qr_url)
     return render_template("request_detail.html", req=req, lines=lines, kind=kind,
                            owner_name=owner["full_name"] if owner else "",
@@ -566,7 +566,7 @@ def request_qr(rid):
     db = get_db(); req = _request(db, rid)
     if not _can_view(db, g.user, req) or not req["public_code"]:
         abort(404)
-    url = url_for("requests.code_page", code=req["public_code"], _external=True)
+    url = external_url(db, "requests.code_page", code=req["public_code"])
     item = {"id": req["id"], "title": "Item Request", "dept": req["number"] or "", "svg": _qr_svg(url), "url": url, "code": req["public_code"]}
     return render_template("qr_label.html", items=[item], many=False)
 
@@ -574,9 +574,8 @@ def _public_check(db, req):
     return req is not None and bool(req["public_enabled"])
 
 @bp.route("/requests/code/<code>")
-@login_required
 def code_page(code):
-    """Login-only code view: a logged-in user types HRC-#####, sees the request, downloads the PDF."""
+    """Public code view: anyone who scans the QR (or types HRC-#####) sees the request and downloads the PDF. No login needed."""
     db = get_db()
     req = db.execute("SELECT * FROM item_requests WHERE public_code=?", (code.strip().upper(),)).fetchone()
     if req is None:
@@ -592,7 +591,6 @@ def code_page(code):
                            recipient_name=recipient["full_name"] if recipient else "")
 
 @bp.route("/requests/code/<code>/pdf")
-@login_required
 def code_pdf(code):
     db = get_db()
     req = db.execute("SELECT * FROM item_requests WHERE public_code=?", (code.strip().upper(),)).fetchone()
@@ -622,22 +620,27 @@ def _build_pdf(db, req):
     sig_rows = []
     for s in sigs:
         sig_rows.append((s.get("title") or "", s.get("person") or "", s.get("designation") or ""))
+    # Meta: Date and Status on the right; Request No., Requested by,
+    # Department and Requested to stacked on the left.
     meta_left = []
     if req["number"]:
         meta_left.append(("REQUEST NO.", req["number"]))
+    meta_left.append(("Requested by", owner["full_name"] if owner else ""))
+    meta_left.append(("Department", dept["name"] if dept else ""))
+    meta_left.append(("Requested to", (recipient["full_name"] + " (HR & Admin)") if recipient else ""))
+    meta_right = []
     if req["request_date"]:
-        meta_left.append(("DATE", req["request_date"]))
-    meta_left.append(("STATUS", STATUS_LABELS.get(req["status"], req["status"].title())))
-    meta_right = [("Requested by", owner["full_name"] if owner else ""),
-                  ("Department", dept["name"] if dept else ""),
-                  ("Requested to", (recipient["full_name"] + " (HR & Admin)") if recipient else "")]
+        meta_right.append(("DATE", req["request_date"]))
+    meta_right.append(("STATUS", STATUS_LABELS.get(req["status"], req["status"].title())))
     rows = [[str(i), l["item_name"] or "", l["description"] or "", str(l["qty"]), _fmt(l["rate"], req["currency"]), _fmt(l["amount"], req["currency"])]
             for i, l in enumerate(lines, start=1)]
     totals = [("Subtotal", _fmt(req["subtotal"], req["currency"])), ("Grand total", _fmt(req["total"], req["currency"]))]
+    qr_url = external_url(db, "requests.code_page", code=req["public_code"]) if req["public_code"] else ""
     return exports.request_pdf(
         meta_left=meta_left, meta_right=meta_right,
         cols=["#", "Item name", "Description", "Qty", "Rate", "Amount"], rows=rows, totals=totals,
         words=(req["amount_in_words"] or ""), terms=req["notes"] or "", sigs=sig_rows,
         code=req["public_code"] if req["public_enabled"] else "",
         company=company, company_address=address, show_address=bool(show_address),
-        logo_left=_logo_path(snap.get("logo_left")), logo_right=_logo_path(snap.get("logo_right")))
+        logo_left=_logo_path(snap.get("logo_left")), logo_right=_logo_path(snap.get("logo_right")),
+        qr_url=qr_url)

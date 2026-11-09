@@ -39,7 +39,7 @@ from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, col_weight, ddb_attachment_i
                   ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
-                  display_code, new_random_code_text, notify, notify_ddb_task,
+                  display_code, external_url, new_random_code_text, notify, notify_ddb_task,
                   parse_code_text, parse_form, print_col_widths, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
@@ -448,7 +448,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
     for tid in sub:
         counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
-    for st in ("issued", "paid", "draft", "void"):
+    for st in ("issued", "paid", "draft", "void", "approved"):
         counts[st] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND status=?",
                                 scope + [st]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
@@ -467,7 +467,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
         where.append("i.owner_id=?"); params.append(g.user["id"])
     elif user_filter.isdigit():
         where.append("i.owner_id=?"); params.append(int(user_filter))
-    if status in ("draft", "issued", "paid", "void"):
+    if status in ("draft", "issued", "paid", "void", "approved"):
         where.append("i.status=?"); params.append(status)
     if q:
         where.append("(i.customer_name LIKE ? ESCAPE '\\' OR i.number LIKE ? ESCAPE '\\' OR i.public_code LIKE ? ESCAPE '\\')")
@@ -499,7 +499,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
                            show_mine=show_mine,
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                            if is_portal_admin(g.user) else [],
-                           can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] == "draft")
+                           can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] in ("draft", "approved") and not r["number"])
 
 
 # ---------------------------------------------------------------- Request items tab (default tab inside Department Database)
@@ -786,7 +786,7 @@ def row_detail(rid):
         users=db.execute("SELECT u.id, u.full_name, d.name AS dept_name FROM users u LEFT JOIN departments d "
                          "ON d.id=u.department_id WHERE u.is_active=1 ORDER BY d.name, u.full_name").fetchall() if can_share else [],
         can_manage_public=_can_manage_row_public(db, g.user, row),
-        qr_svg=_qr_svg(url_for("ddb.row_code_page", code=row["public_code"], _external=True)) if row["public_code"] else None)
+        qr_svg=_qr_svg(external_url(db, "ddb.row_code_page", code=row["public_code"])) if row["public_code"] else None)
 
 
 def _qr_svg(url):
@@ -843,7 +843,7 @@ def row_qr(rid):
     db, row = _row(rid)
     if not row["public_code"]:
         abort(404)
-    url = url_for("ddb.row_code_page", code=row["public_code"], _external=True)
+    url = external_url(db, "ddb.row_code_page", code=row["public_code"])
     tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
     title = (tab["name"] if tab else "Department Database") + f" · row #{row['id']}"
     item = {"id": "", "title": title, "dept": row["department_name"], "svg": _qr_svg(url), "url": url,
@@ -868,10 +868,10 @@ def _row_by_code(db, code):
 
 
 @bp.route("/row/code/<code>")
-@login_required
 def row_code_page(code):
     """The public page for one Department Database row, opened by its share
-    code (HRC-#####) from the Search QR page or by scanning its QR."""
+    code (HRC-#####) from the Search QR page or by scanning its QR. No login
+    needed: anyone with the QR sees the row."""
     db = get_db()
     wanted, row = _row_by_code(db, code)
     if row is None:
@@ -890,7 +890,6 @@ def row_code_page(code):
 
 
 @bp.route("/row/code/<code>/pdf")
-@login_required
 def row_code_pdf(code):
     """The same row as a clean PDF: its fields only, no history."""
     db = get_db()
@@ -904,7 +903,8 @@ def row_code_pdf(code):
     sections = [("", ["Field", "Value"],
                  [[c["name"], str(vals.get(c["id"]) or "")] for c in cols] or [["", "Nothing to show"]])]
     title = (tab["name"] if tab else "Department Database") + f" · row #{row['id']}"
-    data = exports.document_pdf(title, f"Printed by {g.user['full_name']}", sections,
+    _printed_by = f"Printed by {g.user['full_name']}" if g.user else "Printed from a public QR link"
+    data = exports.document_pdf(title, _printed_by, sections,
                                 setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
     log(db, "code_pdf", row["public_code"])
     db.commit()

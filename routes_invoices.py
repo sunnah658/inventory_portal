@@ -37,7 +37,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import display_code, new_random_code_text, notify_ddb_row_task, notify_ddb_task, notify_dept_task
+from core import display_code, external_url, new_random_code_text, notify_ddb_row_task, notify_ddb_task, notify_dept_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("invoices", __name__)
@@ -91,7 +91,7 @@ def _words(n):
 def amount_in_words(total, cur):
     word = {"BDT": "Taka", "USD": "Dollars", "EUR": "Euros", "GBP": "Pounds", "INR": "Rupees"}.get(cur, cur)
     whole = int(_money(total))
-    return f"{word} {_words(whole)} Only"
+    return f"{_words(whole)} {word} Only"
 
 def _is_dept_admin(user):
     return bool(user and user["is_dept_admin"])
@@ -493,7 +493,9 @@ def invoice_new():
 @login_required
 def invoice_edit(iid):
     db = get_db(); inv = _invoice(db, iid)
-    if inv["owner_id"] != g.user["id"] or inv["status"] != "draft":
+    # The owner can edit a draft, or an approved invoice that has no number
+    # yet (an approved draft). Once it has a number it is locked.
+    if inv["owner_id"] != g.user["id"] or inv["status"] not in ("draft", "approved") or inv["number"]:
         abort(403)
     tpl = _template(db, inv["template_id"]) if inv["template_id"] else None
     lines = _lines(db, iid)
@@ -501,16 +503,25 @@ def invoice_edit(iid):
         cur = request.form.get("currency") or inv["currency"]
         if cur not in CURRENCIES:
             cur = inv["currency"]
+        # The owner can set the status to Approved while editing (or back
+        # to Draft). Anything else is ignored.
+        new_status = "approved" if request.form.get("status") == "approved" else "draft"
         new_lines = _parse_lines(request.form, tpl["kind"])
         sub, vat, total = _totals(new_lines, tpl["vat_percent"] if tpl["show_tax"] else 0)
         words = amount_in_words(total, cur) if tpl["show_amount_in_words"] else ""
-        db.execute("UPDATE invoices SET currency=?,customer_name=?,customer_address=?,reference=?,invoice_date=?,subtotal=?,vat_amount=?,total=?,amount_in_words=?,notes=?,signatures_json=?,updated_at=datetime('now','localtime') WHERE id=?",
+        db.execute("UPDATE invoices SET currency=?,customer_name=?,customer_address=?,reference=?,invoice_date=?,subtotal=?,vat_amount=?,total=?,amount_in_words=?,notes=?,signatures_json=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
                    (cur, (request.form.get("customer_name") or "").strip(), request.form.get("customer_address") or "", (request.form.get("reference") or "").strip(),
-                    request.form.get("invoice_date") or inv["invoice_date"], float(sub), float(vat), float(total), words, request.form.get("notes") or inv["notes"], json.dumps(_sigs(request.form, tpl)), iid))
+                    request.form.get("invoice_date") or inv["invoice_date"], float(sub), float(vat), float(total), words, request.form.get("notes") or inv["notes"], json.dumps(_sigs(request.form, tpl)), new_status, iid))
         db.execute("DELETE FROM invoice_lines WHERE invoice_id=?", (iid,))
         for i, l in enumerate(new_lines):
             db.execute("INSERT INTO invoice_lines(invoice_id,position,description,qty,rate,amount,line_date,from_place,to_place,mode,purpose,spec) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                        (iid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"]), l["line_date"], l["from_place"], l["to_place"], l["mode"], l["purpose"], l["spec"]))
+        # The dept admin is told when the owner approves the invoice here.
+        if new_status == "approved" and inv["status"] != "approved":
+            _dept = db.execute("SELECT * FROM departments WHERE id=?", (inv["department_id"],)).fetchone()
+            notify_ddb_task(db, g.user, _dept,
+                            f"{g.user['full_name']} approved invoice {inv['number'] or 'draft'}.",
+                            url_for("invoices.detail", iid=iid))
         db.commit(); flash("Draft saved.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
     return render_template("invoice_form.html", tpl=tpl, inv=inv, lines=lines, sigs=json.loads(inv["signatures_json"] or "[]") if inv["signatures_json"] else (json.loads(tpl["signatures_json"] or "[]") if tpl else []), currencies=CURRENCIES)
 
@@ -518,12 +529,15 @@ def invoice_edit(iid):
 @login_required
 def invoice_finalize(iid):
     db = get_db(); inv = _invoice(db, iid)
-    if inv["owner_id"] != g.user["id"] or inv["status"] != "draft":
+    if inv["owner_id"] != g.user["id"] or inv["status"] not in ("draft", "approved"):
         abort(403)
     tpl = _template(db, inv["template_id"])
     number = f"{tpl['number_prefix']}-{tpl['next_number']:04d}"
     db.execute("UPDATE invoice_templates SET next_number=next_number+1 WHERE id=?", (tpl["id"],))
-    db.execute("UPDATE invoices SET number=?,status='issued',updated_at=datetime('now','localtime') WHERE id=?", (number, iid))
+    # An invoice the owner already approved keeps its Approved status (and
+    # its seal) when it gets a number; a plain draft becomes Issued.
+    new_status = "approved" if inv["status"] == "approved" else "issued"
+    db.execute("UPDATE invoices SET number=?,status=?,updated_at=datetime('now','localtime') WHERE id=?", (number, new_status, iid))
     log(db, "invoice_issued", number)
     # The department admin is told a user in their department finalised
     # (issued) an invoice.
@@ -538,7 +552,7 @@ def invoice_finalize(iid):
 @login_required
 def invoice_paid(iid):
     db = get_db(); inv = _invoice(db, iid)
-    if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] != "issued":
+    if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] not in ("issued", "approved"):
         abort(403)
     db.execute("UPDATE invoices SET status='paid' WHERE id=?", (iid,))
     log(db, "invoice_paid", inv["number"] or str(iid))
@@ -556,11 +570,35 @@ def invoice_paid(iid):
     db.commit()
     flash("Marked Paid.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
 
+@bp.route("/invoices/<int:iid>/approve", methods=["POST"])
+@login_required
+def invoice_approve(iid):
+    """The owner (or the dept admin) marks an invoice Approved. The grey
+    APPROVED seal then appears on its PDF."""
+    db = get_db(); inv = _invoice(db, iid)
+    if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] not in ("draft", "issued"):
+        abort(403)
+    db.execute("UPDATE invoices SET status='approved',updated_at=datetime('now','localtime') WHERE id=?", (iid,))
+    log(db, "invoice_approved", inv["number"] or str(iid))
+    # A dept admin approving is a dept task (portal admin + permission
+    # user are told); the owner approving his own invoice is a user task
+    # in the Department Database (that department's dept admin is told).
+    if _is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"]:
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} approved invoice {inv['number'] or 'draft'}.",
+                         url_for("invoices.detail", iid=iid))
+    else:
+        notify_ddb_row_task(db, g.user, inv["department_id"],
+                            f"{g.user['full_name']} approved invoice {inv['number'] or 'draft'}.",
+                            url_for("invoices.detail", iid=iid))
+    db.commit()
+    flash("Marked Approved. The APPROVED seal now shows on its PDF.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
+
 @bp.route("/invoices/<int:iid>/void", methods=["POST"])
 @login_required
 def invoice_void(iid):
     db = get_db(); inv = _invoice(db, iid)
-    if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] not in ("issued", "paid"):
+    if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] not in ("issued", "paid", "approved"):
         abort(403)
     reason = (request.form.get("reason") or "").strip()
     db.execute("UPDATE invoices SET status='void',void_reason=?,public_enabled=0 WHERE id=?", (reason, iid))
@@ -588,11 +626,11 @@ def detail(iid):
     owner = db.execute("SELECT full_name FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
     qr_svg = qr_url = None
     if inv["public_code"] and inv["public_enabled"]:
-        qr_url = url_for("invoices.code_page", code=inv["public_code"], _external=True)
+        qr_url = external_url(db, "invoices.code_page", code=inv["public_code"])
         qr_svg = _qr_svg(qr_url)
     return render_template("invoice_detail.html", inv=inv, lines=lines, tpl=tpl, owner_name=owner["full_name"] if owner else "",
                            qr_svg=qr_svg, qr_url=qr_url, colour=KIND_COLOURS.get((json.loads(inv["template_snapshot_json"] or "{}").get("kind") or "billing"), "#0F7CA6"),
-                           can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] == "draft"),
+                           can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] in ("draft", "approved") and not inv["number"]),
                            can_manage=(is_portal_admin(g.user) or inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])))
 
 @bp.route("/invoices/<int:iid>/pdf")
@@ -619,8 +657,8 @@ def invoice_public(iid):
         # new code kills the old printed QR
         db.execute("UPDATE invoices SET public_code=?,public_enabled=1 WHERE id=?", (_new_invoice_code(db), iid))
     else:
-        if inv["status"] not in ("issued", "paid"):
-            flash("Only an Issued or Paid invoice can get a public QR. Draft and Void invoices do not get a live QR.", "error")
+        if inv["status"] not in ("issued", "paid", "approved"):
+            flash("Only an Issued, Approved or Paid invoice can get a public QR. Draft and Void invoices do not get a live QR.", "error")
             return redirect(url_for("invoices.detail", iid=iid))
         code = inv["public_code"] or _new_invoice_code(db)
         db.execute("UPDATE invoices SET public_code=?,public_enabled=1,public_show_amounts=?,public_show_customer=?,public_show_lines=?,public_expires=? WHERE id=?",
@@ -634,21 +672,20 @@ def invoice_qr(iid):
     db = get_db(); inv = _invoice(db, iid)
     if not _can_view(db, g.user, inv) or not inv["public_code"]:
         abort(404)
-    url = url_for("invoices.code_page", code=inv["public_code"], _external=True)
+    url = external_url(db, "invoices.code_page", code=inv["public_code"])
     item = {"id": inv["id"], "title": inv["title"] or "Invoice", "dept": inv["number"] or "", "svg": _qr_svg(url), "url": url, "code": inv["public_code"]}
     return render_template("qr_label.html", items=[item], many=False)
 
 def _public_check(db, inv):
-    if inv is None or not inv["public_enabled"] or inv["status"] not in ("issued", "paid"):
+    if inv is None or not inv["public_enabled"] or inv["status"] not in ("issued", "paid", "approved"):
         return False
     if inv["public_expires"] and inv["public_expires"] < date.today().isoformat():
         return False
     return True
 
 @bp.route("/invoices/code/<code>")
-@login_required
 def code_page(code):
-    """Login-only code view: a logged-in user types HRC-#####, sees the allowed fields, downloads the PDF."""
+    """Public code view: anyone who scans the QR (or types HRC-#####) sees the allowed fields and downloads the PDF. No login needed."""
     db = get_db()
     inv = db.execute("SELECT * FROM invoices WHERE public_code=?", (code.strip().upper(),)).fetchone()
     if inv is None:
@@ -659,7 +696,6 @@ def code_page(code):
     return render_template("invoice_code.html", code=code, status="ok", inv=inv, lines=_lines(db, inv["id"]))
 
 @bp.route("/invoices/code/<code>/pdf")
-@login_required
 def code_pdf(code):
     db = get_db()
     inv = db.execute("SELECT * FROM invoices WHERE public_code=?", (code.strip().upper(),)).fetchone()
@@ -694,6 +730,7 @@ def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True):
     if inv["reference"]:
         meta.append(("REFERENCE", inv["reference"]))
     bill_to = (inv["customer_name"] if show_customer else "—", inv["customer_address"] if show_customer else "")
+    qr_url = external_url(db, "invoices.code_page", code=inv["public_code"]) if inv["public_code"] else ""
     return exports.invoice_pdf(
         title=inv["title"] or KIND_TITLES.get(kind, "INVOICE"), subtitle=inv["subtitle"] or "",
         meta=meta, bill_to=bill_to, kind=kind, colour=colour,
@@ -702,7 +739,8 @@ def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True):
         terms=inv["notes"] or "", sigs=_pdf_sigs(inv), code=inv["public_code"] or "",
         company=company, company_address=address, show_address=bool(show_address),
         logo_left=_logo_path(snap.get("logo_left")), logo_right=_logo_path(snap.get("logo_right")),
-        watermark_on=bool(snap.get("watermark_on")), watermark_text=snap.get("watermark_text") or "")
+        watermark_on=bool(snap.get("watermark_on")), watermark_text=snap.get("watermark_text") or "",
+        qr_url=qr_url, is_approved=(inv["status"] == "approved"))
 
 def _pdf_cols(kind):
     if kind == "conveyance":
@@ -742,13 +780,18 @@ def _pdf_totals(inv, show_amounts):
     return out
 
 def _pdf_sigs(inv):
+    """Every signature on the invoice: the owner's (Prepared By) plus ALL
+    of the template's signatures (Checked By, Approved, Authorized By, and
+    any more the dept admin set). The PDF used to take only the first two
+    template signatures and cap the total at three, so the third one never
+    showed. Each entry is (title, person, designation)."""
     try:
         sigs = json.loads(inv["signatures_json"] or "[]")
     except Exception:
         sigs = []
     out = []
     owner = get_db().execute("SELECT full_name FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
-    out.append(("", owner["full_name"] if owner else "", "Prepared by"))
-    for s in sigs[:2]:
-        out.append(("", s.get("person") or "", f"{s.get('title') or 'Authorized'} · {s.get('designation') or ''}".strip(" ·")))
-    return out[:3]
+    out.append(("Prepared By", owner["full_name"] if owner else "", ""))
+    for s in sigs:
+        out.append((s.get("title") or "Authorized", s.get("person") or "", s.get("designation") or ""))
+    return out

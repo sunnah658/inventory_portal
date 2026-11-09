@@ -1,4 +1,39 @@
 ==============================================================================
+ UPDATE: APPROVED SEAL WATERMARK, QR SCAN FIX, THIRD SIGNATURE, NEW INVOICE
+ AND REQUEST FORMAT, APPROVED INVOICE STATUS (2026-11-09)
+==============================================================================
+ 1. The watermark is now a grey APPROVED seal at the bottom right of
+    the invoice PDF (55 mm), not the big diagonal green "Approved"
+    text. Any other watermark text still draws the old diagonal
+    green text.
+ 2. Scanning a public QR now works. The printed QRs used to point at
+    https://portal, which no phone can open. They now point at the
+    portal's real address. Set Portal settings -> "Public portal
+    address" once after upgrading (for example
+    http://192.168.1.116:8100). Code pages no longer need a login,
+    so anyone who scans a QR can see the document behind it.
+ 3. Every signature on an invoice template now prints — the third
+    one (for example Authorized By) was dropped before. The owner's
+    own signature comes first as Prepared By.
+ 4. New invoice and Item Request format: company name and address
+    centred at the top; Invoice No. / Reference (only when filled
+    in) / Bill to stacked on the left; Date on the right; the title
+    above the table. No text at the bottom between the QR code and
+    the page number. The amount in words now reads "One Hundred
+    Eighty Taka Only".
+ 5. Signatures have the new layout: title on top, a gap to sign in,
+    the line, then the name centred under the line and the
+    designation centred under the name. The title, name and
+    designation are all centred in respect to the name.
+ 6. NEW — the owner can set an invoice's status to Approved, and
+    the grey APPROVED seal then appears on its PDF. Set it in the
+    Status field while editing a draft, or press "Mark as approved"
+    on an issued invoice. An approved draft can still be finalised
+    and keeps its seal. The department admin is told when an
+    invoice is approved.
+ 7. Nothing else changed. This build carries all of builds 26-34.
+
+==============================================================================
  UPDATE: DEPT ADMIN NOTIFIED ABOUT INVOICES AND REQUESTS, PRINT ALIGNMENT
  FIXED, DEPARTMENT FILTER REMOVED FROM REQUEST ITEMS TAB (2026-11-09)
 ==============================================================================

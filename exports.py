@@ -224,12 +224,21 @@ def sheets_file(fmt, title, sheets, company="", filename="report", subtitle=""):
 # ------------------------------------------------------------------ Invoice PDF (v4 layout)
 def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals, words, terms, sigs, code, company="",
                 company_address="", show_address=True,
-                logo_left=None, logo_right=None, watermark_on=False, watermark_text=""):
-    """Invoice PDF, layout v4:
-    Top row: left logo + company (single-line address), right second logo in the top right corner.
-    Then meta, then the invoice type centred ON TOP OF THE TABLE, then the table (moved lower).
-    Currency is beside every amount (the caller formats amounts as '18,500.00 BDT').
-    Watermark: OFF by default; only drawn when watermark_on is true and text is set."""
+                logo_left=None, logo_right=None, watermark_on=False, watermark_text="", qr_url="", is_approved=False):
+    """Invoice PDF, layout v5 (approved in invoice-format-v5.jpg):
+    Top row: left logo + company name and address CENTRED in the middle,
+    right second logo in the top right corner. Then meta: Date on the
+    right; Invoice No., Reference (only when set) and Bill to stacked on
+    the left. Then the invoice type centred ON TOP OF THE TABLE, then the
+    table (moved lower). Currency is beside every amount (the caller
+    formats amounts as '18,500.00 BDT'). Signatures: the title
+    (Prepared By / Checked By / Authorized By) on top, a gap for signing,
+    the line, then the name and the designation CENTRED below the line.
+    No footer text between the QR and the page number. The QR encodes
+    qr_url (the portal's real address); the old https://portal host is
+    never used. Watermark: OFF by default; the grey APPROVED seal is drawn
+    at the bottom right when the invoice's status is Approved (is_approved)
+    or when the template's watermark text is Approved."""
     import segno as _segno
     font = _fonts()
     buf = io.BytesIO()
@@ -242,6 +251,7 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     sub = ParagraphStyle("sub", fontName=font["regular"], fontSize=9, textColor=colors.HexColor("#506A7B"), leading=12, alignment=1)
     meta_s = ParagraphStyle("meta", fontName=font["regular"], fontSize=8.5, textColor=colors.HexColor("#506A7B"), leading=11)
     meta_b = ParagraphStyle("metab", fontName=font["bold"], fontSize=10, textColor=colors.HexColor("#10283A"), leading=13)
+    meta_r = ParagraphStyle("metar", fontName=font["regular"], fontSize=8.5, textColor=colors.HexColor("#506A7B"), leading=11, alignment=2)
     right_s = ParagraphStyle("right", fontName=font["regular"], fontSize=9, leading=12, alignment=2)
     right_b = ParagraphStyle("rightb", fontName=font["bold"], fontSize=10, leading=13, alignment=2)
     story = []
@@ -255,23 +265,33 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     right_logo = _img(logo_right, w=2.2 * cm, h=1.4 * cm) if logo_right else ""
     # Top row: the company name and address come from the template that made
     # this invoice (chosen by the dept admin); no email is ever shown here.
+    # The name and address sit CENTRED in the middle of the top row.
     if show_address and company_address:
         company_para = Paragraph(f"<b>{_pdf_text(company)}</b><br/><font color='#506A7B'>{_pdf_text(company_address)}</font>",
-                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
+                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14, alignment=1))
     else:
         company_para = Paragraph(f"<b>{_pdf_text(company)}</b>",
-                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
+                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14, alignment=1))
     banner = Table([[left_logo, company_para, right_logo]], colWidths=[3 * cm, None, 3 * cm],
                    style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent)])
     story += [banner, Spacer(1, 10)]
-    # meta: left fields + bill to right
-    meta_cells = []
-    for lab, val in meta:
-        meta_cells.append(Paragraph(f"<font color='#506A7B'>{_pdf_text(lab)}</font><br/><b>{_pdf_text(val)}</b>", meta_s))
-    bill = Paragraph(f"<font color='#506A7B'>BILL TO</font><br/><b>{_pdf_text(bill_to[0])}</b><br/>{_pdf_text(bill_to[1])}", right_s)
-    if meta_cells:
-        story.append(Table([meta_cells + [bill]], colWidths=[None] * len(meta_cells) + [5 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
-        story.append(Spacer(1, 12))
+    # meta: Date on the right; Invoice No., Reference (only when the user
+    # put one in) and Bill to stacked on the left.
+    meta_d = {lab: val for lab, val in meta}
+    left_rows = []
+    for _lab in ("INVOICE NO.", "REFERENCE"):
+        if _lab in meta_d:
+            left_rows.append([Paragraph(f"<font color='#506A7B'>{_pdf_text(_lab)}</font><br/><b>{_pdf_text(meta_d[_lab])}</b>", meta_s)])
+    _bill = f"<font color='#506A7B'>BILL TO</font><br/><b>{_pdf_text(bill_to[0])}</b>"
+    if bill_to[1]:
+        _bill += f"<br/>{_pdf_text(bill_to[1])}"
+    left_rows.append([Paragraph(_bill, meta_s)])
+    _left = Table(left_rows, colWidths=[9 * cm],
+                  style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
+    _date = Paragraph(f"<font color='#506A7B'>DATE</font><br/><b>{_pdf_text(meta_d.get('DATE', ''))}</b>", meta_r)
+    story.append(Table([[_left, _date]], colWidths=[None, 5 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(Spacer(1, 12))
     # invoice type on top of the table
     story += [Paragraph(_pdf_text(title), h1), Paragraph(_pdf_text(subtitle), sub), Spacer(1, 10)]
     # table (lower than the old top-right title layout)
@@ -292,27 +312,44 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
         story.append(Spacer(1, 8))
     if terms:
         story.append(Paragraph(_pdf_text("Terms: " + terms), small))
-    # Signature gap (2026-11-05): the same space on every invoice, whether it
-    # has Terms or not — the old gap only existed when Terms were present, so
-    # invoices without Terms had almost no room to sign. 88 points.
-    story.append(Spacer(1, 88))
-    # signatures, horizontal
-    sig_cells = []
-    for _script, name, role in sigs:
-        sig_cells.append(Paragraph(f"_________________________<br/><b>{_pdf_text(name)}</b><br/><font color='#506A7B'>{_pdf_text(role)}</font>", small))
-    if sig_cells:
-        story.append(Table([sig_cells], colWidths=[usable / len(sig_cells)] * len(sig_cells)))
+    # Signatures: the title (Prepared By / Checked By / Authorized By) on
+    # top, a gap for signing, the line, then the name and the designation
+    # CENTRED below the line. There are as many blocks as the template set.
+    story.append(Spacer(1, 12))
+    if sigs:
+        _sig_title = ParagraphStyle("sigt", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
+        _sig_name = ParagraphStyle("sign", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
+        _sig_role = ParagraphStyle("sigr", fontName=font["regular"], fontSize=9, leading=12, textColor=colors.HexColor("#506A7B"), alignment=1)
+        _cw = [usable / len(sigs)] * len(sigs)
+        _sig_data = [
+            [Paragraph(f"<b>{_pdf_text(t)}</b>", _sig_title) for t, _n, _d in sigs],
+            [Spacer(1, 48) for _ in sigs],
+            [Paragraph("_________________________", small) for _ in sigs],
+            [Paragraph(f"<b>{_pdf_text(n)}</b>", _sig_name) for _t, n, _d in sigs],
+            [Paragraph(_pdf_text(d), _sig_role) for _t, _n, d in sigs],
+        ]
+        story.append(Table(_sig_data, colWidths=_cw, style=[
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("VALIGN", (0, 0), (-1, -1), "TOP")]))
         story.append(Spacer(1, 24))
-    # footer text only: the QR and share code are drawn in the page
-    # footer at the bottom left (see _on_page), not in this block, so
-    # they stay at the bottom of the page on every invoice, however
-    # short its content is. The right cell is kept empty so the text
-    # wraps exactly as before.
-    _footer_text = ("Scan to verify this invoice online.\nShare code at the bottom left of this page is only for scanning and searching — it is not the invoice number. Quote the invoice number above for payment.\nGenerated by HRC Portal" if code else "Generated by HRC Portal")
-    story.append(Table([[Paragraph(_pdf_text(_footer_text), small), ""]],
-                       colWidths=[usable - 3.2 * cm, 3.2 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    # No footer text: the QR and share code are drawn in the page footer
+    # at the bottom left (see _on_page) and the page number at the bottom
+    # right, with nothing in between.
     def _on_page(canvas, _doc):
-        if watermark_on and watermark_text:
+        if is_approved or (watermark_on and watermark_text and (watermark_text or "").strip().lower() == "approved"):
+            # The APPROVED seal (grey), at the bottom right of the page,
+            # in the empty space below the signatures. It appears when the
+            # owner set the invoice's status to Approved, or when the
+            # template's watermark text is Approved.
+            try:
+                _seal = os.path.join(current_app.static_folder, "approved-seal-grey.png")
+                _sw = 5.5 * cm
+                canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sw, mask="auto")
+            except Exception:
+                pass
+        elif watermark_on and watermark_text:
+            # Any other watermark text keeps the old diagonal rendering.
             canvas.saveState()
             try:
                 canvas.setFillAlpha(0.08)
@@ -331,31 +368,37 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
             canvas.drawString(1.4 * cm, 0.8 * cm, f"Share code: {code}")
             # Smaller QR (1.9 cm, was 2.8 cm), directly on top of the
             # share code, at the bottom left corner of the page.
-            try:
-                _q = io.BytesIO()
-                _segno.make(f"https://portal/invoices/code/{code}", error="m").save(_q, kind="png", scale=4, border=1)
-                _q.seek(0)
-                canvas.drawImage(ImageReader(_q), 1.4 * cm, 1.25 * cm, width=1.9 * cm, height=1.9 * cm, mask="auto")
-            except Exception:
-                pass
+            if qr_url:
+                try:
+                    _q = io.BytesIO()
+                    _segno.make(qr_url, error="m").save(_q, kind="png", scale=4, border=1)
+                    _q.seek(0)
+                    canvas.drawImage(ImageReader(_q), 1.4 * cm, 1.25 * cm, width=1.9 * cm, height=1.9 * cm, mask="auto")
+                except Exception:
+                    pass
         canvas.restoreState()
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     return buf.getvalue()
 
 
 def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, code, company="",
-                company_address="", show_address=True, logo_left=None, logo_right=None):
-    """Item Request PDF, layout approved in item-request-format-v4.jpg:
-    Top row: left logo + company (single-line address), CENTRED "Item Request"
-    title, right second logo in the top right corner (the portal logo when
-    the kind has no right logo, so there are always two logos on the two top
-    corners). The kind name is NOT shown on the document at all — the
-    document is just "Item Request". Then meta, then the table. Currency is
-    beside every amount (the caller formats amounts as '3,500.00 BDT').
-    Signatures sit lower than on an invoice (a bigger gap), and there are as
-    many as the dept admin set on the kind. The QR (1.9 cm) and share code
-    stay at the bottom left of every page, with the page number at the
-    bottom right."""
+                company_address="", show_address=True, logo_left=None, logo_right=None, qr_url=""):
+    """Item Request PDF, layout v5 (same header as the invoice, approved in
+    invoice-format-v5.jpg): top row: left logo + company name and address
+    CENTRED in the middle, right second logo in the top right corner (the
+    portal logo when the kind has no right logo, so there are always two
+    logos on the two top corners). Then meta: Date and Status on the
+    right; Request No., Requested by, Department and Requested to stacked
+    on the left. Then the CENTRED "Item Request" title, then the table.
+    The kind name is NOT shown on the document at all — the document is
+    just "Item Request". Currency is beside every amount (the caller
+    formats amounts as '3,500.00 BDT'). Signatures: the title on top, a
+    gap for signing, the line, then the name and the designation CENTRED
+    below the line; there are as many as the dept admin set on the kind.
+    No footer text between the QR and the page number. The QR (1.9 cm)
+    and share code stay at the bottom left of every page, with the page
+    number at the bottom right. The QR encodes qr_url (the portal's real
+    address); the old https://portal host is never used."""
     import segno as _segno
     font = _fonts()
     buf = io.BytesIO()
@@ -367,6 +410,7 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
     h1 = ParagraphStyle("h1", fontName=font["bold"], fontSize=22, textColor=accent, leading=26, alignment=1)
     meta_s = ParagraphStyle("meta", fontName=font["regular"], fontSize=8.5, textColor=colors.HexColor("#506A7B"), leading=11)
     meta_b = ParagraphStyle("metab", fontName=font["bold"], fontSize=10, textColor=colors.HexColor("#10283A"), leading=13)
+    meta_r = ParagraphStyle("metar", fontName=font["regular"], fontSize=8.5, textColor=colors.HexColor("#506A7B"), leading=11, alignment=2)
     story = []
     # top row: left logo + company, centred title, right logo
     def _img(path, w=2.6 * cm, h=1.6 * cm):
@@ -379,29 +423,28 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
     # Two logos on the two top corners: when the kind has no right logo, the
     # portal logo fills the right corner too (as in the approved JPG).
     right_logo = _img(logo_right, w=2.2 * cm, h=1.4 * cm) if logo_right else _img(default_logo, w=2.2 * cm, h=1.4 * cm)
+    # Top row: left logo + company name and address CENTRED in the middle,
+    # right second logo in the top right corner.
     if show_address and company_address:
         company_para = Paragraph(f"<b>{_pdf_text(company)}</b><br/><font color='#506A7B'>{_pdf_text(company_address)}</font>",
-                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
+                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14, alignment=1))
     else:
         company_para = Paragraph(f"<b>{_pdf_text(company)}</b>",
-                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
-    left_cell = Table([[left_logo, company_para]], colWidths=[3 * cm, None],
-                      style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                             ("RIGHTPADDING", (0, 0), (-1, -1), 2)])
-    title_cell = [Paragraph("Item Request", h1)]
-    banner = Table([[left_cell, title_cell, right_logo]], colWidths=[6.8 * cm, None, 3 * cm],
-                   style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent),
-                          ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)])
+                                 ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14, alignment=1))
+    banner = Table([[left_logo, company_para, right_logo]], colWidths=[3 * cm, None, 3 * cm],
+                   style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent)])
     story += [banner, Spacer(1, 10)]
-    # meta: left fields + right fields
-    def _meta_cell(pairs):
-        parts = []
-        for lab, val in pairs:
-            parts.append(f"<font color='#506A7B'>{_pdf_text(lab)}</font> &nbsp; <b>{_pdf_text(val)}</b>")
-        return Paragraph("<br/>".join(parts), meta_s)
-    story.append(Table([[_meta_cell(meta_left), _meta_cell(meta_right)]],
-                       colWidths=[None, 7 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    # meta: Date and Status on the right; Request No., Requested by,
+    # Department and Requested to stacked on the left.
+    def _meta_table(pairs, style, width=9 * cm):
+        _rows = [[Paragraph(f"<font color='#506A7B'>{_pdf_text(lab)}</font><br/><b>{_pdf_text(val)}</b>", style)] for lab, val in pairs]
+        return Table(_rows, colWidths=[width],
+                     style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
+    story.append(Table([[_meta_table(meta_left, meta_s), _meta_table(meta_right, meta_r, 5 * cm)]],
+                       colWidths=[None, 5 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(Spacer(1, 12))
+    story += [Paragraph("Item Request", h1), Spacer(1, 10)]
     # table — Item name and Description get the most room; # and Qty the least.
     usable = A4[0] - 2.8 * cm
     data = [[Paragraph(_pdf_text(h), head) for h in cols]]
@@ -423,24 +466,30 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
         story.append(Spacer(1, 8))
     if terms:
         story.append(Paragraph(_pdf_text("Terms: " + terms), small))
-    # Signatures sit lower than on an invoice: a bigger gap before them.
-    story.append(Spacer(1, 110))
-    sig_cells = []
-    for title, name, role in sigs:
-        label = title or ""
-        if role:
-            label = f"{label} · {role}" if label else role
-        sig_cells.append(Paragraph(f"_________________________<br/><b>{_pdf_text(name)}</b><br/><font color='#506A7B'>{_pdf_text(label)}</font>", small))
-    if sig_cells:
-        story.append(Table([sig_cells], colWidths=[usable / len(sig_cells)] * len(sig_cells)))
+    # Signatures: the title on top, a gap for signing, the line, then the
+    # name and the designation CENTRED below the line. There are as many
+    # as the dept admin set on the kind.
+    story.append(Spacer(1, 12))
+    if sigs:
+        _sig_title = ParagraphStyle("sigt", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
+        _sig_name = ParagraphStyle("sign", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
+        _sig_role = ParagraphStyle("sigr", fontName=font["regular"], fontSize=9, leading=12, textColor=colors.HexColor("#506A7B"), alignment=1)
+        _cw = [usable / len(sigs)] * len(sigs)
+        _sig_data = [
+            [Paragraph(f"<b>{_pdf_text(t)}</b>", _sig_title) for t, _n, _d in sigs],
+            [Spacer(1, 48) for _ in sigs],
+            [Paragraph("_________________________", small) for _ in sigs],
+            [Paragraph(f"<b>{_pdf_text(n)}</b>", _sig_name) for _t, n, _d in sigs],
+            [Paragraph(_pdf_text(d), _sig_role) for _t, _n, d in sigs],
+        ]
+        story.append(Table(_sig_data, colWidths=_cw, style=[
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("VALIGN", (0, 0), (-1, -1), "TOP")]))
         story.append(Spacer(1, 24))
-    # footer text only: the QR and share code are drawn in the page
-    # footer at the bottom left (see _on_page), not in this block, so
-    # they stay at the bottom of the page on every request, however
-    # short its content is.
-    _footer_text = ("Scan to verify this request online.\nShare code at the bottom left of this page is only for scanning and searching — it is not the request number. Quote the request number above for records.\nGenerated by HRC Portal" if code else "Generated by HRC Portal")
-    story.append(Table([[Paragraph(_pdf_text(_footer_text), small), ""]],
-                       colWidths=[usable - 3.2 * cm, 3.2 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    # No footer text: the QR and share code are drawn in the page footer
+    # at the bottom left (see _on_page) and the page number at the bottom
+    # right, with nothing in between.
     def _on_page(canvas, _doc):
         canvas.saveState(); canvas.setFont(font["regular"], 8); canvas.setFillColor(colors.HexColor("#506A7B"))
         canvas.drawRightString(A4[0] - 1.4 * cm, 0.8 * cm, f"Page {canvas.getPageNumber()}")
@@ -449,13 +498,14 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
             canvas.drawString(1.4 * cm, 0.8 * cm, f"Share code: {code}")
             # Smaller QR (1.9 cm), directly on top of the share code, at
             # the bottom left corner of the page.
-            try:
-                _q = io.BytesIO()
-                _segno.make(f"https://portal/requests/code/{code}", error="m").save(_q, kind="png", scale=4, border=1)
-                _q.seek(0)
-                canvas.drawImage(ImageReader(_q), 1.4 * cm, 1.25 * cm, width=1.9 * cm, height=1.9 * cm, mask="auto")
-            except Exception:
-                pass
+            if qr_url:
+                try:
+                    _q = io.BytesIO()
+                    _segno.make(qr_url, error="m").save(_q, kind="png", scale=4, border=1)
+                    _q.seek(0)
+                    canvas.drawImage(ImageReader(_q), 1.4 * cm, 1.25 * cm, width=1.9 * cm, height=1.9 * cm, mask="auto")
+                except Exception:
+                    pass
         canvas.restoreState()
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     return buf.getvalue()

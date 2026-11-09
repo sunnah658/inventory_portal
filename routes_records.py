@@ -24,7 +24,7 @@ import config
 from auth import admin_required, login_required
 from utils import is_portal_admin, is_true_admin
 import scanner
-from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, external_url, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, col_weight, create_record, dept_member_ids, filter_clause, get_columns, get_record,
                   names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_record, purge_user_account, rec_select, reminder_rows,
@@ -403,7 +403,7 @@ def detail(rid):
                       "WHERE plr.record_id=? AND pl.kind='single'", (rid,)).fetchone()
     public_url = public_svg = public_code = None
     if link:
-        public_url = url_for("public.view", token=link["token"], _external=True)
+        public_url = external_url(db, "public.view", token=link["token"])
         public_svg = segno.make(public_url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
         public_code = display_code(link)
     can_manage = level in MANAGE_LEVELS

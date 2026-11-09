@@ -21,7 +21,7 @@ import config
 from auth import login_required
 from utils import is_portal_admin
 import exports
-from core import (MANAGE_LEVELS, access_level, create_public_link, display_code, get_record, names_for_records, new_random_code_text, new_token,
+from core import (MANAGE_LEVELS, access_level, create_public_link, display_code, external_url, get_record, names_for_records, new_random_code_text, new_token,
                   parse_code_text, public_fields_of, public_view, rec_select)
 from models import get_db, log, setting_get
 from routes_records import _load as load_record
@@ -107,9 +107,8 @@ def _link_items(db, link):
 
 
 @bp.route("/code/<code>")
-@login_required
 def code_page(code):
-    """Search result for a code such as HRC-48392: the information the owner made public."""
+    """Search result for a code such as HRC-48392: the information the owner made public. No login needed: anyone with the QR sees it."""
     db = get_db()
     wanted, link = _link_by_code(db, code)
     if link is None or not link["enabled"]:
@@ -123,7 +122,6 @@ def code_page(code):
 
 
 @bp.route("/code/<code>/pdf")
-@login_required
 def code_pdf(code):
     """The same information as a clean PDF: the shared fields only, no history."""
     db = get_db()
@@ -134,8 +132,9 @@ def code_pdf(code):
     wanted = display_code(link)
     sections = [((it["dept"] if len(items) > 1 else ""), ["Field", "Value"], [list(r) for r in it["rows"]] or [["", "Nothing to show"]])
                 for it in items] or [("", ["Field", "Value"], [["", "This record is not available."]])]
+    _printed_by = f"Printed by {g.user['full_name']}" if g.user else "Printed from a public QR link"
     data = exports.document_pdf(f"{wanted}" + (f" · {link['title']}" if link["title"] else ""),
-                                f"Printed by {g.user['full_name']}", sections,
+                                _printed_by, sections,
                                 setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
     log(db, "code_pdf", wanted)
     db.commit()
@@ -144,9 +143,8 @@ def code_pdf(code):
     return resp
 
 
-# ---------------------------------------------------------------- the "Search QR" tab (every logged-in person)
+# ---------------------------------------------------------------- the "Search QR" tab (anyone: no login needed)
 @bp.route("/search-qr")
-@login_required
 def search_qr():
     """A search box for the unique code (HRC-48392, hrc 48392 or just 48392). Shows the match with the buttons
     View record, Download PDF and Print. People only see what the owner made public for that code.
@@ -167,21 +165,21 @@ def search_qr():
             # Database row. Whichever one matches opens its own page.
             link = db.execute("SELECT * FROM public_links WHERE code_text=?", (_wanted,)).fetchone()
             if link is None:
-                # invoice public code (login-only): HRC-##### -> invoice code page
+                # invoice public code: HRC-##### -> invoice code page
                 try:
                     _inv = db.execute("SELECT public_code FROM invoices WHERE public_code=?", (_wanted,)).fetchone()
                 except Exception:
                     _inv = None
                 if _inv is not None:
                     return redirect(url_for("invoices.code_page", code=_inv["public_code"]))
-                # item request public code (login-only): HRC-##### -> request code page
+                # item request public code: HRC-##### -> request code page
                 try:
                     _req = db.execute("SELECT public_code FROM item_requests WHERE public_code=?", (_wanted,)).fetchone()
                 except Exception:
                     _req = None
                 if _req is not None:
                     return redirect(url_for("requests.code_page", code=_req["public_code"]))
-                # Department Database row public code (login-only): HRC-##### -> row code page
+                # Department Database row public code: HRC-##### -> row code page
                 try:
                     _row = db.execute("SELECT public_code FROM ddb_rows WHERE public_code=?", (_wanted,)).fetchone()
                 except Exception:
@@ -198,7 +196,7 @@ def search_qr():
                 # a person who may open the whole record also gets a button for it
                 if link["kind"] == "single" and items:
                     rec = get_record(db, items[0]["rid"])
-                    if rec and access_level(db, g.user, rec):
+                    if rec and g.user and access_level(db, g.user, rec):
                         full_rid = rec["id"]
     return render_template("search_qr.html", q=q, status=status, link=link, items=items,
                            code=display_code(link) if link is not None else (_wanted or ""), full_rid=full_rid,
@@ -364,7 +362,8 @@ def link_action(lid, action):
 @login_required
 def link_qr(lid):
     link = _own_link(lid)
-    url = url_for("public.view", token=link["token"], _external=True)
+    db = get_db()
+    url = external_url(db, "public.view", token=link["token"])
     item = {"id": "", "title": link["title"] or "Public record", "dept": "Public QR", "svg": _qr_svg(url), "url": url,
             "code": display_code(link)}
     return render_template("qr_label.html", items=[item], many=False)
