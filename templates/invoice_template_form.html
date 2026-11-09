@@ -39,7 +39,7 @@
 <h2>8 · Watermark — OFF by default</h2>
 <label class="ck"><input type="checkbox" name="watermark_on" {{ 'checked' if tpl and tpl['watermark_on'] }}> Show watermark</label>
 <div class="fd"><label>Watermark text (when ON) — type your own, for example ISSUED, PAID, DRAFT, VOID</label><input type="text" name="watermark_text" value="{{ tpl['watermark_text'] if tpl else '' }}" placeholder="PAID"></div>
-<p class="hint">If OFF, the PDF shows no watermark at all, even on Issued / Paid invoices.</p>
+<p class="hint">If OFF, the PDF shows no watermark at all, even on Approved or Pending invoices.</p>
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save template</button><a class="b" href="{{ url_for('invoices.templates') }}">Cancel</a></div>
 </form>
 </div>

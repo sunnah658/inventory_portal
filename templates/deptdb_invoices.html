@@ -5,7 +5,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ dept['name'] }} database · Invoices</h1>
-    <p class="hint">Everyone in this department can see every invoice here. Editing rules are unchanged: a draft can be edited by its owner, and a dept admin can mark an invoice Paid or Void. Invoice templates stay on the separate Invoice templates page for dept admins.</p></div>
+    <p class="hint">Everyone in this department can see every invoice here. Editing rules are unchanged: a draft can be edited by its owner, and a dept admin can mark an invoice Approved, Pending or Void. Invoice templates stay on the separate Invoice templates page for dept admins.</p></div>
   <div class="acts">
     {% if is_admin %}<a class="b" href="{{ url_for('invoices.templates') }}">Invoice templates</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>
@@ -27,7 +27,7 @@
   <select name="user" aria-label="Filter by user"><option value="">All users</option>{% if show_mine %}<option value="mine" {{ 'selected' if user_filter == 'mine' }}>My invoices</option>{% endif %}
     {% for u in users %}<option value="{{ u['id'] }}" {{ 'selected' if user_filter == u['id']|string }}>{{ u['full_name'] }}</option>{% endfor %}</select>
   <select name="status" aria-label="Filter by status"><option value="">All statuses</option>
-    {% for s in ['draft','issued','approved','paid','void'] %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s|title }}</option>{% endfor %}</select>
+    {% for s in ['draft','issued','approved','pending','paid','void'] %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s|title }}</option>{% endfor %}</select>
   <select name="sort" aria-label="Sort by"><option value="newest" {{ 'selected' if sort == 'newest' }}>Sort: newest</option><option value="oldest" {{ 'selected' if sort == 'oldest' }}>Sort: oldest</option><option value="date_desc" {{ 'selected' if sort == 'date_desc' }}>Sort: invoice date</option><option value="amount_desc" {{ 'selected' if sort == 'amount_desc' }}>Sort: amount high to low</option><option value="amount_asc" {{ 'selected' if sort == 'amount_asc' }}>Sort: amount low to high</option></select>
   <button class="b" type="submit">Apply</button>
   {% if q or user_filter or status or sort != 'newest' %}<a href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Clear</a>{% endif %}
@@ -51,7 +51,7 @@
   <div class="tb"><table>
     <thead><tr><th>Share code</th><th>Invoice number</th><th>Format</th><th>Customer / title</th><th>Owner</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}
-      <tr class="r"><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['customer_name'] or '—' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept['id'] %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['invoice_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','approved') else 'a' if r['status']=='draft' else 'r' }}">{{ r['status']|title }}</span></td><td class="actcell noprint"><a class="b sm" href="{{ url_for('invoices.detail', iid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('invoices.invoice_pdf', iid=r['id']) }}">PDF</a>{% if r['public_code'] %}<a class="b sm" href="{{ url_for('invoices.code_page', code=r['public_code']) }}">QR</a>{% endif %}{% if can_edit_invoice(r) %}<a class="b sm" href="{{ url_for('invoices.invoice_edit', iid=r['id']) }}">Edit</a>{% endif %}</td></tr>
+      <tr class="r"><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['customer_name'] or '—' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept['id'] %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['invoice_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','approved') else 'a' if r['status'] in ('draft','pending') else 'r' }}">{{ r['status']|title }}</span></td><td class="actcell noprint"><a class="b sm" href="{{ url_for('invoices.detail', iid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('invoices.invoice_pdf', iid=r['id']) }}">PDF</a>{% if r['public_code'] %}<a class="b sm" href="{{ url_for('invoices.code_page', code=r['public_code']) }}">QR</a>{% endif %}{% if can_edit_invoice(r) %}<a class="b sm" href="{{ url_for('invoices.invoice_edit', iid=r['id']) }}">Edit</a>{% endif %}</td></tr>
     {% endfor %}</tbody></table></div>
   {{ pager(page, pages, 'ddb.index', keep) }}
 {% else %}
@@ -64,6 +64,7 @@
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Draft</b>{{ counts.draft }}</div>
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Issued</b>{{ counts.issued }}</div>
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Approved</b>{{ counts.approved }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Pending</b>{{ counts.pending }}</div>
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Paid</b>{{ counts.paid }}</div>
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Void</b>{{ counts.void }}</div>
   </div>

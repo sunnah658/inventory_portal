@@ -13,7 +13,7 @@
 <div class="fd"><label>Reference / PO number</label><input type="text" name="reference" value="{{ inv['reference'] if inv else '' }}"></div>
 <div class="fd"><label>Date</label><input type="date" name="invoice_date" value="{{ inv['invoice_date'] if inv else '' }}"></div>
 <div class="fd"><label>Currency — beside every amount</label><select name="currency" id="curSel">{% for c in currencies %}<option {{ 'selected' if (inv and inv['currency']==c) or (not inv and tpl['default_currency']==c) }}>{{ c }}</option>{% endfor %}</select><div class="sub">One currency per invoice. Totals and amount in words use this currency. No auto-conversion.</div></div>
-{% if inv %}<div class="fd"><label>Status</label><select name="status"><option value="draft" {{ 'selected' if inv['status'] != 'approved' }}>Draft</option><option value="approved" {{ 'selected' if inv['status'] == 'approved' }}>Approved</option></select><div class="sub">Set it to Approved and the grey APPROVED seal shows on the PDF.</div></div>{% endif %}
+{% if inv %}<div class="fd"><label>Status</label><select name="status"><option value="draft" {{ 'selected' if inv['status'] == 'draft' }}>Draft</option><option value="approved" {{ 'selected' if inv['status'] == 'approved' }}>Approved</option><option value="pending" {{ 'selected' if inv['status'] == 'pending' }}>Pending</option></select><div class="sub">Set it to Approved and the grey APPROVED seal shows on the PDF; set it to Pending and the grey PENDING stamp shows instead.</div></div>{% endif %}
 </div>
 <h2>Items</h2>
 <div id="lines">

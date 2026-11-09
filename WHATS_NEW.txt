@@ -1,4 +1,46 @@
 ==============================================================================
+ UPDATE: PENDING STAMP IS GREY (2026-11-09)
+==============================================================================
+ 1. The Pending stamp on the invoice PDF is now grey, the same
+    tone as the grey APPROVED seal, instead of green. Its shape,
+    size and place are unchanged.
+ 2. Nothing else changed. This build carries all of builds 26-37.
+
+==============================================================================
+ UPDATE: PENDING WATERMARK USES THE USER'S GREEN STAMP (2026-11-09)
+==============================================================================
+ 1. The Pending watermark is now the green rectangular PENDING stamp
+    you supplied, drawn at the bottom right of the invoice PDF
+    (7.5 cm wide), in the empty space below the signatures. It
+    replaces the grey circular PENDING seal from the last build.
+    Nothing else changed.
+ 2. Nothing else changed. This build carries all of builds 26-36.
+
+==============================================================================
+ UPDATE: SINGLE-LINE META, SIGNATURE ALIGNMENT BY COUNT, MARK APPROVED /
+ MARK PENDING AND PENDING SEAL (2026-11-09)
+==============================================================================
+ 1. The invoice and Item Request meta is now one field per line:
+    "Invoice No. - JOY-0001", then "Reference - HRC/PO/" under it,
+    then "Bill to" under that; "Date - 2026-11-09" on the right.
+    The same single-line form is used on Item Requests.
+ 2. Signatures are aligned by how many there are, on invoices and
+    Item Requests. One signature sits at the left, not in the
+    middle. Two sit at the left and the right. Three sit at the
+    left, centre and right. Four spread evenly across the page.
+ 3. NEW — the owner marks an invoice Approved or Pending, and a seal
+    shows on its PDF. The "Mark Paid" button is gone: the invoice
+    detail page now has "Mark approved" and "Mark pending". Mark
+    approved shows the grey APPROVED seal; Mark pending shows a new
+    grey PENDING seal in the same place. The Status field while
+    editing a draft now has Draft, Approved and Pending. A pending
+    draft can still be finalised and keeps Pending. The Invoices tab
+    has a Pending filter and count, and Pending shows as an amber
+    pill. Invoices already marked Paid keep that status, but no
+    invoice can newly be marked Paid.
+ 4. Nothing else changed. This build carries all of builds 26-35.
+
+==============================================================================
  UPDATE: APPROVED SEAL WATERMARK, QR SCAN FIX, THIRD SIGNATURE, NEW INVOICE
  AND REQUEST FORMAT, APPROVED INVOICE STATUS (2026-11-09)
 ==============================================================================

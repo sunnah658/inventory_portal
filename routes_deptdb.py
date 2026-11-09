@@ -448,7 +448,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
     for tid in sub:
         counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
-    for st in ("issued", "paid", "draft", "void", "approved"):
+    for st in ("issued", "paid", "draft", "void", "approved", "pending"):
         counts[st] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND status=?",
                                 scope + [st]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
@@ -467,7 +467,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
         where.append("i.owner_id=?"); params.append(g.user["id"])
     elif user_filter.isdigit():
         where.append("i.owner_id=?"); params.append(int(user_filter))
-    if status in ("draft", "issued", "paid", "void", "approved"):
+    if status in ("draft", "issued", "paid", "void", "approved", "pending"):
         where.append("i.status=?"); params.append(status)
     if q:
         where.append("(i.customer_name LIKE ? ESCAPE '\\' OR i.number LIKE ? ESCAPE '\\' OR i.public_code LIKE ? ESCAPE '\\')")
@@ -499,7 +499,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
                            show_mine=show_mine,
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                            if is_portal_admin(g.user) else [],
-                           can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] in ("draft", "approved") and not r["number"])
+                           can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] in ("draft", "approved", "pending") and not r["number"])
 
 
 # ---------------------------------------------------------------- Request items tab (default tab inside Department Database)

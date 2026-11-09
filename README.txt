@@ -2691,3 +2691,136 @@
    http://192.168.1.116:8100, so new QRs point at the address your
    phones can reach. QR links work for anyone on the office Wi-Fi
    or LAN; a phone on mobile data cannot reach a 192.168 address.
+
+ 55. SINGLE-LINE META, SIGNATURE ALIGNMENT BY COUNT, MARK APPROVED /
+     MARK PENDING AND PENDING SEAL (2026-11-09)
+ 1. The invoice and Item Request meta is now one field per line, not
+    label above value. On an invoice: "Invoice No. - JOY-0001" on one
+    line, then "Reference - HRC/PO/" under it (only when filled in),
+    then "Bill to - HRC Technologies Limited" under that; on the
+    right, "Date - 2026-11-09" on one line. On a request: "Request
+    No. - REQ-0003", then "Requested by", "Department" and "Requested
+    to" under it; on the right, "Date" and "Status" on one line each.
+    Nothing else in the header changed.
+ 2. Signatures are now aligned by how many there are, on invoices and
+    on Item Requests. One signature sits at the left of the page, not
+    in the middle. Two sit one at the left and one at the right.
+    Three sit at the left, the centre and the right. Four spread
+    evenly across the page. (More than four wrap in groups of four.)
+    Inside each block the title, the name and the designation stay
+    centred in respect to the name, as before.
+ 3. NEW — the owner marks an invoice Approved or Pending, and a seal
+    shows on its PDF. The "Mark Paid" button is gone: in its place
+    the invoice detail page has "Mark approved" and "Mark pending".
+    Mark approved sets the status to Approved and the grey APPROVED
+    seal appears on the PDF. Mark pending sets the status to Pending
+    and a new grey PENDING seal (static/pending-seal-grey.png, same
+    place and size as the APPROVED seal) appears instead. A pending
+    invoice can be marked approved again, and an approved one can be
+    marked pending. The Status field while editing a draft now has
+    Draft, Approved and Pending. A pending draft can still be
+    finalised and keeps Pending (and its seal) when it gets its
+    number. A pending invoice can be voided and can get a public QR.
+    The department admin is told when an invoice is approved or
+    marked Pending, the same as when it is finalised. The Invoices
+    tab has a Pending status filter and a Pending count, and Pending
+    shows as an amber pill. Invoices that were already marked Paid
+    keep that status and still show in the Paid filter and count, but
+    no invoice can newly be marked Paid.
+ 4. The template watermark works the same way for Pending: if the
+    template's watermark text is "Pending", the grey PENDING seal is
+    drawn instead of the diagonal text.
+ 5. NOTHING ELSE CHANGED. This build also carries the whole of build
+    35 (APPROVED seal, QR scan fix, third signature, new invoice and
+    request format, Approved invoice status), build 34 (dept-admin
+    notifications for invoices and requests, print alignment,
+    Department dropdown removed from the Request items tab), build
+    33 (Search QR looks all over, public QR for every row, request
+    Item name, Other's request only for HR & Admin, print column
+    widths), build 32 (request editing and edit log), build 31
+    (kind name off the request document), build 30 (Request Items),
+    build 29 (login heading "Welcome"), build 28 (notification lines
+    gone at the source), build 27 (Dashboard Recent activity removed)
+    and build 26 (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   phones can reach. QR links work for anyone on the office Wi-Fi
+   or LAN; a phone on mobile data cannot reach a 192.168 address.
+
+ 56. PENDING WATERMARK USES THE USER'S GREEN STAMP (2026-11-09)
+ 1. The Pending watermark is now the green rectangular PENDING stamp
+    the user supplied (static/pending-stamp.png), drawn at the bottom
+    right of the invoice PDF, 7.5 cm wide, in the empty space below
+    the signatures. It replaces the grey circular PENDING seal from
+    build 36 (static/pending-seal-grey.png is removed). The stamp's
+    black background was removed so only the green stamp shows.
+    Nothing else changed: the stamp still appears when the owner
+    marks an invoice Pending (or when the template's watermark text
+    is Pending), and the grey APPROVED seal is unchanged.
+ 2. NOTHING ELSE CHANGED. This build also carries the whole of build
+    36 (single-line meta, signature alignment by count, Mark
+    approved / Mark pending, PENDING status), build 35 (APPROVED
+    seal, QR scan fix, third signature, new invoice and request
+    format, Approved invoice status), build 34 (dept-admin
+    notifications for invoices and requests, print alignment,
+    Department dropdown removed from the Request items tab), build
+    33 (Search QR looks all over, public QR for every row, request
+    Item name, Other's request only for HR & Admin, print column
+    widths), build 32 (request editing and edit log), build 31
+    (kind name off the request document), build 30 (Request Items),
+    build 29 (login heading "Welcome"), build 28 (notification lines
+    gone at the source), build 27 (Dashboard Recent activity removed)
+    and build 26 (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   phones can reach. QR links work for anyone on the office Wi-Fi
+   or LAN; a phone on mobile data cannot reach a 192.168 address.
+
+ 57. PENDING STAMP IS GREY (2026-11-09)
+ 1. The Pending watermark (static/pending-stamp.png, the user's
+    rectangular PENDING stamp) is now grey, the same tone as the
+    grey APPROVED seal, instead of green. The stamp's shape,
+    size (7.5 cm wide), place (bottom right of the invoice PDF
+    below the signatures) and transparent background are unchanged.
+    Nothing else changed.
+ 2. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 37 (the user's PENDING stamp replaces the grey circular
+    seal), build 36 (single-line meta, signature alignment by
+    count, Mark approved / Mark pending, PENDING status), build 35
+    (APPROVED seal, QR scan fix, third signature, new invoice and
+    request format, Approved invoice status), build 34 (dept-admin
+    notifications for invoices and requests, print alignment,
+    Department dropdown removed from the Request items tab), build
+    33 (Search QR looks all over, public QR for every row, request
+    Item name, Other's request only for HR & Admin, print column
+    widths), build 32 (request editing and edit log), build 31
+    (kind name off the request document), build 30 (Request Items),
+    build 29 (login heading "Welcome"), build 28 (notification
+    lines gone at the source), build 27 (Dashboard Recent activity
+    removed) and build 26 (stylesheet cache-busting, inline
+    flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   phones can reach. QR links work for anyone on the office Wi-Fi
+   or LAN; a phone on mobile data cannot reach a 192.168 address.

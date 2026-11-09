@@ -40,7 +40,7 @@
 </div>
 <div class="stack rail">
   <div class="card"><h2>Who gets told what</h2>
-    <p class="hint">Nobody is told about the portal admin's tasks. The portal admin is told about permission-user and department-admin tasks. A permission user is told about department-admin tasks. A department admin is told when a user in their department adds, edits, shares or deletes a Department Database row, creates an invoice draft, finalises an invoice, sends an Item Request, edits a request, or when a request from their department has its status changed.</p>
+    <p class="hint">Nobody is told about the portal admin's tasks. The portal admin is told about permission-user and department-admin tasks. A permission user is told about department-admin tasks. A department admin is told when a user in their department adds, edits, shares or deletes a Department Database row, creates an invoice draft, finalises an invoice, approves an invoice or marks it Pending, sends an Item Request, edits a request, or when a request from their department has its status changed.</p>
     <p class="hint">Editing an invoice draft, or changing a public QR, tells nobody.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),

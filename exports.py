@@ -56,6 +56,55 @@ def _pdf_text(value):
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
 
 
+def _signatures_table(sigs, usable, font):
+    """Signature blocks, aligned by count (approved in sig-alignment-demo.jpg).
+    Each block is one quarter of the page wide; inside a block the title,
+    the name and the designation stay CENTRED in respect to the name.
+    Only where the blocks sit on the page changes with the count:
+    1 signature sits at the left (never in the middle), 2 sit at the
+    left and the right, 3 sit at the left, the centre and the right,
+    4 spread evenly across the page. More than four wrap in groups of four.
+    Returns None when there are no signatures."""
+    if not sigs:
+        return None
+    small = ParagraphStyle("cell", fontName=font["regular"], fontSize=9, leading=12)
+    _sig_title = ParagraphStyle("sigt", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
+    _sig_name = ParagraphStyle("sign", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
+    _sig_role = ParagraphStyle("sigr", fontName=font["regular"], fontSize=9, leading=12, textColor=colors.HexColor("#506A7B"), alignment=1)
+
+    def _block(t, n, d):
+        return Table([
+            [Paragraph(f"<b>{_pdf_text(t)}</b>", _sig_title)],
+            [Spacer(1, 48)],
+            [Paragraph("_________________________", small)],
+            [Paragraph(f"<b>{_pdf_text(n)}</b>", _sig_name)],
+            [Paragraph(_pdf_text(d), _sig_role)],
+        ], colWidths=[usable / 4], style=[
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("VALIGN", (0, 0), (-1, -1), "TOP")])
+
+    _blocks = [_block(t, n, d) for t, n, d in sigs]
+    _w = usable / 4
+    _n = len(_blocks)
+    if _n == 1:
+        _data, _cw = [[_blocks[0]]], [_w]
+    elif _n == 2:
+        _data, _cw = [[_blocks[0], "", _blocks[1]]], [_w, usable / 2, _w]
+    elif _n == 3:
+        _data, _cw = [[_blocks[0], "", _blocks[1], "", _blocks[2]]], [_w, usable / 8, _w, usable / 8, _w]
+    else:
+        _data, _cw = [], [_w] * 4
+        for _i in range(0, _n, 4):
+            _chunk = _blocks[_i:_i + 4]
+            _chunk += [""] * (4 - len(_chunk))
+            _data.append(_chunk)
+    return Table(_data, colWidths=_cw, hAlign="LEFT", style=[
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP")])
+
+
 def _number(value):
     try:
         text = str(value).replace(",", "")
@@ -224,21 +273,25 @@ def sheets_file(fmt, title, sheets, company="", filename="report", subtitle=""):
 # ------------------------------------------------------------------ Invoice PDF (v4 layout)
 def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals, words, terms, sigs, code, company="",
                 company_address="", show_address=True,
-                logo_left=None, logo_right=None, watermark_on=False, watermark_text="", qr_url="", is_approved=False):
+                logo_left=None, logo_right=None, watermark_on=False, watermark_text="", qr_url="", is_approved=False, is_pending=False):
     """Invoice PDF, layout v5 (approved in invoice-format-v5.jpg):
     Top row: left logo + company name and address CENTRED in the middle,
-    right second logo in the top right corner. Then meta: Date on the
-    right; Invoice No., Reference (only when set) and Bill to stacked on
-    the left. Then the invoice type centred ON TOP OF THE TABLE, then the
-    table (moved lower). Currency is beside every amount (the caller
-    formats amounts as '18,500.00 BDT'). Signatures: the title
-    (Prepared By / Checked By / Authorized By) on top, a gap for signing,
-    the line, then the name and the designation CENTRED below the line.
-    No footer text between the QR and the page number. The QR encodes
-    qr_url (the portal's real address); the old https://portal host is
-    never used. Watermark: OFF by default; the grey APPROVED seal is drawn
-    at the bottom right when the invoice's status is Approved (is_approved)
-    or when the template's watermark text is Approved."""
+    right second logo in the top right corner. Then meta, one field per
+    line: "Invoice No. - JOY-0001", then Reference (only when set) under
+    it, then Bill to under that; Date on the right, also one line
+    ("Date - 2026-11-09"). Then the invoice type centred ON TOP OF THE
+    TABLE, then the table (moved lower). Currency is beside every amount
+    (the caller formats amounts as '18,500.00 BDT'). Signatures are
+    aligned by count (see _signatures_table): 1 at the left, 2 at the
+    left and right, 3 at left, centre and right, 4 spread evenly; the
+    title, name and designation stay centred in respect to the name
+    inside each block. No footer text between the QR and the page number.
+    The QR encodes qr_url (the portal's real address); the old
+    https://portal host is never used. Watermark: OFF by default; the
+    grey APPROVED seal is drawn at the bottom right when the invoice's
+    status is Approved (is_approved) or when the template's watermark
+    text is Approved; the grey PENDING stamp is drawn at the bottom right when
+    the status is Pending (is_pending) or the watermark text is Pending."""
     import segno as _segno
     font = _fonts()
     buf = io.BytesIO()
@@ -275,21 +328,23 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     banner = Table([[left_logo, company_para, right_logo]], colWidths=[3 * cm, None, 3 * cm],
                    style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent)])
     story += [banner, Spacer(1, 10)]
-    # meta: Date on the right; Invoice No., Reference (only when the user
-    # put one in) and Bill to stacked on the left.
+    # meta: one field per line — "Invoice No. - JOY-0001", then
+    # Reference (only when the user put one in) under it, then Bill to
+    # under that; Date on the right, also one line.
+    _lab_map = {"INVOICE NO.": "Invoice No.", "REFERENCE": "Reference", "DATE": "Date"}
     meta_d = {lab: val for lab, val in meta}
     left_rows = []
     for _lab in ("INVOICE NO.", "REFERENCE"):
         if _lab in meta_d:
-            left_rows.append([Paragraph(f"<font color='#506A7B'>{_pdf_text(_lab)}</font><br/><b>{_pdf_text(meta_d[_lab])}</b>", meta_s)])
-    _bill = f"<font color='#506A7B'>BILL TO</font><br/><b>{_pdf_text(bill_to[0])}</b>"
+            left_rows.append([Paragraph(f"<font color='#506A7B'>{_pdf_text(_lab_map.get(_lab, _lab))} -</font> <font size='10'><b>{_pdf_text(meta_d[_lab])}</b></font>", meta_s)])
+    _bill = f"<font color='#506A7B'>Bill to -</font> <font size='10'><b>{_pdf_text(bill_to[0])}</b></font>"
     if bill_to[1]:
         _bill += f"<br/>{_pdf_text(bill_to[1])}"
     left_rows.append([Paragraph(_bill, meta_s)])
     _left = Table(left_rows, colWidths=[9 * cm],
                   style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                          ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
-    _date = Paragraph(f"<font color='#506A7B'>DATE</font><br/><b>{_pdf_text(meta_d.get('DATE', ''))}</b>", meta_r)
+    _date = Paragraph(f"<font color='#506A7B'>Date -</font> <font size='10'><b>{_pdf_text(meta_d.get('DATE', ''))}</b></font>", meta_r)
     story.append(Table([[_left, _date]], colWidths=[None, 5 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(Spacer(1, 12))
     # invoice type on top of the table
@@ -312,32 +367,39 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
         story.append(Spacer(1, 8))
     if terms:
         story.append(Paragraph(_pdf_text("Terms: " + terms), small))
-    # Signatures: the title (Prepared By / Checked By / Authorized By) on
-    # top, a gap for signing, the line, then the name and the designation
-    # CENTRED below the line. There are as many blocks as the template set.
+    # Signatures, aligned by count (see _signatures_table): 1 at the
+    # left, 2 at the left and right, 3 at left, centre and right, 4 spread
+    # evenly. The title, name and designation stay centred in respect to
+    # the name inside each block.
     story.append(Spacer(1, 12))
-    if sigs:
-        _sig_title = ParagraphStyle("sigt", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
-        _sig_name = ParagraphStyle("sign", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
-        _sig_role = ParagraphStyle("sigr", fontName=font["regular"], fontSize=9, leading=12, textColor=colors.HexColor("#506A7B"), alignment=1)
-        _cw = [usable / len(sigs)] * len(sigs)
-        _sig_data = [
-            [Paragraph(f"<b>{_pdf_text(t)}</b>", _sig_title) for t, _n, _d in sigs],
-            [Spacer(1, 48) for _ in sigs],
-            [Paragraph("_________________________", small) for _ in sigs],
-            [Paragraph(f"<b>{_pdf_text(n)}</b>", _sig_name) for _t, n, _d in sigs],
-            [Paragraph(_pdf_text(d), _sig_role) for _t, _n, d in sigs],
-        ]
-        story.append(Table(_sig_data, colWidths=_cw, style=[
-            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    _sig_table = _signatures_table(sigs, usable, font)
+    if _sig_table is not None:
+        story.append(_sig_table)
         story.append(Spacer(1, 24))
     # No footer text: the QR and share code are drawn in the page footer
     # at the bottom left (see _on_page) and the page number at the bottom
     # right, with nothing in between.
     def _on_page(canvas, _doc):
-        if is_approved or (watermark_on and watermark_text and (watermark_text or "").strip().lower() == "approved"):
+        _wm = (watermark_text or "").strip().lower() if watermark_text else ""
+        # The invoice's status wins over the template watermark: a Pending
+        # invoice shows the PENDING stamp and an Approved one the APPROVED
+        # seal, whatever the template says. Only when the status is
+        # neither does the template's watermark text decide.
+        if is_pending or (not is_approved and watermark_on and _wm == "pending"):
+            # The PENDING stamp (the grey rectangular stamp the user
+            # supplied), at the bottom right of the page, in the empty
+            # space below the signatures. It appears when the owner set
+            # the invoice's status to Pending, or when the template's
+            # watermark text is Pending. The stamp is a wide rectangle
+            # (about 3:1), drawn 7.5 cm wide.
+            try:
+                _seal = os.path.join(current_app.static_folder, "pending-stamp.png")
+                _sw = 7.5 * cm
+                _sh = _sw * 146 / 436
+                canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sh, mask="auto")
+            except Exception:
+                pass
+        elif is_approved or (watermark_on and _wm == "approved"):
             # The APPROVED seal (grey), at the bottom right of the page,
             # in the empty space below the signatures. It appears when the
             # owner set the invoice's status to Approved, or when the
@@ -387,14 +449,17 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
     invoice-format-v5.jpg): top row: left logo + company name and address
     CENTRED in the middle, right second logo in the top right corner (the
     portal logo when the kind has no right logo, so there are always two
-    logos on the two top corners). Then meta: Date and Status on the
-    right; Request No., Requested by, Department and Requested to stacked
-    on the left. Then the CENTRED "Item Request" title, then the table.
+    logos on the two top corners). Then meta, one field per line:
+    "Request No. - REQ-0003", then Requested by, Department and Requested
+    to under it; Date and Status on the right, also one line each. Then
+    the CENTRED "Item Request" title, then the table.
     The kind name is NOT shown on the document at all — the document is
     just "Item Request". Currency is beside every amount (the caller
-    formats amounts as '3,500.00 BDT'). Signatures: the title on top, a
-    gap for signing, the line, then the name and the designation CENTRED
-    below the line; there are as many as the dept admin set on the kind.
+    formats amounts as '3,500.00 BDT'). Signatures are aligned by count
+    (see _signatures_table): 1 at the left, 2 at the left and right, 3 at
+    left, centre and right, 4 spread evenly; the title, name and
+    designation stay centred in respect to the name inside each block.
+    There are as many as the dept admin set on the kind.
     No footer text between the QR and the page number. The QR (1.9 cm)
     and share code stay at the bottom left of every page, with the page
     number at the bottom right. The QR encodes qr_url (the portal's real
@@ -434,10 +499,12 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
     banner = Table([[left_logo, company_para, right_logo]], colWidths=[3 * cm, None, 3 * cm],
                    style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent)])
     story += [banner, Spacer(1, 10)]
-    # meta: Date and Status on the right; Request No., Requested by,
-    # Department and Requested to stacked on the left.
+    # meta: one field per line — "Request No. - REQ-0003", then
+    # Requested by, Department and Requested to under it; Date and Status
+    # on the right, also one line each.
     def _meta_table(pairs, style, width=9 * cm):
-        _rows = [[Paragraph(f"<font color='#506A7B'>{_pdf_text(lab)}</font><br/><b>{_pdf_text(val)}</b>", style)] for lab, val in pairs]
+        _lab_map = {"REQUEST NO.": "Request No.", "DATE": "Date", "STATUS": "Status"}
+        _rows = [[Paragraph(f"<font color='#506A7B'>{_pdf_text(_lab_map.get(lab, lab))} -</font> <font size='10'><b>{_pdf_text(val)}</b></font>", style)] for lab, val in pairs]
         return Table(_rows, colWidths=[width],
                      style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                             ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
@@ -466,26 +533,15 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
         story.append(Spacer(1, 8))
     if terms:
         story.append(Paragraph(_pdf_text("Terms: " + terms), small))
-    # Signatures: the title on top, a gap for signing, the line, then the
-    # name and the designation CENTRED below the line. There are as many
-    # as the dept admin set on the kind.
+    # Signatures, aligned by count (see _signatures_table): 1 at the
+    # left, 2 at the left and right, 3 at left, centre and right, 4 spread
+    # evenly. The title, name and designation stay centred in respect to
+    # the name inside each block. There are as many as the dept admin set
+    # on the kind.
     story.append(Spacer(1, 12))
-    if sigs:
-        _sig_title = ParagraphStyle("sigt", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
-        _sig_name = ParagraphStyle("sign", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
-        _sig_role = ParagraphStyle("sigr", fontName=font["regular"], fontSize=9, leading=12, textColor=colors.HexColor("#506A7B"), alignment=1)
-        _cw = [usable / len(sigs)] * len(sigs)
-        _sig_data = [
-            [Paragraph(f"<b>{_pdf_text(t)}</b>", _sig_title) for t, _n, _d in sigs],
-            [Spacer(1, 48) for _ in sigs],
-            [Paragraph("_________________________", small) for _ in sigs],
-            [Paragraph(f"<b>{_pdf_text(n)}</b>", _sig_name) for _t, n, _d in sigs],
-            [Paragraph(_pdf_text(d), _sig_role) for _t, _n, d in sigs],
-        ]
-        story.append(Table(_sig_data, colWidths=_cw, style=[
-            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    _sig_table = _signatures_table(sigs, usable, font)
+    if _sig_table is not None:
+        story.append(_sig_table)
         story.append(Spacer(1, 24))
     # No footer text: the QR and share code are drawn in the page footer
     # at the bottom left (see _on_page) and the page number at the bottom
