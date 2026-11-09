@@ -1,4 +1,31 @@
 ==============================================================================
+ UPDATE: SEARCH QR LOOKS ALL OVER, PUBLIC QR FOR EVERY ROW, REQUEST ITEM
+ NAME, OTHER'S REQUEST ONLY FOR HR & ADMIN, PRINT FIXED (2026-11-09)
+==============================================================================
+ 1. Search QR now looks all over for the code you type — a record, an
+    invoice, an item request or a Department Database row — and opens
+    whichever one matches. A request's public code (for example
+    HRC-96531) was never found before; now it opens the request.
+ 2. Every Department Database tab's rows can now generate a public QR,
+    not only Invoices and Request items. Each row detail page has a
+    Public QR panel (turn on, turn off, new scan link) with the QR, the
+    share code and the view count. Scanning it or searching the code
+    opens that row (login-only), with a PDF download.
+ 3. Request items are now Item name, Description, Quantity, Rate (BDT).
+    The Amount is still worked out from Quantity x Rate. The item name
+    shows on the forms, the detail page, the code page and the PDF.
+ 4. The "Other's request" sub-tab now appears only for HR & Admin
+    users. For everyone else it is gone (it was always empty for them).
+ 5. Department Database print is fixed: every field fits on the
+    landscape page and each heading lines up with its own column.
+ 6. NOTHING ELSE CHANGED. This build also carries the whole of build 32
+    (request editing and edit log), build 31 (kind name off the request
+    document), build 30 (Request Items), build 29 (login heading
+    "Welcome"), build 28 (notification lines gone at the source),
+    build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+==============================================================================
  UPDATE: REQUEST ITEMS — EDIT, EDIT LOG AND UPDATES (2026-11-08)
 ==============================================================================
  1. The owner AND the recipient can now both edit a request — an "Edit"

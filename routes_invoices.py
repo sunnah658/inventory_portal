@@ -166,7 +166,9 @@ def _new_invoice_code(db):
         cand = f"HRC-{secrets.randbelow(90000) + 10000}"
         if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
             if db.execute("SELECT 1 FROM public_links WHERE code_text=?", (cand,)).fetchone() is None:
-                return cand
+                if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
+                    if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
+                        return cand
     return None
 
 def _parse_lines(form, kind):

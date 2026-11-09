@@ -4,7 +4,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>Search QR</h1>
-    <p class="hint">Type the unique code printed under a public QR (for example HRC-48392). You must be logged in to search a code — this page is login-only. You can view the shared information, download it as a PDF or print it. Invoice codes (HRC-#####) open the invoice page.</p></div>
+    <p class="hint">Type the unique code printed under a public QR (for example HRC-48392). You must be logged in to search a code — this page is login-only. You can view the shared information, download it as a PDF or print it. The search looks all over for the code — a record, an invoice, an item request or a Department Database row — and opens whichever one matches.</p></div>
 </div>
 
 <div class="tw"><div>
@@ -53,7 +53,7 @@
 <div class="stack rail">
   <div class="card"><h2>How codes work</h2>
     <p class="hint">Every public QR has a unique code starting with HRC- and a random 5-digit number. The code is only a sharing and searching key — it is not the record or invoice number.</p>
-    <p class="hint">Scanning a QR or searching a code needs a login. If the owner makes a new scan link, the old code stops working. An invoice code opens the invoice page.</p></div>
+    <p class="hint">Scanning a QR or searching a code needs a login. If the owner makes a new scan link, the old code stops working. An invoice code opens the invoice page, a request code opens the request page, and a Department Database row code opens that row.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),
     ('Public QR links', url_for('public.links'), False),

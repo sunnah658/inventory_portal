@@ -47,8 +47,8 @@
   <div class="tb"><div class="empty">This tab has no columns yet.{% if is_admin %} <a href="{{ url_for('ddb.columns', dept=dept['id'], tab=tab['id']) }}">Add the first column</a>.{% else %} Ask the department admin to add them.{% endif %}</div></div>
 {% elif rows %}
   <div class="tb"><table>
-    <colgroup><col>{% for c in cols %}<col style="--w:{{ widths[loop.index0] }}%">{% endfor %}<col style="--w:{{ widths[cols|length] }}%"><col></colgroup>
-    <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %} style="--w:{{ widths[loop.index0] }}%">{{ c['name'] }}</th>{% endfor %}<th style="--w:{{ widths[cols|length] }}%">Added by</th><th class="noprint"></th></tr></thead>
+    <colgroup><col class="noprint">{% for c in cols %}<col style="width:{{ widths[loop.index0] }}%">{% endfor %}<col style="width:{{ widths[cols|length] }}%"><col class="noprint"></colgroup>
+    <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %}>{{ c['name'] }}</th>{% endfor %}<th>Added by</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}{% set v = vmap[r['id']] %}
       <tr class="r" id="row-{{ r['id'] }}"><td class="selcol"><input type="checkbox" class="rowck" value="{{ r['id'] }}" aria-label="Select"></td>{% for c in cols %}<td{% if loop.index > 7 %} class="xcol"{% endif %}>{% if c['col_type'] == 'attachment' %}{% if attach_urls and attach_urls.get(r['id'], {}).get(c['id']) %}<a href="{{ attach_urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
         <td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>

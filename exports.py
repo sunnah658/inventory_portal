@@ -402,11 +402,14 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
     story.append(Table([[_meta_cell(meta_left), _meta_cell(meta_right)]],
                        colWidths=[None, 7 * cm], style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(Spacer(1, 12))
-    # table
+    # table — Item name and Description get the most room; # and Qty the least.
     usable = A4[0] - 2.8 * cm
     data = [[Paragraph(_pdf_text(h), head) for h in cols]]
     data += [[Paragraph(_pdf_text(v), small) for v in row] for row in rows] or [[Paragraph("No items.", small)]]
-    table = Table(data, colWidths=[usable / len(cols)] * len(cols), repeatRows=1)
+    _w = {"#": 0.6, "Item name": 2.6, "Description": 3.2, "Qty": 0.9, "Quantity": 0.9, "Rate": 2.0, "Amount": 2.2}
+    _weights = [_w.get(h, 1.0) for h in cols]
+    _tot = sum(_weights) or 1.0
+    table = Table(data, colWidths=[usable * w / _tot for w in _weights], repeatRows=1)
     table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), accent), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F7FA")]),
                                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D3DBE0")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                                ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))

@@ -39,6 +39,19 @@
   {% if shares %}<div class="card"><h2>Shared with</h2>
       {% for s in shares %}<div class="ck" style="gap:8px"><span style="flex:1"><b>{{ s['dept_name'] or s['user_name'] }}</b> <span class="sub">{{ 'Can edit' if s['permission'] == 'edit' else 'View only' }}</span></span>
         {% if can_share %}<form method="post" action="{{ url_for('ddb.row_share_delete', rid=row['id'], sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>{% endif %}</div>{% endfor %}</div>{% endif %}
+  <div class="card" id="public"><h2>Public QR</h2>
+  <p class="hint">Generate a public QR to share this row. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the row number. Searching the share code, viewing it and downloading its PDF all need a login.</p>
+  {% if row['public_code'] and row['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ row['public_views'] }} views · Share code: <b>{{ row['public_code'] }}</b> (not the row number)</div>
+  {% if qr_svg %}<div class="qrbox">{{ qr_svg|safe }}<div class="hrc">{{ row['public_code'] }}</div></div><div class="hint">Share code (not the row number)</div>{% endif %}
+  <a class="b sm" href="{{ url_for('ddb.row_qr', rid=row['id']) }}">Print this QR</a>
+  {% else %}<div class="msg error">Public QR is OFF{% if row['public_code'] %} · Share code was {{ row['public_code'] }}{% endif %}</div>{% endif %}
+  {% if can_manage_public %}<form method="post" action="{{ url_for('ddb.row_public', rid=row['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
+  <button class="b p" type="submit">Turn on / Save public QR</button></form>
+  {% if row['public_code'] %}<form method="post" action="{{ url_for('ddb.row_public', rid=row['id']) }}" style="margin-top:8px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="off">
+  <button class="b" type="submit">Turn off</button></form>
+  <form method="post" action="{{ url_for('ddb.row_public', rid=row['id']) }}" style="margin-top:8px" onsubmit="return confirm('Make a new scan link? The old printed QR code will stop working.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate">
+  <button class="b" type="submit">New scan link</button></form>{% endif %}
+  {% else %}<p class="hint">Only the row's owner or a department admin can change the public QR.</p>{% endif %}</div>
   <div class="card"><h2>Edit history</h2><div class="tl">
     {% for h in history %}<div class="ev"><b>{{ h.full_name or 'System' }}</b>
       {% if h.action == 'created' %} added this row{% if h.new_value %} ({{ h.new_value }}){% endif %}

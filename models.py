@@ -329,7 +329,10 @@ CREATE TABLE IF NOT EXISTS ddb_rows (
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     deleted_at    TEXT,
-    source_record_id INTEGER                -- the personal record it was copied from (if any)
+    source_record_id INTEGER,               -- the personal record it was copied from (if any)
+    public_code   TEXT,                     -- random HRC-##### share code for the row's public QR
+    public_enabled INTEGER NOT NULL DEFAULT 0,
+    public_views  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_ddb_rows_dept ON ddb_rows(department_id, deleted_at);
 CREATE TABLE IF NOT EXISTS ddb_values (
@@ -436,6 +439,7 @@ CREATE TABLE IF NOT EXISTS invoice_lines (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id    INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
     position      INTEGER NOT NULL DEFAULT 0,
+    item_name     TEXT,
     description   TEXT,
     qty           REAL NOT NULL DEFAULT 1,
     rate          REAL NOT NULL DEFAULT 0,
@@ -715,6 +719,10 @@ def _upgrade_ddb_tabs(conn):
     create, rename to, or restore one."""
     _ensure_column(conn, "ddb_columns", "tab_id", "INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE")
     _ensure_column(conn, "ddb_rows", "tab_id", "INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE")
+    _ensure_column(conn, "ddb_rows", "public_code", "TEXT")  # public QR share code (2026-11-09)
+    _ensure_column(conn, "ddb_rows", "public_enabled", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "ddb_rows", "public_views", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "item_request_lines", "item_name", "TEXT")  # item name per line (2026-11-09)
     # per-tab column unique index (old index was department-wide)
     idx = conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='ux_ddb_column_name'").fetchone()
     if idx and idx[0] and "tab_id" not in idx[0]:

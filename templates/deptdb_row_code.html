@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Share code {{ code }}{% if row %} · {{ row['department_name'] }} database{% if tab %} · {{ tab['name'] }}{% endif %} · row #{{ row['id'] }}{% endif %}</h1><p class="hint">This share code is only for scanning and searching — it is not the row number. Login is required to search a share code, view it and download its PDF. Without login, no view.</p></div>
+<div class="acts noprint">{% if status=='ok' %}<a class="b p" href="{{ url_for('ddb.row_code_pdf', code=code) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>{% endif %}<a class="b" href="{{ url_for('ddb.index', dept=row['department_id'], tab=row['tab_id']) if row else url_for('records.list_records') }}">Back to the list</a></div></div>
+{% if status=='missing' %}<div class="alert">No Department Database row with the share code <b>{{ code }}</b> exists.</div>
+{% elif status=='off' %}<div class="alert">The share code <b>{{ code }}</b> exists, but its public QR is off.</div>
+{% else %}
+<div class="card">
+<p><b>Added by:</b> {{ row['owner_name'] or '—' }} · <b>Department:</b> {{ row['department_name'] }} · <b>Last changed:</b> {{ row['updated_at'] or '' }}</p>
+<div class="tb"><table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+{% for c in cols %}<tr><td>{{ c['name'] }}</td><td>{{ vals.get(c['id']) or '' }}</td></tr>{% endfor %}
+</tbody></table></div>
+</div>
+{% endif %}
+{% endblock %}

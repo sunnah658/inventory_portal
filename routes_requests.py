@@ -169,21 +169,27 @@ def _diff_lines(old_lines, new_lines, cur):
     """Field-level changes between the saved lines and the edited lines, as
     (field, old_value, new_value) triples for the edit log. Lines are
     compared by position: a line present in one list only was added or
-    removed; a line present in both with different values was changed."""
+    removed; a line present in both with different values was changed. The
+    field is the line's item name (falling back to its description)."""
     out = []
     n = max(len(old_lines), len(new_lines))
     for i in range(n):
         old = old_lines[i] if i < len(old_lines) else None
         new = new_lines[i] if i < len(new_lines) else None
         if old is None and new is not None:
-            out.append((new["description"], "", _line_text(new["qty"], new["rate"], new["amount"], cur)))
+            out.append((_line_name(new), "", _line_text(new["qty"], new["rate"], new["amount"], cur)))
         elif old is not None and new is None:
-            out.append((old["description"] or "", _line_text(old["qty"], old["rate"], old["amount"], cur), ""))
+            out.append((_line_name(old), _line_text(old["qty"], old["rate"], old["amount"], cur), ""))
         elif old is not None and new is not None:
-            if (old["description"] or "") != new["description"] or _money(old["qty"]) != _money(new["qty"]) or _money(old["rate"]) != _money(new["rate"]):
-                out.append((new["description"], _line_text(old["qty"], old["rate"], old["amount"], cur),
+            if (old["item_name"] or "") != (new["item_name"] or "") or (old["description"] or "") != new["description"] or _money(old["qty"]) != _money(new["qty"]) or _money(old["rate"]) != _money(new["rate"]):
+                out.append((_line_name(new), _line_text(old["qty"], old["rate"], old["amount"], cur),
                             _line_text(new["qty"], new["rate"], new["amount"], cur)))
     return out
+
+
+def _line_name(line):
+    """A line's label for the edit log: its item name, else its description."""
+    return (line["item_name"] or "").strip() or (line["description"] or "").strip()
 
 def _save_logo(file_storage):
     if not file_storage or not file_storage.filename:
@@ -209,20 +215,23 @@ def _new_request_code(db):
         if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
             if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
                 if db.execute("SELECT 1 FROM public_links WHERE code_text=?", (cand,)).fetchone() is None:
-                    return cand
+                    if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
+                        return cand
     return None
 
 def _parse_lines(form):
     lines = []
+    names = form.getlist("item_name")
     descs = form.getlist("description")
     qtys = form.getlist("qty")
     rates = form.getlist("rate")
     for i, desc in enumerate(descs):
-        if not (desc or "").strip():
+        name = (names[i] if i < len(names) else "").strip()
+        if not (name or (desc or "").strip()):
             continue
         qty = _money(qtys[i]) if i < len(qtys) else Decimal("1")
         rate = _money(rates[i]) if i < len(rates) else Decimal("0")
-        lines.append({"description": desc.strip(), "qty": qty, "rate": rate, "amount": qty * rate})
+        lines.append({"item_name": name, "description": (desc or "").strip(), "qty": qty, "rate": rate, "amount": qty * rate})
     return lines
 
 def _sigs(form, kind=None):
@@ -379,8 +388,8 @@ def request_new():
                                               "company_name": kind["company_name"], "company_address": kind["company_address"],
                                               "show_address": kind["show_address"], "show_company_logo": kind["show_company_logo"]}))).lastrowid
                 for i, l in enumerate(lines):
-                    db.execute("INSERT INTO item_request_lines(request_id,position,description,qty,rate,amount) VALUES (?,?,?,?,?,?)",
-                               (rid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"])))
+                    db.execute("INSERT INTO item_request_lines(request_id,position,item_name,description,qty,rate,amount) VALUES (?,?,?,?,?,?,?)",
+                               (rid, i, l.get("item_name") or "", l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"])))
                 _log_history(db, rid, g.user, "created", "", "", number)
                 rec = db.execute("SELECT full_name FROM users WHERE id=?", (recipient_id,)).fetchone()
                 log(db, "request_new", number)
@@ -430,8 +439,8 @@ def request_edit(rid):
             _log_history(db, rid, g.user, "edit", "Notes", req["notes"] or "", new_notes)
         db.execute("DELETE FROM item_request_lines WHERE request_id=?", (rid,))
         for i, l in enumerate(new_lines):
-            db.execute("INSERT INTO item_request_lines(request_id,position,description,qty,rate,amount) VALUES (?,?,?,?,?,?)",
-                       (rid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"])))
+            db.execute("INSERT INTO item_request_lines(request_id,position,item_name,description,qty,rate,amount) VALUES (?,?,?,?,?,?,?)",
+                       (rid, i, l.get("item_name") or "", l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"])))
         db.execute("UPDATE item_requests SET notes=?,subtotal=?,total=?,amount_in_words=?,updated_at=datetime('now','localtime') WHERE id=?",
                    (new_notes, float(sub), float(sub), words, rid))
         log(db, "request_edit", req["number"])
@@ -599,12 +608,12 @@ def _build_pdf(db, req):
     meta_right = [("Requested by", owner["full_name"] if owner else ""),
                   ("Department", dept["name"] if dept else ""),
                   ("Requested to", (recipient["full_name"] + " (HR & Admin)") if recipient else "")]
-    rows = [[str(i), l["description"] or "", str(l["qty"]), _fmt(l["rate"], req["currency"]), _fmt(l["amount"], req["currency"])]
+    rows = [[str(i), l["item_name"] or "", l["description"] or "", str(l["qty"]), _fmt(l["rate"], req["currency"]), _fmt(l["amount"], req["currency"])]
             for i, l in enumerate(lines, start=1)]
     totals = [("Subtotal", _fmt(req["subtotal"], req["currency"])), ("Grand total", _fmt(req["total"], req["currency"]))]
     return exports.request_pdf(
         meta_left=meta_left, meta_right=meta_right,
-        cols=["#", "Item / Description", "Qty", "Rate", "Amount"], rows=rows, totals=totals,
+        cols=["#", "Item name", "Description", "Qty", "Rate", "Amount"], rows=rows, totals=totals,
         words=(req["amount_in_words"] or ""), terms=req["notes"] or "", sigs=sig_rows,
         code=req["public_code"] if req["public_enabled"] else "",
         company=company, company_address=address, show_address=bool(show_address),

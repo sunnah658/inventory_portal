@@ -9,8 +9,8 @@
 <div class="card">
 <p><b>Kind:</b> {{ kind_name or '—' }} · <b>Date:</b> {{ req['request_date'] or '' }} · <b>Status:</b> {{ req['status']|title }}</p>
 <p><b>Requested by:</b> {{ owner_name or '—' }} · <b>Requested to:</b> {{ recipient_name or '—' }} (HR &amp; Admin)</p>
-<div class="tb"><table><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
-{% for l in lines %}<tr><td>{{ l['description'] }}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) }} {{ req['currency'] }}</td><td class="num">{{ '%.2f'|format(l['amount']) }} {{ req['currency'] }}</td></tr>{% endfor %}
+<div class="tb"><table><thead><tr><th>Item name</th><th>Description</th><th>Quantity</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+{% for l in lines %}<tr><td>{{ l['item_name'] or '' }}</td><td>{{ l['description'] }}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) }} {{ req['currency'] }}</td><td class="num">{{ '%.2f'|format(l['amount']) }} {{ req['currency'] }}</td></tr>{% endfor %}
 </tbody></table></div>
 <div style="margin-top:12px;text-align:right">Grand total: <b>{{ '%.2f'|format(req['total']) }} {{ req['currency'] }}</b></div>
 {% if req['amount_in_words'] %}<p class="hint">{{ req['amount_in_words'] }}</p>{% endif %}

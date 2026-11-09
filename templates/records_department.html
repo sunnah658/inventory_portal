@@ -34,7 +34,7 @@
   {% for g in groups %}
   <h2 style="margin-top:16px">{{ g.tab_name }}</h2>
   <div class="tb"><table>
-    <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in g.cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %} style="--w:{{ g.widths[loop.index0] }}%">{{ c['name'] }}</th>{% endfor %}<th class="noprint"></th></tr></thead>
+    <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in g.cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %} style="width:{{ g.widths[loop.index0] }}%">{{ c['name'] }}</th>{% endfor %}<th class="noprint"></th></tr></thead>
     <tbody>{% for r in g.rows %}{% set v = g.vmap[r['id']] %}
       <tr class="r"><td class="selcol"><input type="checkbox" class="rowck" value="{{ r['id'] }}" aria-label="Select"></td>{% for c in g.cols %}<td{% if loop.index > 7 %} class="xcol"{% endif %}>{% if c['col_type'] == 'attachment' %}{% if g.urls and g.urls.get(r['id'], {}).get(c['id']) %}<a href="{{ g.urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.index', dept=dept_id, tab=g.tab_id, page=locate_pages[r['id']]) }}#row-{{ r['id'] }}">Locate</a></td></tr>

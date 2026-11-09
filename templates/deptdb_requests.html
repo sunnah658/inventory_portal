@@ -40,7 +40,7 @@
 <div class="tabs" style="margin-top:8px">
   <a class="tab {{ 'on' if reqtab == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='all', status=status, q=q, sort=sort, fdept=fdept) }}">All request · {{ counts.all }}</a>
   {% if show_mine %}<a class="tab {{ 'on' if reqtab == 'my' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='my', status=status, q=q, sort=sort, fdept=fdept) }}">My request · {{ counts.mine }}</a>{% endif %}
-  {% if show_mine %}<a class="tab {{ 'on' if reqtab == 'others' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='others', status=status, q=q, sort=sort, fdept=fdept) }}">Other's request · {{ counts.others }}</a>{% endif %}
+  {% if show_others %}<a class="tab {{ 'on' if reqtab == 'others' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='others', status=status, q=q, sort=sort, fdept=fdept) }}">Other's request · {{ counts.others }}</a>{% endif %}
 </div>
 {% if create_kinds %}
 <div class="kp">

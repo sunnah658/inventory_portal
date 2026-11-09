@@ -100,6 +100,7 @@ td.chk,th.chk{width:34px;padding-right:0}td.chk input{width:18px;height:18px;acc
 .selcount{display:none;margin-top:10px;font-size:.9rem;color:var(--soft)}body.sel-on .selcount{display:block}.selcount b{color:var(--accent)}
 .print-only{display:none}
 .tb .xcol{display:none}
+@media screen{.tb col{width:auto!important}.tb th{width:auto!important}}
 .pager{display:flex;gap:10px;align-items:center;justify-content:center;margin:16px 0;font-size:.9rem;color:var(--soft)}
 .actcell{white-space:nowrap}.actcell form{display:inline}.lock{vertical-align:-3px;margin-right:6px}
 .bulkbar{display:none;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;margin-bottom:12px;background:var(--card);border:1.5px solid var(--accent);border-radius:12px;box-shadow:var(--shadow)}
@@ -252,10 +253,10 @@ table{font-size:8.5pt}.label{border-style:solid}
 /* List tables fit the page: fixed layout, text wraps inside its cell, and
    the header repeats on every page. Columns past the first 7, which are
    hidden on screen, are shown in print. */
-.tb table{table-layout:fixed;width:100%}.tb col{width:var(--w,auto)}.tb th{width:var(--w,auto);white-space:normal;font-size:8.5pt}.tb th,.tb td{overflow-wrap:break-word;vertical-align:top;padding:6px 8px}
+.tb table{table-layout:fixed;width:100%}.tb th{white-space:normal;font-size:8.5pt}.tb th,.tb td{overflow-wrap:anywhere;word-break:break-word;vertical-align:top;padding:6px 8px}
 /* The actions column, the tick-box column and rows that were not selected
    never print (these beat the display:revert rule above). */
-.tb th.noprint,.tb td.noprint,.tb th.chk,.tb td.chk,.tb th.selcol,.tb td.selcol,.tb tr.hideme{display:none!important}
+.tb col.noprint,.tb th.noprint,.tb td.noprint,.tb th.chk,.tb td.chk,.tb th.selcol,.tb td.selcol,.tb tr.hideme{display:none!important}
 .tb th.xcol,.tb td.xcol{display:table-cell!important}
 .print-only{display:block!important;margin:0 0 10px;font-size:9.5pt;color:#506a7b}
 }

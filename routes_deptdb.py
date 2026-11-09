@@ -28,7 +28,8 @@ import os
 import secrets
 import sqlite3
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, url_for
+import segno
+from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
 import config
 import exports
@@ -38,7 +39,8 @@ from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, col_weight, ddb_attachment_i
                   ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
-                  notify, notify_ddb_task, parse_code_text, parse_form, print_col_widths, show_when)
+                  display_code, new_random_code_text, notify, notify_ddb_task,
+                  parse_code_text, parse_form, print_col_widths, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
 
@@ -316,11 +318,11 @@ def index():
     db, dept, is_admin = _dept()
     _wanted = parse_code_text(request.args.get("q"))
     # The Invoices and Request items tabs have their own share-code search
-    # (filtered to that department's invoices / requests). Do not hijack it
-    # with the record-code redirect, which would 404 for an invoice or
-    # request share code.
+    # (filtered to that department's invoices / requests). A code typed in
+    # any other tab's search box goes to the Search QR page, which looks
+    # all over for the code — a record, an invoice, a request or a row.
     if _wanted is not None and request.args.get("tab") not in ("invoices", "requests"):
-        return redirect(url_for("public.code_page", code=_wanted))
+        return redirect(url_for("public.search_qr", q=_wanted))
     if request.args.get("tab") == "invoices":
         return _invoice_tab_view(db, dept, is_admin, request.args)
     if request.args.get("tab") == "requests":
@@ -504,22 +506,28 @@ def _invoice_tab_view(db, dept, is_admin, args):
 def _request_tab_view(db, dept, is_admin, args):
     """The Request items page, as a default tab inside Department Database
     (like Invoices). Sub-tabs: My request (only the current user's
-    requests), All request, Other's request (only requests sent TO the
-    current user). In All request, the portal admin, administrative
+    requests), All request, Other's request (only for HR & Admin users —
+    only they can receive a request, so only they ever see one sent TO
+    them). In All request, the portal admin, administrative
     permission users and HR & Admin users see ALL departments' requests;
     users of other departments see only their own department's requests.
     The filter is BOTH department and status, with a search bar (search
     by name or Department). A request is sent to one specific HR & Admin
     user; the recipient can print it, download its PDF and change its
     status (Pending / Issued / Paid / Handovered)."""
-    from routes_requests import STATUSES, can_see_all_departments
+    from routes_requests import STATUSES, can_see_all_departments, hr_admin_dept_id
     can_all = can_see_all_departments(db, g.user)
     show_mine = _show_mine(dept)
+    # Other's request is only for HR & Admin users: only they can receive a
+    # request, so for everyone else the sub-tab would always be empty.
+    show_others = bool(show_mine) and g.user["department_id"] == hr_admin_dept_id(db)
     reqtab = args.get("reqtab") or "all"
     if reqtab not in ("my", "all", "others"):
         reqtab = "all"
     if not show_mine and reqtab in ("my", "others"):
         reqtab = "all"   # a bookmarked my/others just shows All
+    if not show_others and reqtab == "others":
+        reqtab = "all"   # a bookmarked others just shows All
     # Departments this viewer may see in All request.
     if can_all:
         all_depts = [r["id"] for r in db.execute("SELECT id FROM departments ORDER BY id").fetchall()]
@@ -574,7 +582,7 @@ def _request_tab_view(db, dept, is_admin, args):
                       "LEFT JOIN users u ON u.id=r.owner_id LEFT JOIN users ru ON ru.id=r.recipient_id "
                       "LEFT JOIN departments d ON d.id=r.department_id"
                       + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
-    keep = {k: v for k, v in args.items() if k not in ("page",) and not (k == "reqtab" and v in ("my", "others") and not show_mine)}
+    keep = {k: v for k, v in args.items() if k not in ("page",) and not (k == "reqtab" and ((v == "my" and not show_mine) or (v == "others" and not show_others)))}
     if is_portal_admin(g.user):
         keep["dept"] = dept["id"]
     keep["tab"] = "requests"
@@ -584,7 +592,7 @@ def _request_tab_view(db, dept, is_admin, args):
                            reqtab=reqtab, counts=counts, rows=rows,
                            status=status, q=q, sort=sort, fdept=fdept or "",
                            total=total, page=page, pages=pages, keep=keep, create_kinds=create_kinds,
-                           show_mine=show_mine, can_all=can_all,
+                           show_mine=show_mine, show_others=show_others, can_all=can_all,
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_all else [],
                            can_status=lambda r: r["recipient_id"] == g.user["id"])
 
@@ -776,7 +784,133 @@ def row_detail(rid):
         can_share=can_share, shares=shares, is_admin=is_admin,
         departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_share else [],
         users=db.execute("SELECT u.id, u.full_name, d.name AS dept_name FROM users u LEFT JOIN departments d "
-                         "ON d.id=u.department_id WHERE u.is_active=1 ORDER BY d.name, u.full_name").fetchall() if can_share else [])
+                         "ON d.id=u.department_id WHERE u.is_active=1 ORDER BY d.name, u.full_name").fetchall() if can_share else [],
+        can_manage_public=_can_manage_row_public(db, g.user, row),
+        qr_svg=_qr_svg(url_for("ddb.row_code_page", code=row["public_code"], _external=True)) if row["public_code"] else None)
+
+
+def _qr_svg(url):
+    return segno.make(url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
+
+
+def _new_ddb_code(db):
+    """A random HRC-##### code unique across records, invoices, requests and rows."""
+    return new_random_code_text(db)
+
+
+def _can_manage_row_public(db, user, row):
+    """The row's owner, or a tab admin (portal admin, dept admin or delegate)."""
+    return row["owner_id"] == user["id"] or ddb_is_tab_admin(db, user, row["department_id"])
+
+
+# ---------------------------------------------------------------- a row's public QR
+@bp.route("/row/<int:rid>/public", methods=["POST"])
+@login_required
+def row_public(rid):
+    """Turn a Department Database row's public QR on or off, or make a new
+    scan link (which kills the old printed QR's code). Every tab's rows can
+    get a public QR, not only invoices and requests."""
+    db, row = _row(rid)
+    if row["deleted_at"] or not _can_manage_row_public(db, g.user, row):
+        abort(403)
+    action = request.form.get("action", "save")
+    if action == "save":
+        code = row["public_code"] or _new_ddb_code(db)
+        db.execute("UPDATE ddb_rows SET public_code=?, public_enabled=1 WHERE id=?", (code, rid))
+        db.commit()
+        log(db, "public_qr_on", f"ddb row {rid} {code}")
+        db.commit()
+        flash(f"The public QR is on. Its code is {code}. Anyone logged in can search it in Search QR.", "ok")
+    elif action == "off":
+        db.execute("UPDATE ddb_rows SET public_enabled=0 WHERE id=?", (rid,))
+        db.commit()
+        log(db, "public_qr_off", f"ddb row {rid}")
+        db.commit()
+        flash("The public QR is off. Scanning it shows nothing.", "ok")
+    elif action == "regenerate":
+        code = _new_ddb_code(db) or row["public_code"]
+        db.execute("UPDATE ddb_rows SET public_code=?, public_enabled=1 WHERE id=?", (code, rid))
+        db.commit()
+        log(db, "public_qr_new_code", f"ddb row {rid} {code}")
+        db.commit()
+        flash(f"New code created: {code}. The old printed QR code no longer works, print the new one.", "ok")
+    return redirect(url_for("ddb.row_detail", rid=rid) + "#public")
+
+
+@bp.route("/row/<int:rid>/qr")
+@login_required
+def row_qr(rid):
+    db, row = _row(rid)
+    if not row["public_code"]:
+        abort(404)
+    url = url_for("ddb.row_code_page", code=row["public_code"], _external=True)
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    title = (tab["name"] if tab else "Department Database") + f" · row #{row['id']}"
+    item = {"id": "", "title": title, "dept": row["department_name"], "svg": _qr_svg(url), "url": url,
+            "code": row["public_code"]}
+    return render_template("qr_label.html", items=[item], many=False)
+
+
+# ---------------------------------------------------------------- find a row by its public code (login-only)
+def _row_by_code(db, code):
+    """Find a Department Database row by its random HRC-##### public code."""
+    wanted = parse_code_text(code)
+    if not wanted:
+        s = (code or "").strip()
+        if s.isdigit() and len(s) == 5:
+            wanted = f"HRC-{s}"
+    if not wanted:
+        return None, None
+    row = db.execute("SELECT r.*, u.full_name AS owner_name, d.name AS department_name FROM ddb_rows r "
+                     "JOIN users u ON u.id=r.owner_id JOIN departments d ON d.id=r.department_id "
+                     "WHERE r.public_code=? AND r.deleted_at IS NULL", (wanted,)).fetchone()
+    return wanted, row
+
+
+@bp.route("/row/code/<code>")
+@login_required
+def row_code_page(code):
+    """The public page for one Department Database row, opened by its share
+    code (HRC-#####) from the Search QR page or by scanning its QR."""
+    db = get_db()
+    wanted, row = _row_by_code(db, code)
+    if row is None:
+        return render_template("deptdb_row_code.html", code=wanted or code, status="missing", row=None,
+                               cols=[], vals={}, tab=None), 404
+    if not row["public_enabled"]:
+        return render_template("deptdb_row_code.html", code=row["public_code"],
+                               status="off", row=row, cols=[], vals={}, tab=None), 410
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    cols = ddb_columns(db, row["department_id"], tab_id=row["tab_id"]) if row["tab_id"] else []
+    _vmap, _urls = _display_map(db, [row], cols)
+    db.execute("UPDATE ddb_rows SET public_views=public_views+1 WHERE id=?", (row["id"],))
+    db.commit()
+    return render_template("deptdb_row_code.html", code=row["public_code"],
+                           status="ok", row=row, cols=cols, vals=_vmap[row["id"]], tab=tab)
+
+
+@bp.route("/row/code/<code>/pdf")
+@login_required
+def row_code_pdf(code):
+    """The same row as a clean PDF: its fields only, no history."""
+    db = get_db()
+    _wanted, row = _row_by_code(db, code)
+    if row is None or not row["public_enabled"]:
+        abort(404)
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
+    cols = ddb_columns(db, row["department_id"], tab_id=row["tab_id"]) if row["tab_id"] else []
+    _vmap, _urls = _display_map(db, [row], cols)
+    vals = _vmap[row["id"]]
+    sections = [("", ["Field", "Value"],
+                 [[c["name"], str(vals.get(c["id"]) or "")] for c in cols] or [["", "Nothing to show"]])]
+    title = (tab["name"] if tab else "Department Database") + f" · row #{row['id']}"
+    data = exports.document_pdf(title, f"Printed by {g.user['full_name']}", sections,
+                                setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
+    log(db, "code_pdf", row["public_code"])
+    db.commit()
+    resp = Response(data, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{row["public_code"]}.pdf"'
+    return resp
 
 
 @bp.route("/row/<int:rid>/share", methods=["POST"])

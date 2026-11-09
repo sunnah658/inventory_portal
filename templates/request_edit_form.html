@@ -15,8 +15,9 @@
 <h2>Items</h2>
 <div id="lines">
 {% for l in lines %}<div class="fm line">
+<div class="fd"><label>Item name</label><input type="text" name="item_name" value="{{ l['item_name'] or '' }}"></div>
 <div class="fd"><label>Description</label><input type="text" name="description" value="{{ l['description'] }}"></div>
-<div class="fd"><label>Qty</label><input type="number" step="0.01" name="qty" class="qty" value="{{ l['qty'] }}"></div>
+<div class="fd"><label>Quantity</label><input type="number" step="0.01" name="qty" class="qty" value="{{ l['qty'] }}"></div>
 <div class="fd"><label>Rate (<span class="curLabel">{{ req['currency'] }}</span>)</label><input type="number" step="0.01" name="rate" class="rate" value="{{ l['rate'] }}"></div>
 <div class="fd"><label>Amount (<span class="curLabel">{{ req['currency'] }}</span>)</label><input type="number" step="0.01" name="amount" class="amt" value="{{ '%.2f'|format(l['amount']) }}" readonly></div>
 </div>{% endfor %}

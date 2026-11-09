@@ -25,8 +25,8 @@
 {% else %}
 <p class="hint" style="margin-top:14px">Only the recipient ({{ recipient_name }}) can change the status.{% if can_edit %} You can edit this request — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
 {% endif %}
-<div class="tb" style="margin-top:14px"><table><thead><tr><th>Description</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
-{% for l in lines %}<tr><td>{{ l['description'] }}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) }} {{ req['currency'] }}</td><td class="num">{{ '%.2f'|format(l['amount']) }} {{ req['currency'] }}</td></tr>{% endfor %}
+<div class="tb" style="margin-top:14px"><table><thead><tr><th>Item name</th><th>Description</th><th>Quantity</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+{% for l in lines %}<tr><td>{{ l['item_name'] or '' }}</td><td>{{ l['description'] }}</td><td>{{ l['qty'] }}</td><td class="num">{{ '%.2f'|format(l['rate']) }} {{ req['currency'] }}</td><td class="num">{{ '%.2f'|format(l['amount']) }} {{ req['currency'] }}</td></tr>{% endfor %}
 </tbody></table></div>
 <div style="margin-top:14px;text-align:right">Subtotal: <b>{{ '%.2f'|format(req['subtotal']) }} {{ req['currency'] }}</b><br>Grand total: <b>{{ '%.2f'|format(req['total']) }} {{ req['currency'] }}</b><br><span class="hint">{{ req['amount_in_words'] }}</span></div>
 {% if req['notes'] %}<p class="hint" style="margin-top:10px">Terms: {{ req['notes'] }}</p>{% endif %}

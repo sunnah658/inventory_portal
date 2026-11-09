@@ -2477,3 +2477,81 @@
    No database change is needed for this update (the edit-log table
    is created automatically on first start). Apply only this
    latest zip, not the older ones in order.
+
+==============================================================================
+ 52. SEARCH QR LOOKS ALL OVER, PUBLIC QR FOR EVERY DEPARTMENT DATABASE ROW,
+     REQUEST ITEM NAME, OTHER'S REQUEST ONLY FOR HR & ADMIN, DEPARTMENT
+     DATABASE PRINT FIXED (2026-11-09)
+==============================================================================
+ 1. Search QR looks all over for the entered code. Typing a code in the
+    Search QR page now searches everywhere a public code can live — a
+    record link, an invoice, an item request, or a Department Database
+    row — and opens whichever one matches. Before this, a request's
+    public code (for example HRC-96531) was never found and the page
+    said "This QR code is not available", because the search only looked
+    at record links and invoices. A code typed in a Department Database
+    tab's search box now also goes to the Search QR page (it used to go
+    straight to the record-only code page and miss invoice, request and
+    row codes).
+ 2. Public QR generation for every Department Database tab's rows. Until
+    now only the Invoices tab and the Request items tab had a public QR.
+    Now every row in every tab (Client Info, Meetings, Employee Info,
+    Billing, Accounts and any custom tab) can generate a public QR:
+      - a "Public QR" panel on the row detail page, in the same style as
+        the invoice and request panels: Turn on / Save, Turn off, and
+        New scan link (which kills the old printed QR's code), with the
+        QR image, the share code (HRC-#####) and the view count;
+      - the row's owner, or a department admin / delegate / portal
+        admin, can change it; anyone else sees the panel but no buttons
+        (a non-manager who posts to it gets a 403);
+      - scanning the QR or searching the code opens the row's public
+        page (login-only), with a Download PDF button, and the Search QR
+        page finds the row's code too;
+      - new columns on ddb_rows: public_code, public_enabled and
+        public_views (added automatically on first start, existing rows
+        are untouched).
+    All public codes are now unique across records, invoices, requests
+    and rows: the code generators check all four places, so a code can
+    never belong to two things at once.
+ 3. Request items are now Item name, Description, Quantity, Rate (BDT).
+    Each item line has four fields: Item name, Description, Quantity and
+    Rate (BDT). The Amount is still worked out from Quantity x Rate and
+    shown beside the Rate. The Item name is saved per line (new column
+    item_request_lines.item_name), and shows on the create form, the
+    edit form (pre-filled), the request detail page, the request code
+    page and the request PDF (the PDF table is now #, Item name,
+    Description, Qty, Rate, Amount, with Item name and Description
+    given the most room). The edit log uses the item name as the field
+    name (falling back to the description when a line has no item
+    name). Old requests without an item name still open and print
+    normally, with the Item name column empty.
+ 4. The "Other's request" sub-tab is only for HR & Admin users. Only an
+    HR & Admin user can ever receive a request, so for everyone else the
+    sub-tab was always empty. It now appears only when the current user
+    is in the HR & Admin department. "My request" and "All request" are
+    unchanged, and a bookmarked Other's request link just shows All
+    request for a user who may not see it.
+ 5. Department Database print is fixed. The printed table (the one from
+    the Print button on a tab) now uses reliable fixed column widths:
+    the widths are written directly on the table's columns instead of
+    through a CSS variable that Chrome print did not apply, the
+    tick-box and actions columns take no width in print, and long
+    values (emails, addresses) wrap inside their own column instead of
+    pushing the other columns over. Every field fits on the landscape
+    page, and each heading lines up with its own column's content.
+    The screen table is unchanged — the print widths are neutralised on
+    screen, so the on-screen columns still size by their content.
+ 6. NOTHING ELSE CHANGED. This build also carries the whole of build 32
+    (request editing and edit log), build 31 (kind name off the request
+    document), build 30 (Request Items), build 29 (login heading
+    "Welcome"), build 28 (notification lines gone at the source),
+    build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update (the new columns
+   are created automatically on first start). Apply only this
+   latest zip, not the older ones in order.
