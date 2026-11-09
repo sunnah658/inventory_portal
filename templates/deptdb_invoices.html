@@ -5,7 +5,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ dept['name'] }} database · Invoices</h1>
-    <p class="hint">Everyone in this department can see every invoice here. Editing rules are unchanged: a draft can be edited by its owner, and a dept admin can mark an invoice Approved, Pending or Void. Invoice templates stay on the separate Invoice templates page for dept admins.</p></div>
+    <p class="hint">Everyone in this department can see every invoice here. Editing rules are unchanged: a draft can be edited by its owner, and a dept admin can mark an invoice Approved or Pending. Invoice templates stay on the separate Invoice templates page for dept admins.</p></div>
   <div class="acts">
     {% if is_admin %}<a class="b" href="{{ url_for('invoices.templates') }}">Invoice templates</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>
@@ -57,7 +57,7 @@
 {% else %}
   <div class="tb"><div class="empty">{% if q or user_filter or status %}Nothing matches your filter.{% else %}No invoices yet. Choose a format above to create one.{% endif %}</div></div>
 {% endif %}
-<p class="hint" style="margin-top:10px">Draft has no public code yet. Void keeps its number — it is never reused. Currency is shown beside every amount. When a dept admin creates a new invoice type, its sub-tab appears here automatically.</p>
+<p class="hint" style="margin-top:10px">Draft has no public code yet. A deleted invoice's number is never reused. Currency is shown beside every amount. When a dept admin creates a new invoice type, its sub-tab appears here automatically.</p>
 </div>
 <div class="stack rail">
   <div class="card"><h2>Invoices by status</h2>

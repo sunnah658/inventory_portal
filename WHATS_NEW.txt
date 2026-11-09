@@ -1,4 +1,23 @@
 ==============================================================================
+ UPDATE: NO WATERMARK BY DEFAULT, NEW STATUS NOTIFICATION, DELETE INVOICE
+ (2026-11-09)
+==============================================================================
+ 1. No watermark by default. A newly created invoice shows no
+    watermark at all. The APPROVED seal appears only when the owner
+    marks it Approved, and the PENDING stamp only when the owner
+    marks it Pending. (Before, a template with the watermark text
+    "Approved" made the seal appear on every new invoice.)
+ 2. When the owner changes an invoice's status, the department
+    admin is now told "[User] changed the status for [invoice
+    number] to Approved." or "... to Pending."
+ 3. Delete invoice replaces Void. The Void button is gone. In its
+    place is a Delete invoice button, for the owner and the portal
+    admin only. Clicking it opens a warning pop-up where they must
+    type their own password. If the owner deletes it, the
+    department admin is told.
+ 4. Nothing else changed. This build carries all of builds 26-38.
+
+==============================================================================
  UPDATE: PENDING STAMP IS GREY (2026-11-09)
 ==============================================================================
  1. The Pending stamp on the invoice PDF is now grey, the same

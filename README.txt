@@ -2824,3 +2824,61 @@
    http://192.168.1.116:8100, so new QRs point at the address your
    phones can reach. QR links work for anyone on the office Wi-Fi
    or LAN; a phone on mobile data cannot reach a 192.168 address.
+
+ 58. NO WATERMARK BY DEFAULT, NEW STATUS NOTIFICATION, DELETE INVOICE (2026-11-09)
+ 1. No watermark by default. The APPROVED seal and the PENDING stamp
+    now come ONLY from the invoice's status. A newly created invoice
+    shows no watermark at all, even when its template has a watermark
+    turned on with the text "Approved" or "Pending" — that was the
+    error: the template's watermark text used to make the seal appear
+    on every new invoice. The seal appears when the owner marks the
+    invoice Approved and the stamp when the owner marks it Pending.
+    A template watermark with any other text (for example
+    "Confidential") still shows as the old diagonal text.
+ 2. Status-change notification. When the owner changes an invoice's
+    status, the department admin is now told: "[User] changed the
+    status for [invoice number] to Approved." or "[User] changed the
+    status for [invoice number] to Pending." This applies to the
+    Mark approved / Mark pending buttons and to setting Approved or
+    Pending in the edit form.
+ 3. Delete invoice replaces Void. The Void button on the invoice
+    detail page is gone. In its place (on the right, next to Mark
+    pending) is a Delete invoice button, shown for draft, issued,
+    paid, approved and pending invoices. Only the owner of the
+    invoice and a portal admin can delete it; a department admin
+    cannot delete someone else's invoice. Clicking it opens a
+    warning pop-up where the owner or portal admin must type their
+    own password to delete it — a wrong password deletes nothing.
+    Deleting removes the invoice and its lines for good; its number
+    is never reused. If the owner deletes it, the department admin
+    is told "[User] deleted invoice [number]." (A portal admin
+    deleting it tells nobody, following the portal's rule that
+    nobody is told about a portal admin's own actions.) Invoices
+    already marked Void keep that status and the Void filter.
+ 4. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 38 (the PENDING stamp is grey), build 37 (the user's
+    PENDING stamp replaces the grey circular seal), build 36
+    (single-line meta, signature alignment by count, Mark approved
+    / Mark pending, PENDING status), build 35 (APPROVED seal, QR
+    scan fix, third signature, new invoice and request format,
+    Approved invoice status), build 34 (dept-admin notifications
+    for invoices and requests, print alignment, Department dropdown
+    removed from the Request items tab), build 33 (Search QR looks
+    all over, public QR for every row, request Item name, Other's
+    request only for HR & Admin, print column widths), build 32
+    (request editing and edit log), build 31 (kind name off the
+    request document), build 30 (Request Items), build 29 (login
+    heading "Welcome"), build 28 (notification lines gone at the
+    source), build 27 (Dashboard Recent activity removed) and
+    build 26 (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   phones can reach. QR links work for anyone on the office Wi-Fi
+   or LAN; a phone on mobile data cannot reach a 192.168 address.

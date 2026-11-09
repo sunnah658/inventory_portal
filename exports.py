@@ -289,9 +289,10 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     The QR encodes qr_url (the portal's real address); the old
     https://portal host is never used. Watermark: OFF by default; the
     grey APPROVED seal is drawn at the bottom right when the invoice's
-    status is Approved (is_approved) or when the template's watermark
-    text is Approved; the grey PENDING stamp is drawn at the bottom right when
-    the status is Pending (is_pending) or the watermark text is Pending."""
+    status is Approved (is_approved); the grey PENDING stamp is drawn
+    at the bottom right when the status is Pending (is_pending). A newly created invoice shows
+    no watermark at all; the seal and the stamp come ONLY from the
+    invoice's status, never from the template's watermark text."""
     import segno as _segno
     font = _fonts()
     buf = io.BytesIO()
@@ -381,17 +382,17 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     # right, with nothing in between.
     def _on_page(canvas, _doc):
         _wm = (watermark_text or "").strip().lower() if watermark_text else ""
-        # The invoice's status wins over the template watermark: a Pending
-        # invoice shows the PENDING stamp and an Approved one the APPROVED
-        # seal, whatever the template says. Only when the status is
-        # neither does the template's watermark text decide.
-        if is_pending or (not is_approved and watermark_on and _wm == "pending"):
+        # The seal and the stamp come ONLY from the invoice's status.
+        # A newly created invoice shows no watermark at all; the seal
+        # appears when the owner marks it Approved and the stamp when
+        # the owner marks it Pending. The template's watermark text
+        # never makes one appear on its own.
+        if is_pending:
             # The PENDING stamp (the grey rectangular stamp the user
             # supplied), at the bottom right of the page, in the empty
             # space below the signatures. It appears when the owner set
-            # the invoice's status to Pending, or when the template's
-            # watermark text is Pending. The stamp is a wide rectangle
-            # (about 3:1), drawn 7.5 cm wide.
+            # the invoice's status to Pending. The stamp is a wide
+            # rectangle (about 3:1), drawn 7.5 cm wide.
             try:
                 _seal = os.path.join(current_app.static_folder, "pending-stamp.png")
                 _sw = 7.5 * cm
@@ -399,18 +400,17 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
                 canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sh, mask="auto")
             except Exception:
                 pass
-        elif is_approved or (watermark_on and _wm == "approved"):
+        elif is_approved:
             # The APPROVED seal (grey), at the bottom right of the page,
             # in the empty space below the signatures. It appears when the
-            # owner set the invoice's status to Approved, or when the
-            # template's watermark text is Approved.
+            # owner set the invoice's status to Approved.
             try:
                 _seal = os.path.join(current_app.static_folder, "approved-seal-grey.png")
                 _sw = 5.5 * cm
                 canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sw, mask="auto")
             except Exception:
                 pass
-        elif watermark_on and watermark_text:
+        elif watermark_on and watermark_text and _wm not in ("approved", "pending"):
             # Any other watermark text keeps the old diagonal rendering.
             canvas.saveState()
             try:

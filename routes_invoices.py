@@ -5,7 +5,8 @@ Dept admin creates invoice templates for their OWN department (not the portal ad
 Employees choose a template in the Invoices tab, fill it, save as Draft, then
 Finalize and number it. Finalized invoices are locked: they can be marked
 Approved (grey APPROVED seal on the PDF) or Pending (grey PENDING stamp),
-or Voided (with a reason, number kept, never reused), never quietly edited.
+or Deleted (only the owner or a portal admin, after typing their own
+password), never quietly edited.
 
 Public QR for invoices: HRC- + random 5-digit code, e.g. HRC-48392. The same
 random-code system is used for all public QRs (see core.display_code).
@@ -523,9 +524,8 @@ def invoice_edit(iid):
         # or marks it Pending.
         if new_status in ("approved", "pending") and inv["status"] != new_status:
             _dept = db.execute("SELECT * FROM departments WHERE id=?", (inv["department_id"],)).fetchone()
-            _verb = "approved" if new_status == "approved" else "marked as Pending"
             notify_ddb_task(db, g.user, _dept,
-                            f"{g.user['full_name']} {_verb} invoice {inv['number'] or 'draft'}.",
+                            f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to {'Approved' if new_status == 'approved' else 'Pending'}.",
                             url_for("invoices.detail", iid=iid))
         db.commit(); flash("Draft saved.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
     return render_template("invoice_form.html", tpl=tpl, inv=inv, lines=lines, sigs=json.loads(inv["signatures_json"] or "[]") if inv["signatures_json"] else (json.loads(tpl["signatures_json"] or "[]") if tpl else []), currencies=CURRENCIES)
@@ -571,11 +571,11 @@ def invoice_pending(iid):
     # admin is told).
     if _is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"]:
         notify_dept_task(db, g.user,
-                         f"{g.user['full_name']} marked invoice {inv['number'] or 'draft'} as Pending.",
+                         f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Pending.",
                          url_for("invoices.detail", iid=iid))
     else:
         notify_ddb_row_task(db, g.user, inv["department_id"],
-                            f"{g.user['full_name']} marked invoice {inv['number'] or 'draft'} as Pending.",
+                            f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Pending.",
                             url_for("invoices.detail", iid=iid))
     db.commit()
     flash("Marked Pending. The PENDING stamp now shows on its PDF.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
@@ -595,11 +595,11 @@ def invoice_approve(iid):
     # in the Department Database (that department's dept admin is told).
     if _is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"]:
         notify_dept_task(db, g.user,
-                         f"{g.user['full_name']} approved invoice {inv['number'] or 'draft'}.",
+                         f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Approved.",
                          url_for("invoices.detail", iid=iid))
     else:
         notify_ddb_row_task(db, g.user, inv["department_id"],
-                            f"{g.user['full_name']} approved invoice {inv['number'] or 'draft'}.",
+                            f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Approved.",
                             url_for("invoices.detail", iid=iid))
     db.commit()
     flash("Marked Approved. The APPROVED seal now shows on its PDF.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
@@ -641,7 +641,39 @@ def detail(iid):
     return render_template("invoice_detail.html", inv=inv, lines=lines, tpl=tpl, owner_name=owner["full_name"] if owner else "",
                            qr_svg=qr_svg, qr_url=qr_url, colour=KIND_COLOURS.get((json.loads(inv["template_snapshot_json"] or "{}").get("kind") or "billing"), "#0F7CA6"),
                            can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] in ("draft", "approved", "pending") and not inv["number"]),
+                           can_delete=(is_portal_admin(g.user) or inv["owner_id"] == g.user["id"]),
                            can_manage=(is_portal_admin(g.user) or inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])))
+
+@bp.route("/invoices/<int:iid>/delete", methods=["POST"])
+@login_required
+def invoice_delete(iid):
+    """Delete an invoice for good. Only the owner or a portal admin may
+    do it, and only after typing their own password in the warning
+    pop-up. The invoice and its lines are removed; its number is never
+    reused. If the owner deletes it, the department admin is told."""
+    from security import reauth_ok
+    db = get_db(); inv = _invoice(db, iid)
+    if not (inv["owner_id"] == g.user["id"] or is_portal_admin(g.user)):
+        abort(403)
+    if not reauth_ok(g.user, request.form):
+        flash("Wrong password. The invoice was not deleted.", "err")
+        return redirect(url_for("invoices.detail", iid=iid))
+    number = inv["number"] or "draft"
+    dept_id = inv["department_id"]
+    db.execute("DELETE FROM invoice_lines WHERE invoice_id=?", (iid,))
+    db.execute("DELETE FROM invoices WHERE id=?", (iid,))
+    log(db, "invoice_deleted", number)
+    # If the owner deletes it, the department admin is told. A portal
+    # admin deleting it tells nobody (the watcher rule: nobody is told
+    # about a portal admin's own actions).
+    if inv["owner_id"] == g.user["id"] and not is_portal_admin(g.user):
+        notify_ddb_row_task(db, g.user, dept_id,
+                            f"{g.user['full_name']} deleted invoice {number}.",
+                            url_for("ddb.index", dept=dept_id, tab="invoices"))
+    db.commit()
+    flash(f"Invoice {number} deleted.", "ok")
+    return redirect(url_for("ddb.index", dept=dept_id, tab="invoices"))
+
 
 @bp.route("/invoices/<int:iid>/pdf")
 @login_required
