@@ -95,6 +95,7 @@ document.addEventListener('change',function(e){var t=e.target;if(t.classList.con
 <div class="ev"><b>{{ h.full_name or 'System' }}</b>
 {% if h.action == 'created' %} created this record{% if h.new_value %} ({{ h.new_value }}){% endif %}
 {% elif h.action == 'edit' %} changed <b>{{ h.field }}</b><br><del>{{ h.old_value or '(blank)' }}</del> &rarr; <ins>{{ h.new_value or '(blank)' }}</ins>
+{% elif h.action == 'status' %} changed the status from <b>{{ h.old_value }}</b> to <b>{{ h.new_value }}</b>
 {% elif h.action == 'shared' %} shared this with <b>{{ h.new_value }}</b>
 {% elif h.action == 'shared_user' %} shared this with <b>{{ h.new_value }}</b>
 {% elif h.action == 'share_changed' %} changed the access of <b>{{ h.field }}</b> from {{ h.old_value }} to <b>{{ h.new_value }}</b>

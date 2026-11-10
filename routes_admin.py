@@ -269,6 +269,7 @@ def user_add():
     form = request.form if request.method == "POST" else {}
     if request.method == "POST":
         full_name = (form.get("full_name") or "").strip()
+        designation = (form.get("designation") or "").strip()
         username = (form.get("username") or "").strip()
         dept = form.get("department_id") or ""
         role = form.get("role") or "user"
@@ -289,9 +290,9 @@ def user_add():
             flash(error, "error")
         else:
             password = password or generate_password()
-            uid = db.execute("INSERT INTO users(full_name,username,password_hash,department_id,role,"
-                             "must_change_password,is_dept_admin,can_ddb_attachment,can_portal_admin,created_by) VALUES (?,?,?,?,?,1,?,?,?,?)",
-                             (full_name, username, generate_password_hash(password), int(dept), role,
+            uid = db.execute("INSERT INTO users(full_name,designation,username,password_hash,department_id,role,"
+                             "must_change_password,is_dept_admin,can_ddb_attachment,can_portal_admin,created_by) VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+                             (full_name, designation, username, generate_password_hash(password), int(dept), role,
                               1 if form.get("is_dept_admin") else 0, 1 if form.get("can_ddb_attachment") else 0,
                               1 if (is_true_admin(g.user) and form.get("can_portal_admin")) else 0, g.user["id"])).lastrowid
             _save_view_departments(db, uid, form.getlist("view_dept"), int(dept))
@@ -319,6 +320,7 @@ def user_edit(user_id):
         abort(403)
     if request.method == "POST":
         full_name = (request.form.get("full_name") or "").strip()
+        designation = (request.form.get("designation") or "").strip()
         username = (request.form.get("username") or "").strip()
         dept = request.form.get("department_id") or ""
         role = request.form.get("role") or "user"
@@ -351,8 +353,8 @@ def user_edit(user_id):
             # admin; anyone else editing a user leaves the existing value untouched.
             new_permission = (1 if request.form.get("can_portal_admin") else 0) if is_true_admin(g.user) else row["can_portal_admin"]
             # Records stay in the department they were created in.
-            db.execute("UPDATE users SET full_name=?, username=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=?, can_portal_admin=? WHERE id=?",
-                       (full_name, username, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, new_permission, user_id))
+            db.execute("UPDATE users SET full_name=?, designation=?, username=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=?, can_portal_admin=? WHERE id=?",
+                       (full_name, designation, username, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, new_permission, user_id))
             _save_view_departments(db, user_id, request.form.getlist("view_dept"), int(dept))
             if not active:
                 revoke_user_sessions(db, user_id)             # a disabled user is logged out at once

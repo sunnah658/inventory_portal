@@ -159,3 +159,33 @@ def change_password():
             flash("Password changed.", "ok")
             return redirect(url_for("records.home"))
     return render_template("change_password.html")
+
+
+@bp.route("/my-settings", methods=["GET", "POST"])
+@login_required
+def my_settings():
+    """My settings: every logged-in user changes their OWN full name,
+    username and designation. The username must stay unique (another user's
+    username is refused). The designation is shown under the user's name in
+    the owner signature on their invoices, item requests and applications.
+    Changing the username takes effect at once; the user signs in with the
+    new username next time. The password stays on its own page."""
+    db = get_db()
+    if request.method == "POST":
+        full_name = (request.form.get("full_name") or "").strip()
+        designation = (request.form.get("designation") or "").strip()
+        username = (request.form.get("username") or "").strip()
+        if not full_name or not username:
+            flash("Full name and username are required.", "error")
+        elif db.execute("SELECT 1 FROM users WHERE username=? AND id != ?",
+                        (username, g.user["id"])).fetchone():
+            flash(f"The username '{username}' is already used.", "error")
+        else:
+            db.execute("UPDATE users SET full_name=?, designation=?, username=? WHERE id=?",
+                       (full_name, designation, username, g.user["id"]))
+            log(db, "my_settings", username)
+            db.commit()
+            flash("Your settings have been saved.", "ok")
+            return redirect(url_for("auth.my_settings"))
+    user = db.execute("SELECT * FROM users WHERE id=?", (g.user["id"],)).fetchone()
+    return render_template("my_settings.html", user=user)

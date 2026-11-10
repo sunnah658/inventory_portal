@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}{{ 'Edit kind' if kind else 'New kind' }}{% endblock %}
+{% block content %}
+<div class="tw"><div>
+<div class="hd"><div><h1>{{ 'Edit kind' if kind else 'New kind' }}{% if kind %} · {{ kind['name'] }}{% endif %}</h1><p class="hint">The kind name appears in the subject of the letter and on the Create card. Changes apply to new applications only.</p></div></div>
+<form method="post" class="card">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm">
+<div class="fd"><label>Kind name</label><input type="text" name="name" value="{{ kind['name'] if kind else '' }}" required placeholder="Annual Leave"></div>
+<div class="fd"><label>Application number prefix</label><input type="text" name="number_prefix" value="{{ kind['number_prefix'] if kind else 'LV' }}"><div class="sub">The number is per-kind, e.g. LV-0001, and never reused.</div></div>
+<div class="fd"><label>Status</label><select name="status"><option value="active" {{ 'selected' if not kind or kind['status']=='active' }}>Active</option><option value="draft" {{ 'selected' if kind and kind['status']=='draft' }}>Draft (hidden from employees)</option></select></div>
+</div>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save kind</button><a class="b" href="{{ url_for('applications.kinds') }}">Cancel</a></div>
+</form>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>How it works</h2>
+    <p class="hint">The kind is frozen into each application when it is sent, so changing the kind later never changes a sent application. Applications are sent only to HR &amp; Admin Department users.</p></div>
+  {{ quick_card([
+    ('Back to kinds', url_for('applications.kinds'), True),
+  ]) }}
+</div></div>
+{% endblock %}

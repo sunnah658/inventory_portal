@@ -1,4 +1,28 @@
 ==============================================================================
+ UPDATE: APPLICATION LETTERS, DESIGNATION AND MY SETTINGS (2026-11-10)
+==============================================================================
+ 1. Application Letters — a new page inside More, for every user
+    except the portal admin. A department admin makes the letter
+    kinds (Annual Leave, Sick Leave, Casual Leave to start). A user
+    picks a kind and sends the application to ONE specific HR &
+    Admin user. The recipient and the HR & Admin department admin
+    can edit it, set a note, upload their signature and change the
+    status (Pending, Approved, Rejected). The owner can edit while
+    Pending. The applicant is notified of every status change.
+ 2. The document is a FORMAL application letter, not an invoice:
+    letterhead, Ref + date, To, Subject, the body, the applicant's
+    signature (name, designation, department, company), then a FOR
+    OFFICE USE section with the HR note and the approver's uploaded
+    signature. The QR and share code stay at the bottom left.
+ 3. Designation. A user account now has a Designation. The admin
+    sets it when the account is made. Every user can change their
+    own name, username and designation on a new "My settings" page
+    (user menu, next to Password). The designation is filled in
+    automatically under the owner's name in the owner signature on
+    invoices (Prepared By), item requests (Requested By) and
+    application letters.
+
+==============================================================================
  UPDATE: VOID INVOICE DELETE, SIGNATURE LINE CENTRED, ROUND REQUEST
  FIGURES, HR & ADMIN CAN OPEN ANY REQUEST (2026-11-09)
 ==============================================================================

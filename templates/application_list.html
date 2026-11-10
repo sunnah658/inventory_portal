@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% block title %}Application Letters{% endblock %}
+{% block content %}
+<div class="hd">
+  <div><h1>Application Letters</h1>
+    <p class="hint">Apply for leave to HR &amp; Admin using one of the letter kinds below. HR &amp; Admin change the status and sign to approve it.</p></div>
+  <div class="acts">
+    {% if g.user['is_dept_admin'] %}<a class="b" href="{{ url_for('applications.kinds') }}">Application kinds</a>{% endif %}
+    <button class="b" type="button" onclick="window.print()">Print</button>
+  </div>
+</div>
+<div class="kp">
+  {{ kpi('My applications', counts.my) }}
+  {{ kpi('Pending', counts.pending) }}
+  {{ kpi('Approved', counts.approved) }}
+  {{ kpi('Rejected', counts.rejected) }}
+</div>
+<div class="tw"><div>
+<form class="tools" method="get" action="{{ url_for('applications.list_applications') }}">
+  <input type="hidden" name="apptab" value="{{ tab }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by number, kind, name or Department" aria-label="Search applications">
+  {% if can_all %}<select name="fdept" aria-label="Filter by department"><option value="">All departments</option>
+    {% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if fdept == d['id'] }}>{{ d['name'] }}</option>{% endfor %}</select>{% endif %}
+  <select name="status" aria-label="Filter by status"><option value="">All statuses</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if fstatus == s }}>{{ labels[s] }}</option>{% endfor %}</select>
+  <button class="b" type="submit">Apply</button>
+  {% if q or fstatus or fdept %}<a href="{{ url_for('applications.list_applications', apptab=tab) }}">Clear</a>{% endif %}
+</form>
+<div class="tabs" style="margin-top:8px">
+  <a class="tab {{ 'on' if tab == 'my' }}" href="{{ url_for('applications.list_applications', apptab='my', status=fstatus, q=q, fdept=fdept) }}">My applications · {{ counts.my }}</a>
+  <a class="tab {{ 'on' if tab == 'all' }}" href="{{ url_for('applications.list_applications', apptab='all', status=fstatus, q=q, fdept=fdept) }}">All applications</a>
+  {% if is_hr %}<a class="tab {{ 'on' if tab == 'received' }}" href="{{ url_for('applications.list_applications', apptab='received', status=fstatus, q=q, fdept=fdept) }}">Received</a>{% endif %}
+</div>
+{% if kinds %}
+<div class="kp">
+{% for t in kinds %}<div class="k1"><span>leave</span><b style="font-size:1.1rem">{{ t['name'] }}</b><small>Apply to an HR &amp; Admin user</small><div style="margin-top:10px"><a class="b p sm" href="{{ url_for('applications.application_new', kind=t['id']) }}">Create</a></div></div>{% endfor %}
+</div>
+{% endif %}
+{% if rows %}
+  <div class="tb"><table>
+    <thead><tr><th>Application No.</th><th>Kind</th><th>Applied by</th><th>Applied to</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th class="noprint"></th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr class="r"><td><b>{{ r['number'] or '—' }}</b></td><td>{{ r['kind_name'] or '' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != g.user['department_id'] %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['recipient_name'] or '—' }}</td><td>{{ r['from_date'] or '' }}</td><td>{{ r['to_date'] or '' }}</td><td>{{ r['days'] }}</td><td><span class="s {{ 'g' if r['status'] == 'approved' else ('r' if r['status'] == 'rejected' else 'a') }}">{{ labels[r['status']] }}</span></td><td class="actcell noprint"><a class="b sm" href="{{ url_for('applications.detail', aid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('applications.application_pdf', aid=r['id']) }}">PDF</a>{% if r['public_code'] %}<a class="b sm" href="{{ url_for('applications.code_page', code=r['public_code']) }}">QR</a>{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+{% else %}
+  <div class="tb"><div class="empty">{% if q or fstatus or fdept %}Nothing matches your filter.{% else %}No applications yet. Choose a kind above to create one.{% endif %}</div></div>
+{% endif %}
+<p class="hint" style="margin-top:10px">A new application starts as Pending. Only the HR &amp; Admin user it was sent to and the HR &amp; Admin department admin can change its status — the applicant is notified of every change. The application number (LV-0001) is the official number to quote. The share code (HRC-#####) is only for scanning and searching — it is not the application number.</p>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Applications by status</h2>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Pending</b>{{ counts.pending }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Approved</b>{{ counts.approved }}</div>
+    <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Rejected</b>{{ counts.rejected }}</div>
+  </div>
+  <div class="card"><h2>How approval works</h2>
+    <p class="hint">When HR &amp; Admin approve an application, they add their signature — an uploaded signature image — which appears on the application and its PDF, under the applicant's signature. Only the HR &amp; Admin user the application was sent to and the HR &amp; Admin department admin can change its status. Other HR &amp; Admin users can open and see it, but not change it.</p></div>
+  {{ quick_card([
+    ('+ New application', url_for('applications.application_new', kind=kinds[0]['id']), True) if kinds else None,
+    ('Application kinds', url_for('applications.kinds'), False) if g.user['is_dept_admin'] else None,
+  ] | select) }}
+</div></div>
+{% endblock %}

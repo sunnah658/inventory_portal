@@ -170,8 +170,9 @@ def _new_invoice_code(db):
         if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
             if db.execute("SELECT 1 FROM public_links WHERE code_text=?", (cand,)).fetchone() is None:
                 if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
-                    if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
-                        return cand
+                    if db.execute("SELECT 1 FROM applications WHERE public_code=?", (cand,)).fetchone() is None:
+                        if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
+                            return cand
     return None
 
 def _parse_lines(form, kind):
@@ -832,8 +833,8 @@ def _pdf_sigs(inv):
     except Exception:
         sigs = []
     out = []
-    owner = get_db().execute("SELECT full_name FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
-    out.append(("Prepared By", owner["full_name"] if owner else "", ""))
+    owner = get_db().execute("SELECT full_name, designation FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
+    out.append(("Prepared By", owner["full_name"] if owner else "", owner["designation"] if owner else ""))
     for s in sigs:
         out.append((s.get("title") or "Authorized", s.get("person") or "", s.get("designation") or ""))
     return out

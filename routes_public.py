@@ -161,8 +161,9 @@ def search_qr():
             status = "bad"
         else:
             # The Search QR page looks all over for the entered code: a
-            # record link, an invoice, an item request or a Department
-            # Database row. Whichever one matches opens its own page.
+            # record link, an invoice, an item request, an application
+            # letter or a Department Database row. Whichever one matches
+            # opens its own page.
             link = db.execute("SELECT * FROM public_links WHERE code_text=?", (_wanted,)).fetchone()
             if link is None:
                 # invoice public code: HRC-##### -> invoice code page
@@ -179,6 +180,13 @@ def search_qr():
                     _req = None
                 if _req is not None:
                     return redirect(url_for("requests.code_page", code=_req["public_code"]))
+                # application letter public code: HRC-##### -> application code page
+                try:
+                    _app = db.execute("SELECT public_code FROM applications WHERE public_code=?", (_wanted,)).fetchone()
+                except Exception:
+                    _app = None
+                if _app is not None:
+                    return redirect(url_for("applications.code_page", code=_app["public_code"]))
                 # Department Database row public code: HRC-##### -> row code page
                 try:
                     _row = db.execute("SELECT public_code FROM ddb_rows WHERE public_code=?", (_wanted,)).fetchone()

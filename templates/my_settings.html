@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}My settings{% endblock %}
+{% block content %}
+<div class="tw"><div>
+<div class="card narrow">
+  <h1>My settings</h1>
+  <p class="hint" style="margin-bottom:18px">Change your own name, username and designation. Your designation appears under your name wherever you sign.</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fd"><label for="full_name">Full name</label><input id="full_name" name="full_name" type="text" maxlength="150" required value="{{ user['full_name'] }}"><div class="sub">Shown on your records, invoices, requests and applications.</div></div>
+    <div class="fd"><label for="username">Username</label><input id="username" name="username" type="text" maxlength="60" required value="{{ user['username'] }}"><div class="sub">Used to sign in. Changing it takes effect at once — use the new username the next time you sign in. It must be unique.</div></div>
+    <div class="fd"><label for="designation">Designation</label><input id="designation" name="designation" type="text" maxlength="150" value="{{ user['designation'] or '' }}"><div class="sub">Shown under your name in the owner signature on your invoices, item requests and applications.</div></div>
+    <div class="acts"><button class="b p" type="submit">Save changes</button><a class="b" href="{{ url_for('records.home') }}">Cancel</a></div>
+  </form>
+</div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Where your designation shows</h2>
+    <p class="hint">Invoice — Prepared By · Item Request — Requested By · Application — Applicant. The designation is taken from your account at the time the document is made, so changing it here updates every new invoice, request and application you create.</p></div>
+  <div class="card"><h2>Password</h2>
+    <p class="hint">To change your password, use the Password link in your user menu.</p></div>
+</div></div>
+{% endblock %}

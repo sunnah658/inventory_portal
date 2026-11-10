@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}Edit application {{ app['number'] }}{% endblock %}
+{% block content %}
+<div class="tw"><div>
+<div class="hd"><div><h1>Edit application · {{ app['number'] }}</h1><p class="hint">Only the from/to dates, the reason and the letter can be changed. The application number, the kind and the recipient stay the same. Saving writes an edit log entry for every change, and notifies the other party.</p></div></div>
+<form method="post" class="card" id="appForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm">
+<div class="fd"><label>Kind</label><input type="text" value="{{ kind['name'] if kind else '—' }}" readonly></div>
+<div class="fd"><label>Applied to (HR &amp; Admin Department user)</label><input type="text" value="{{ recipient_name }}" readonly></div>
+<div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" value="{{ app['from_date'] or '' }}" required></div>
+<div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" value="{{ app['to_date'] or '' }}" required></div>
+<div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="{{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }}"></div>
+<div class="fd"><label>Reason</label><input type="text" name="reason" value="{{ app['reason'] or '' }}" required></div>
+</div>
+<h2 style="margin-top:16px">The letter</h2>
+<div class="fd"><textarea name="letter_body" rows="7" required>{{ app['letter_body'] or '' }}</textarea></div>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save changes</button><a class="b" href="{{ url_for('applications.detail', aid=app['id']) }}">Cancel</a></div>
+</form>
+<script>
+function daysBetween(a,b){var fa=new Date(a+"T00:00:00"), fb=new Date(b+"T00:00:00"); if(isNaN(fa)||isNaN(fb)) return 0; return Math.round((fb-fa)/86400000)+1;}
+function upd(){var d=daysBetween(document.getElementById('fromD').value, document.getElementById('toD').value); document.getElementById('daysT').value = (d>0 ? d + (d===1 ? " day" : " days") : "—");}
+document.getElementById('fromD').addEventListener('change', upd);
+document.getElementById('toD').addEventListener('change', upd);
+</script>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Application: {{ app['number'] }}</h2>
+    <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied by</b>{{ owner_name }}</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied to</b>{{ recipient_name }} (HR &amp; Admin)</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Status</b>{{ app['status']|title }}</div>
+  </div>
+  <div class="card"><h2>How editing works</h2>
+    <p class="hint">The owner (while Pending), the recipient and the HR &amp; Admin department admin can all edit this application. Every change is written to the edit log on the application detail page, and the other party is notified. Only the recipient and the HR &amp; Admin department admin can change the status.</p></div>
+  {{ quick_card([
+    ('Back to the application', url_for('applications.detail', aid=app['id']), True),
+    ('Back to Application Letters', url_for('applications.list_applications'), False),
+  ]) }}
+</div></div>
+{% endblock %}

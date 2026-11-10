@@ -33,6 +33,7 @@ from routes_invoices import bp as invoices_bp
 from routes_public import bp as public_bp
 from routes_records import bp as records_bp
 from routes_requests import bp as requests_bp
+from routes_applications import bp as applications_bp
 from routes_workflow import bp as flow_bp
 from security import check_session, purge_sessions, reauth_fresh
 
@@ -84,7 +85,7 @@ def create_app():
     if os.environ.get("PORTAL_NO_SCHEDULER") != "1":      # tests switch the helper off
         threading.Thread(target=_reminder_loop, name="reminders", daemon=True).start()
 
-    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, ddb_bp, admin_bp, brand_bp, invoices_bp, requests_bp):
+    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, ddb_bp, admin_bp, brand_bp, invoices_bp, requests_bp, applications_bp):
         app.register_blueprint(blueprint)
 
     # ------------------------------------------------------------ before every request

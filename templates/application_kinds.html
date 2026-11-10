@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% block title %}Application kinds{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Application kinds</h1><p class="hint">Design every application letter once. Dept admin creates for their own department. Employees choose from these on the Application Letters page. Kinds are made by the dept admin, not the portal admin.</p></div>
+<div class="acts"><a class="b p" href="{{ url_for('applications.kind_new') }}">+ New kind</a><form method="post" action="{{ url_for('applications.kind_starters') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Create starter kinds</button></form></div></div>
+<div class="kp">
+  {{ kpi('Kinds', rows|length) }}
+  {{ kpi('Active', rows|selectattr('status', 'equalto', 'active')|list|length) }}
+</div>
+<div class="tw"><div>
+<div class="tb"><table><thead><tr><th>Kind</th><th>Numbering</th><th>Status</th><th></th></tr></thead><tbody>
+{% for t in rows %}<tr class="r"><td><b>{{ t['name'] }}</b><div class="sub">Application Letter</div></td><td>{{ t['number_prefix'] }}-0001</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('applications.kind_edit', kid=t['id']) }}">Edit</a></td></tr>
+{% else %}<tr><td colspan="4"><div class="empty">No kinds yet. Create the starter kinds above.</div></td></tr>{% endfor %}
+</tbody></table></div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>How kinds work</h2>
+    <p class="hint">Applications already sent keep the kind they were made with, even if you change the kind later. The application number is per-kind and never reused. The starter kinds are Annual Leave (AL), Sick Leave (SL) and Casual Leave (CL) — change the prefix on the kind if you want another one.</p></div>
+  {{ quick_card([
+    ('+ New kind', url_for('applications.kind_new'), True),
+    ('Back to Application Letters', url_for('applications.list_applications'), False),
+  ]) }}
+</div></div>
+{% endblock %}

@@ -2940,3 +2940,90 @@
    http://192.168.1.116:8100, so new QRs point at the address your
    phones can reach. QR links work for anyone on the office Wi-Fi
    or LAN; a phone on mobile data cannot reach a 192.168 address.
+
+ 60. APPLICATION LETTERS, DESIGNATION ON USER ACCOUNTS AND MY SETTINGS (2026-11-10)
+ 1. Application Letters — a new page inside More, for every user
+    except the portal admin. A department admin makes Application
+    Letter kinds for their own department (like an invoice template
+    or an Item Request kind). The starter kinds are Annual Leave
+    (AL), Sick Leave (SL) and Casual Leave (CL); change the prefix
+    on the kind if you want another one. Each kind appears on the
+    page as a Create card. A user picks a kind, fills in the leave
+    (from date, to date, reason, letter) and sends the application
+    to ONE specific user in the HR & Admin Department. The recipient
+    is notified and sees it in "Received". A new application starts
+    as Pending and gets a number like AL-0001 (sequential per kind,
+    never reused).
+ 2. Who can do what. The specific HR & Admin user the application
+    was sent to AND the HR & Admin department admin can edit it,
+    set a note, upload their signature to it and change the status
+    (Pending, Approved, Rejected). The owner can edit their own
+    application only while it is still Pending. Other HR & Admin
+    users can open and see every application in All applications,
+    but cannot change it. The applicant is notified of every status
+    change, and the other party is notified of every edit. Every
+    edit is written to the edit log on the application detail page
+    and to the portal Activity log.
+ 3. The document is a FORMAL application letter, not an invoice. A
+    plain centred letterhead (company name and address, one thin
+    rule, no logos, no teal), Ref on the left and the date on the
+    right, then To, Subject, the body, "Thanking you. Yours
+    faithfully," and the applicant's signature (name, designation,
+    department, company). Then a FOR OFFICE USE section with the HR
+    note and the approver's uploaded signature image above their
+    name and designation, and the status with the date. The body is
+    set in a serif typeface, like a typed formal letter. The QR
+    (1.9 cm) and share code stay at the bottom left of every page,
+    with the page number at the bottom right, the same as the other
+    portal documents.
+ 4. Public QR. Applications have the same public QR as invoices and
+    item requests: HRC- + random 5-digit code, unique across
+    records, invoices, requests, applications and Department
+    Database rows. Search QR looks all over for a code, so an
+    application code opens the application. Anyone who scans the QR
+    sees the letter and can download its PDF — no login needed.
+ 5. Designation. A user account now has a Designation (job title).
+    The admin types it on the Add user and Edit user forms. Every
+    user can also change their own name, username and designation
+    on a new "My settings" page, reached from the user menu next to
+    Password. The username change takes effect at once and must be
+    unique. The designation is filled in AUTOMATICALLY under the
+    owner's name in the owner signature: invoice "Prepared By",
+    Item Request "Requested By", and the applicant on an
+    application letter. If a user has no designation set, that line
+    is simply left out, as before. Changing the designation in My
+    settings updates every new invoice, request and application
+    that user creates.
+ 6. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 40 (void invoice delete, signature line centred, round
+    request figures, HR & Admin can open any request), build 39
+    (no watermark by default, new status notification, Delete
+    invoice), build 38 (the PENDING stamp is grey), build 37 (the
+    user's PENDING stamp replaces the grey circular seal), build 36
+    (single-line meta, signature alignment by count, Mark approved
+    / Mark pending, PENDING status), build 35 (APPROVED seal, QR
+    scan fix, third signature, new invoice and request format,
+    Approved invoice status), build 34 (dept-admin notifications
+    for invoices and requests, print alignment, Department
+    dropdown removed from the Request items tab), build 33 (Search
+    QR looks all over, public QR for every row, request Item name,
+    Other's request only for HR & Admin, print column widths),
+    build 32 (request editing and edit log), build 31 (kind name
+    off the request document), build 30 (Request Items), build 29
+    (login heading "Welcome"), build 28 (notification lines gone
+    at the source), build 27 (Dashboard Recent activity removed)
+    and build 26 (stylesheet cache-busting, inline flat-table
+    style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   The database upgrades itself: the new tables (application_kinds,
+   applications, application_history) are created and the
+   designation column is added to users. No data is lost. Apply only
+   this latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   office can open. The "Public portal address" setting is already
+   set on the live portal and is kept.

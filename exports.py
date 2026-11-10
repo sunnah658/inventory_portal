@@ -566,3 +566,174 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
         canvas.restoreState()
     doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     return buf.getvalue()
+
+
+_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+           "September", "October", "November", "December"]
+
+def _long_date(iso):
+    """YYYY-MM-DD -> '16 November 2026' for the formal letter."""
+    try:
+        y, m, d = [int(p) for p in (iso or "").split("-")]
+        return f"{d} {_MONTHS[m - 1]} {y}"
+    except Exception:
+        return iso or ""
+
+def _times_text(value):
+    """Escape for a Times (WinAnsi) paragraph: keep only characters the
+    font can print, escape HTML, and turn newlines into line breaks."""
+    text = "" if value is None else str(value)
+    out = []
+    for ch in text:
+        try:
+            ch.encode("cp1252")
+            out.append(ch)
+        except Exception:
+            out.append("?")
+    text = "".join(out)
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+
+
+def application_pdf(number="", app_date="", kind_name="", status_label="", owner_name="",
+                    owner_designation="", dept_name="", recipient_name="", from_date="", to_date="",
+                    days=0, reason="", letter_body="", hr_note="", signer_name="", signer_designation="",
+                    signature_path=None, signature_date="", code="", company="", company_address="",
+                    qr_url=""):
+    """Application Letter PDF — a FORMAL application letter, not an invoice
+    (approved in leave-application-pdf-formal.jpg). A plain centred
+    letterhead (company name and address, one thin rule, no logos, no teal),
+    Ref on the left and the date on the right, then To, Subject, the body,
+    'Thanking you. Yours faithfully,' and the applicant's signature (name,
+    designation, department, company). Then a FOR OFFICE USE section with
+    the HR note and the approver's uploaded signature image above their
+    name and designation, and the status with the date. The body is set in
+    Times (serif), like a typed formal letter. The QR (1.9 cm) and share
+    code stay at the bottom left of every page, with the page number at
+    the bottom right, the same as the other portal documents."""
+    import segno as _segno
+    font = _fonts()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.8 * cm, rightMargin=1.8 * cm,
+                            topMargin=1.6 * cm, bottomMargin=1.4 * cm, title="Application Letter")
+    serif = "Times-Roman"
+    serif_b = "Times-Bold"
+    head_name = ParagraphStyle("ahead", fontName=serif_b, fontSize=17, leading=20, alignment=1)
+    head_addr = ParagraphStyle("aaddr", fontName=serif, fontSize=10.5, leading=13, alignment=1,
+                               textColor=colors.HexColor("#444444"))
+    ref = ParagraphStyle("aref", fontName=serif, fontSize=11.5, leading=15)
+    ref_r = ParagraphStyle("arefr", fontName=serif, fontSize=11.5, leading=15, alignment=2)
+    body_s = ParagraphStyle("abody", fontName=serif, fontSize=12, leading=20, alignment=4)
+    plain = ParagraphStyle("aplain", fontName=serif, fontSize=12, leading=20)
+    sig_name = ParagraphStyle("asign", fontName=serif_b, fontSize=12, leading=16)
+    sig_line = ParagraphStyle("asigl", fontName=serif, fontSize=12, leading=16)
+    office_h = ParagraphStyle("aoffh", fontName=serif_b, fontSize=11, leading=14,
+                              textColor=colors.HexColor("#444444"))
+    note_s = ParagraphStyle("anote", fontName=serif, fontSize=11, leading=17)
+    story = []
+    # Letterhead: company name and address, centred, one thin rule.
+    head = Table([[Paragraph(_times_text(company), head_name)],
+                  [Paragraph(_times_text(company_address), head_addr)]],
+                 colWidths=[A4[0] - 3.6 * cm],
+                 style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                        ("LINEBELOW", (0, -1), (-1, -1), 1.2, colors.HexColor("#1A1A1A"))])
+    story += [head, Spacer(1, 14)]
+    # Ref on the left, date on the right.
+    story.append(Table([[Paragraph(_times_text("Ref: " + number) if number else "", ref),
+                         Paragraph(_times_text(_long_date(app_date)), ref_r)]],
+                       colWidths=[(A4[0] - 3.6 * cm) / 2, (A4[0] - 3.6 * cm) / 2],
+                       style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                              ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(Spacer(1, 16))
+    # To.
+    to_lines = ["To,", _times_text(recipient_name), "HR &amp; Admin", _times_text(company)]
+    story.append(Paragraph("<br/>".join([l for l in to_lines if l]), plain))
+    story.append(Spacer(1, 12))
+    # Subject: kind, days and dates.
+    day_word = "day" if days == 1 else "days"
+    subject = (f"Application for {kind_name} for {days} {day_word} "
+               f"({_long_date(from_date)} \u2013 {_long_date(to_date)}).")
+    story.append(Paragraph(f"<b>Subject:</b> {_times_text(subject)}", plain))
+    story.append(Spacer(1, 12))
+    # Salutation, then the body paragraphs (blank line = new paragraph).
+    story.append(Paragraph("Respected Sir,", plain))
+    story.append(Spacer(1, 10))
+    for para in (letter_body or "").split("\n"):
+        para = para.strip()
+        if para:
+            story.append(Paragraph(_times_text(para), body_s))
+            story.append(Spacer(1, 8))
+    # Closing and the applicant's signature: name, designation, department, company.
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Thanking you.<br/>Yours faithfully,", plain))
+    story.append(Spacer(1, 28))
+    sig_rows = []
+    if owner_name:
+        sig_rows.append([Paragraph(_times_text(owner_name), sig_name)])
+    if owner_designation:
+        sig_rows.append([Paragraph(_times_text(owner_designation), sig_line)])
+    if dept_name:
+        sig_rows.append([Paragraph(_times_text(dept_name), sig_line)])
+    if company:
+        sig_rows.append([Paragraph(_times_text(company), sig_line)])
+    if sig_rows:
+        story.append(Table(sig_rows, colWidths=[A4[0] - 3.6 * cm],
+                           style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                  ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
+    # FOR OFFICE USE: the HR note, the approver's uploaded signature image
+    # above their name and designation, and the status with the date.
+    story.append(Spacer(1, 30))
+    office = []
+    office.append([Paragraph("FOR OFFICE USE", office_h)])
+    if hr_note:
+        who = signer_name or recipient_name
+        office.append([Paragraph(f"<b>HR note \u2014 {_times_text(who)}:</b> {_times_text(hr_note)}", note_s)])
+    # Approver block: signature image (if uploaded), a line, name, designation.
+    approver = []
+    if signature_path and os.path.exists(signature_path):
+        try:
+            approver.append([Image(signature_path, width=3.2 * cm, height=0.9 * cm, kind="proportional")])
+        except Exception:
+            approver.append([Spacer(1, 26)])
+    else:
+        approver.append([Spacer(1, 26)])
+    approver.append([Paragraph(_times_text(signer_name), sig_name)])
+    if signer_designation:
+        approver.append([Paragraph(_times_text(signer_designation), sig_line)])
+    approver_table = Table(approver, colWidths=[5.5 * cm],
+                           style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                  ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                                  ("LINEABOVE", (0, 1), (-1, 1), 1, colors.HexColor("#1A1A1A"))])
+    status_cell = Paragraph(
+        f"Status: <b>{_times_text(status_label)}</b>"
+        + (f"<br/>Date: {_times_text(_long_date(signature_date))}" if signature_date else ""),
+        ParagraphStyle("astat", fontName=serif, fontSize=11.5, leading=16, alignment=2))
+    office.append([Table([[approver_table, status_cell]], colWidths=[5.5 * cm, (A4[0] - 3.6 * cm) - 5.5 * cm],
+                         style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                                ("VALIGN", (0, 0), (-1, -1), "TOP")])])
+    office_table = Table(office, colWidths=[A4[0] - 3.6 * cm],
+                         style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                                ("LINEABOVE", (0, 0), (-1, 0), 1.2, colors.HexColor("#1A1A1A"))])
+    story.append(office_table)
+    # Footer: QR + share code bottom left, Page N bottom right (same as the
+    # other portal documents).
+    def _on_page(canvas, _doc):
+        canvas.saveState(); canvas.setFont(font["regular"], 8); canvas.setFillColor(colors.HexColor("#506A7B"))
+        canvas.drawRightString(A4[0] - 1.4 * cm, 0.8 * cm, f"Page {canvas.getPageNumber()}")
+        if code:
+            canvas.setFont(font["bold"], 9); canvas.setFillColor(colors.HexColor("#10283A"))
+            canvas.drawString(1.4 * cm, 0.8 * cm, f"Share code: {code}")
+            if qr_url:
+                try:
+                    _q = io.BytesIO()
+                    _segno.make(qr_url, error="m").save(_q, kind="png", scale=4, border=1)
+                    _q.seek(0)
+                    canvas.drawImage(ImageReader(_q), 1.4 * cm, 1.25 * cm, width=1.9 * cm, height=1.9 * cm, mask="auto")
+                except Exception:
+                    pass
+        canvas.restoreState()
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    return buf.getvalue()

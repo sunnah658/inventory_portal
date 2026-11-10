@@ -220,8 +220,9 @@ def _new_request_code(db):
         if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
             if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
                 if db.execute("SELECT 1 FROM public_links WHERE code_text=?", (cand,)).fetchone() is None:
-                    if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
-                        return cand
+                    if db.execute("SELECT 1 FROM applications WHERE public_code=?", (cand,)).fetchone() is None:
+                        if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
+                            return cand
     return None
 
 def _parse_lines(form):
@@ -619,7 +620,7 @@ def _build_pdf(db, req):
     company = snap.get("company_name") or setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME)
     address = snap.get("company_address") or config.DEFAULT_COMPANY_ADDRESS
     show_address = snap.get("show_address", 1)
-    owner = db.execute("SELECT full_name FROM users WHERE id=?", (req["owner_id"],)).fetchone()
+    owner = db.execute("SELECT full_name, designation FROM users WHERE id=?", (req["owner_id"],)).fetchone()
     recipient = db.execute("SELECT full_name FROM users WHERE id=?", (req["recipient_id"],)).fetchone() if req["recipient_id"] else None
     dept = db.execute("SELECT name FROM departments WHERE id=?", (req["department_id"],)).fetchone()
     try:
@@ -628,7 +629,12 @@ def _build_pdf(db, req):
         sigs = []
     sig_rows = []
     for s in sigs:
-        sig_rows.append((s.get("title") or "", s.get("person") or "", s.get("designation") or ""))
+        # The owner's (creator's) designation comes from their user account
+        # when the kind left it blank — the same as the invoice Prepared By.
+        desig = s.get("designation") or ""
+        if not desig.strip() and "request" in (s.get("title") or "").lower():
+            desig = owner["designation"] if owner else ""
+        sig_rows.append((s.get("title") or "", s.get("person") or "", desig))
     # Meta: Date and Status on the right; Request No., Requested by,
     # Department and Requested to stacked on the left.
     meta_left = []

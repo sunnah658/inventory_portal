@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}New application{% endblock %}
+{% block content %}
+{% if not kind %}<div class="card"><h1>Choose a kind first</h1><p class="hint">Go to the Application Letters page and press Create on a kind card.</p><a class="b p" href="{{ url_for('applications.list_applications') }}">Back to Application Letters</a></div>
+{% else %}
+<div class="tw"><div>
+<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Sending gives the application a number ({{ kind['number_prefix'] }}-0001…) and notifies the HR &amp; Admin user you send it to. A new application starts as Pending.</p></div></div>
+<form method="post" class="card" id="appForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm">
+<div class="fd"><label>Send to (HR &amp; Admin Department user)</label><select name="recipient_id" required>
+{% if not recipients %}<option value="">No HR &amp; Admin user found</option>
+{% else %}<option value="">Choose a recipient…</option>{% for r in recipients %}<option value="{{ r['id'] }}">{{ r['full_name'] }} ({{ r['username'] }})</option>{% endfor %}{% endif %}
+</select><div class="sub">Applications can only be sent to a user in the HR &amp; Admin Department.</div></div>
+<div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" required></div>
+<div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" required></div>
+<div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="—"><div class="sub">Counted from the from date to the to date, both days included.</div></div>
+<div class="fd"><label>Reason</label><input type="text" name="reason" id="reasonT" required placeholder="Family visit outside Dhaka"></div>
+</div>
+<h2 style="margin-top:16px">The letter</h2>
+<p class="hint">The letter is filled in for you from the dates and the reason above, once you pick them. You can change any word of it before you send it.</p>
+<div class="fd"><textarea name="letter_body" id="bodyT" rows="7" required placeholder="The letter appears here once you pick the dates and write a reason."></textarea></div>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit" {{ 'disabled' if not recipients }}>Send application</button><a class="b" href="{{ url_for('applications.list_applications') }}">Cancel</a></div>
+</form>
+<script>
+var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+function longDate(iso){var p=iso.split("-"); if(p.length!==3) return iso; return (parseInt(p[2],10))+" "+MONTHS[parseInt(p[1],10)-1]+" "+p[0];}
+function daysBetween(a,b){var fa=new Date(a+"T00:00:00"), fb=new Date(b+"T00:00:00"); if(isNaN(fa)||isNaN(fb)) return 0; return Math.round((fb-fa)/86400000)+1;}
+var bodyTouched=false;
+document.getElementById('bodyT').addEventListener('input', function(){bodyTouched=true;});
+function fillBody(){
+  var f=document.getElementById('fromD').value, t=document.getElementById('toD').value, r=document.getElementById('reasonT').value.trim();
+  var d=daysBetween(f,t);
+  document.getElementById('daysT').value = (d>0 ? d + (d===1 ? " day" : " days") : "—");
+  if(bodyTouched || !f || !t || d<1 || !r) return;
+  var noun="{{ kind['name'] }}".toLowerCase();
+  var dayWord = d===1 ? "day" : "days";
+  document.getElementById('bodyT').value =
+    "I am writing to request "+noun+" for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", for "+r+". I have handed over my pending work to my colleague, and I will be reachable on my phone during the leave."+
+    "\n\nI would be grateful if you would kindly approve my leave.";
+}
+document.getElementById('fromD').addEventListener('change', fillBody);
+document.getElementById('toD').addEventListener('change', fillBody);
+document.getElementById('reasonT').addEventListener('input', fillBody);
+</script>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Kind: {{ kind['name'] }}</h2>
+    <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Numbering</b>{{ kind['number_prefix'] }}-0001…</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Send to</b>HR &amp; Admin user only</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Document</b>Formal application letter</div>
+  </div>
+  <div class="card"><h2>How it works</h2>
+    <p class="hint">Sending gives the application a number and notifies the recipient. The recipient and the HR &amp; Admin department admin can edit it, set a note, upload their signature and change the status — you are notified of the change and can see it in "My applications". The PDF is a formal letter, not an invoice.</p></div>
+  {{ quick_card([
+    ('Back to Application Letters', url_for('applications.list_applications'), True),
+    ('Application kinds', url_for('applications.kinds'), False),
+  ]) }}
+</div></div>
+{% endif %}
+{% endblock %}

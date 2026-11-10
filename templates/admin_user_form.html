@@ -9,6 +9,7 @@
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fm">
       <div class="fd"><label for="full_name">Full name</label><input id="full_name" name="full_name" type="text" maxlength="150" required value="{{ item.get('full_name') or '' }}"></div>
+      <div class="fd"><label for="designation">Designation</label><input id="designation" name="designation" type="text" maxlength="150" value="{{ item.get('designation') or '' }}"><div class="sub">Shown under the user's name in the owner signature on their invoices, item requests and applications.</div></div>
       <div class="fd"><label for="username">Username</label><input id="username" name="username" type="text" maxlength="60" required value="{{ item.get('username') or '' }}"></div>
       <div class="fd"><label for="department_id">Department</label><select id="department_id" name="department_id" required><option value="" disabled {{ 'selected' if not item.get('department_id') }}>Choose a department</option>
         {% for d in departments %}<option value="{{ d['id'] }}" {{ 'selected' if item.get('department_id')|string == d['id']|string }}>{{ d['name'] }}</option>{% endfor %}</select></div>

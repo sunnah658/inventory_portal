@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS departments (
 CREATE TABLE IF NOT EXISTS users (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name            TEXT NOT NULL,
+    designation          TEXT,                         -- job title, shown under the name in the owner signature on invoices, item requests and applications
     username             TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash        TEXT NOT NULL,               -- never the real password
     department_id        INTEGER REFERENCES departments(id),
@@ -543,6 +544,61 @@ CREATE TABLE IF NOT EXISTS item_request_history (
     at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_req_hist ON item_request_history(request_id);
+
+--- Application Letters (2026-11-10): kinds made by the dept admin, and the
+--- applications users send to one specific HR & Admin user. The HR recipient
+--- and the HR & Admin dept admin can edit, set a note, upload a signature
+--- and change the status. The document is a formal letter, not an invoice.
+CREATE TABLE IF NOT EXISTS application_kinds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    created_by    INTEGER REFERENCES users(id),
+    name          TEXT NOT NULL,
+    number_prefix TEXT NOT NULL DEFAULT 'LV',
+    next_number   INTEGER NOT NULL DEFAULT 1,
+    status        TEXT NOT NULL DEFAULT 'active',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS applications (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    kind_id       INTEGER REFERENCES application_kinds(id),
+    owner_id      INTEGER NOT NULL REFERENCES users(id),
+    recipient_id  INTEGER REFERENCES users(id),
+    number        TEXT,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    from_date     TEXT,
+    to_date       TEXT,
+    days          INTEGER NOT NULL DEFAULT 0,
+    reason        TEXT,
+    letter_body   TEXT,
+    hr_note       TEXT,
+    signature_path TEXT,
+    signature_by  INTEGER REFERENCES users(id),
+    signature_at  TEXT,
+    public_code   TEXT UNIQUE,
+    public_enabled INTEGER NOT NULL DEFAULT 0,
+    public_views  INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS application_history (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    user_id        INTEGER,
+    username       TEXT,
+    full_name      TEXT,
+    action         TEXT NOT NULL,
+    field          TEXT,
+    old_value      TEXT,
+    new_value      TEXT,
+    at             TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_app_kind ON applications(kind_id);
+CREATE INDEX IF NOT EXISTS idx_app_owner ON applications(owner_id);
+CREATE INDEX IF NOT EXISTS idx_app_recip ON applications(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_app_hist ON application_history(application_id);
 CREATE INDEX IF NOT EXISTS idx_records_dept    ON records(department_id);
 CREATE INDEX IF NOT EXISTS idx_values_column   ON record_values(column_id);
 CREATE INDEX IF NOT EXISTS idx_history_record  ON record_history(record_id);
@@ -798,6 +854,7 @@ def init_db():
         _ensure_column(conn, "departments", "attachments_enabled", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "departments", "attachment_max_mb", "INTEGER NOT NULL DEFAULT 10")
         _ensure_column(conn, "users", "created_by", "INTEGER REFERENCES users(id)")  # who created the account (2026-11-05)
+        _ensure_column(conn, "users", "designation", "TEXT")  # job title, for the owner signature (2026-11-10)
         _ensure_column(conn, "users", "is_dept_admin", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INTEGER NOT NULL DEFAULT 0")

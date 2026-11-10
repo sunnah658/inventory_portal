@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Share code {{ code }}{% if app %} · Application Letter{% if app['number'] %} · Application No. {{ app['number'] }}{% endif %}{% endif %}</h1><p class="hint">This share code is only for scanning and searching — it is not the application number. Quote the application number for records. Anyone who scans the QR sees this letter and can download its PDF — no login needed.</p></div>
+<div class="acts noprint">{% if status=='ok' %}<a class="b p" href="{{ url_for('applications.code_pdf', code=code) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>{% endif %}<a class="b" href="{{ url_for('applications.list_applications') }}">Back to Application Letters</a></div></div>
+{% if status=='missing' %}<div class="alert">No application letter with the share code <b>{{ code }}</b> exists.</div>
+{% elif status=='off' %}<div class="alert">The share code <b>{{ code }}</b> exists, but its public QR is off.</div>
+{% else %}
+<div class="card">
+<div style="font-family:Georgia, 'Times New Roman', serif; line-height:1.7; max-width:640px">
+  <p style="text-align:center; margin:0 0 2px"><b style="font-size:1.15rem">{{ company_name }}</b></p>
+  <p style="text-align:center; color:var(--soft); margin:0 0 14px; font-size:.9rem">Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100</p>
+  <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
+  <p style="margin:0 0 12px">To,<br>{{ recipient['full_name'] if recipient else '' }}<br>HR &amp; Admin<br>{{ company_name }}</p>
+  <p style="margin:0 0 12px"><b>Subject:</b> Application for {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
+  <p style="margin:0 0 12px">Respected Sir,</p>
+  {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}
+  <p style="margin:12px 0 0">Thanking you.<br>Yours faithfully,</p>
+  <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ company_name }}</p>
+  {% if app['hr_note'] or signer %}
+  <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">
+    <p style="margin:0 0 8px; font-size:.85rem; letter-spacing:1px; color:var(--soft)"><b>FOR OFFICE USE</b></p>
+    {% if app['hr_note'] %}<p style="margin:0 0 10px"><b>HR note — {{ signer['full_name'] if signer else (recipient['full_name'] if recipient else '') }}:</b> {{ app['hr_note'] }}</p>{% endif %}
+    {% if signer %}<p style="margin:0"><b>{{ signer['full_name'] }}</b>{% if signer['designation'] %}<br>{{ signer['designation'] }}{% endif %}<br><span class="hint">Status: {{ labels[app['status']] }}</span></p>{% endif %}
+  </div>
+  {% endif %}
+</div>
+</div>
+{% endif %}
+{% endblock %}

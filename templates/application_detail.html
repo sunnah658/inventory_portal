@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% from "_macros.html" import history_line with context %}
+{% block title %}{{ app['number'] or 'Application' }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Application {% if app['number'] %}· {{ app['number'] }}{% endif %}</h1>
+<p class="hint">{{ kind['name'] if kind else '' }} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }} · Applied by: {{ owner['full_name'] if owner else '' }} · Applied to: {{ recipient['full_name'] if recipient else '' }}</p></div>
+<div class="acts noprint">
+{% if can_edit %}<a class="b" href="{{ url_for('applications.application_edit', aid=app['id']) }}">Edit</a>{% endif %}
+<a class="b p" href="{{ url_for('applications.application_pdf', aid=app['id']) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>
+</div></div>
+<div class="kp">
+  {{ kpi('Days', app['days']) }}
+  {{ kpi('Status', labels[app['status']]) }}
+  {{ kpi('Public QR views', app['public_views'] or 0) }}
+  {{ kpi('Kind', kind['name'] if kind else '—') }}
+</div>
+<div class="tw"><div>
+<div class="card"><div><span class="s {{ 'g' if app['status'] == 'approved' else ('r' if app['status'] == 'rejected' else 'a') }}">{{ labels[app['status']] }}</span>
+<span class="hint"> Applied by {{ owner['full_name'] if owner else '' }} · Applied to {{ recipient['full_name'] if recipient else '' }} (HR &amp; Admin)</span></div>
+{% if can_manage %}
+<form method="post" action="{{ url_for('applications.change_status', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm"><div class="fd"><label>Change status (only the recipient and the HR &amp; Admin department admin can change it)</label><select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if app['status']==s }}>{{ labels[s] }}</option>{% endfor %}</select></div></div>
+<button class="b p" type="submit">Save status</button> <span class="hint">The applicant is notified of the change.</span></form>
+<form method="post" action="{{ url_for('applications.set_note', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label>HR note</label><textarea name="hr_note" rows="3">{{ app['hr_note'] or '' }}</textarea><div class="sub">Shown on the application and its PDF, under "FOR OFFICE USE".</div></div>
+<button class="b" type="submit">Save note</button></form>
+<form method="post" action="{{ url_for('applications.upload_signature', aid=app['id']) }}" enctype="multipart/form-data" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label>Your signature (image)</label><input type="file" name="signature" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Upload your signature image. It appears on the application and its PDF, above your name, under the applicant's signature. Uploading a new one replaces the old one.</div></div>
+{% if app['signature_path'] %}<p class="hint">Signature on file — uploaded by {{ signer['full_name'] if signer else '' }}{% if app['signature_at'] %} on {{ app['signature_at'][:10] }}{% endif %}.</p>{% endif %}
+<button class="b" type="submit">Upload signature</button></form>
+{% else %}
+<p class="hint" style="margin-top:14px">Only the recipient ({{ recipient['full_name'] if recipient else '' }}) and the HR &amp; Admin department admin can change the status, set a note or upload a signature.{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
+{% endif %}
+</div>
+<div class="card" style="margin-top:16px">
+  <h2>The letter</h2>
+  <div style="font-family:Georgia, 'Times New Roman', serif; line-height:1.7; max-width:640px">
+    <p style="text-align:center; margin:0 0 2px"><b style="font-size:1.15rem">{{ company_name }}</b></p>
+    <p style="text-align:center; color:var(--soft); margin:0 0 14px; font-size:.9rem">Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100</p>
+    <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
+    <p style="margin:0 0 12px">To,<br>{{ recipient['full_name'] if recipient else '' }}<br>HR &amp; Admin<br>{{ company_name }}</p>
+    <p style="margin:0 0 12px"><b>Subject:</b> Application for {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
+    <p style="margin:0 0 12px">Respected Sir,</p>
+    {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}
+    <p style="margin:12px 0 0">Thanking you.<br>Yours faithfully,</p>
+    <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ company_name }}</p>
+    {% if app['hr_note'] or app['signature_path'] or signer %}
+    <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">
+      <p style="margin:0 0 8px; font-size:.85rem; letter-spacing:1px; color:var(--soft)"><b>FOR OFFICE USE</b></p>
+      {% if app['hr_note'] %}<p style="margin:0 0 10px"><b>HR note — {{ signer['full_name'] if signer else (recipient['full_name'] if recipient else '') }}:</b> {{ app['hr_note'] }}</p>{% endif %}
+      {% if signer %}<p style="margin:0"><b>{{ signer['full_name'] }}</b>{% if signer['designation'] %}<br>{{ signer['designation'] }}{% endif %}<br><span class="hint">Status: {{ labels[app['status']] }}</span></p>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% if history %}<div class="card" style="margin-top:16px"><h2>Edit history</h2><div class="tl">{% for h in history %}{{ history_line(h) }}{% endfor %}</div><p class="hint">Every edit is written here — who changed what and when — and in the portal Activity log. The other party is notified of each edit.</p></div>{% endif %}
+</div>
+<div class="stack rail">
+<div class="card"><h2>Public QR</h2>
+<p class="hint">Generate a public QR to share this application. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the application number. Quote the application number for records.</p>
+{% if app['public_code'] and app['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ app['public_views'] }} views · Share code: <b>{{ app['public_code'] }}</b> (not the application number)</div>
+{% if qr_svg %}<div class="qrbox">{{ qr_svg|safe }}<div class="hrc">{{ app['public_code'] }}</div></div><div class="hint">Share code (not the application number)</div>{% endif %}
+<a class="b sm" href="{{ url_for('applications.application_qr', aid=app['id']) }}">Print this QR</a>
+{% else %}<div class="msg error">Public QR is OFF{% if app['public_code'] %} · Share code was {{ app['public_code'] }}{% endif %}</div>{% endif %}
+{% if can_manage_public %}<form method="post" action="{{ url_for('applications.application_public', aid=app['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
+<button class="b p" type="submit">Turn on / Save public QR</button></form>
+{% if app['public_code'] %}<div class="acts" style="margin-top:10px">
+<form method="post" action="{{ url_for('applications.application_public', aid=app['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="off"><button class="b sm dg" type="submit">Turn off</button></form>
+<form method="post" action="{{ url_for('applications.application_public', aid=app['id']) }}" onsubmit="return confirm('New scan link: the old code stops working. Continue?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="regenerate"><button class="b sm" type="submit">New scan link</button></form></div>{% endif %}{% endif %}
+</div>
+<div class="card"><h2>Details</h2>
+  <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied by</b>{{ owner['full_name'] if owner else '' }}{% if owner and owner['designation'] %} ({{ owner['designation'] }}){% endif %}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied to</b>{{ recipient['full_name'] if recipient else '' }} (HR &amp; Admin)</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">From</b>{{ app['from_date'] or '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">To</b>{{ app['to_date'] or '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Reason</b>{{ app['reason'] or '—' }}</div>
+</div>
+{{ quick_card([
+  ('Download PDF', url_for('applications.application_pdf', aid=app['id']), True),
+  ('Print', 'print', False),
+  ('Back to Application Letters', url_for('applications.list_applications'), False),
+] | select) }}
+</div></div>
+{% endblock %}
