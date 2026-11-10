@@ -32,7 +32,7 @@ import json
 import os
 import secrets
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 import segno
 from flask import (Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for)
@@ -131,6 +131,11 @@ def _can_view(db, user, req):
     # Every user in the same department can see that department's requests
     # (they appear in that department's All request sub-tab).
     if user["department_id"] == req["department_id"]:
+        return True
+    # Any HR & Admin user can open and see every request (they all appear
+    # in the All request section), whatever department it came from.
+    # Only the recipient can edit it — _can_edit is unchanged.
+    if user["department_id"] == hr_admin_dept_id(db):
         return True
     return False
 
@@ -231,7 +236,11 @@ def _parse_lines(form):
             continue
         qty = _money(qtys[i]) if i < len(qtys) else Decimal("1")
         rate = _money(rates[i]) if i < len(rates) else Decimal("0")
-        lines.append({"item_name": name, "description": (desc or "").strip(), "qty": qty, "rate": rate, "amount": qty * rate})
+        # Round figures only: the rate is a whole number, so the amount,
+        # subtotal and grand total are whole numbers too.
+        rate = rate.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        amount = (qty * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        lines.append({"item_name": name, "description": (desc or "").strip(), "qty": qty, "rate": rate, "amount": amount})
     return lines
 
 def _sigs(form, kind=None):

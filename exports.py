@@ -69,6 +69,7 @@ def _signatures_table(sigs, usable, font):
         return None
     small = ParagraphStyle("cell", fontName=font["regular"], fontSize=9, leading=12)
     _sig_title = ParagraphStyle("sigt", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
+    _sig_line = ParagraphStyle("sigl", fontName=font["regular"], fontSize=9, leading=12, alignment=1)
     _sig_name = ParagraphStyle("sign", fontName=font["bold"], fontSize=9, leading=12, alignment=1)
     _sig_role = ParagraphStyle("sigr", fontName=font["regular"], fontSize=9, leading=12, textColor=colors.HexColor("#506A7B"), alignment=1)
 
@@ -76,7 +77,7 @@ def _signatures_table(sigs, usable, font):
         return Table([
             [Paragraph(f"<b>{_pdf_text(t)}</b>", _sig_title)],
             [Spacer(1, 48)],
-            [Paragraph("_________________________", small)],
+            [Paragraph("_________________________", _sig_line)],
             [Paragraph(f"<b>{_pdf_text(n)}</b>", _sig_name)],
             [Paragraph(_pdf_text(d), _sig_role)],
         ], colWidths=[usable / 4], style=[

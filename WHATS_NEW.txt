@@ -1,4 +1,29 @@
 ==============================================================================
+ UPDATE: VOID INVOICE DELETE, SIGNATURE LINE CENTRED, ROUND REQUEST
+ FIGURES, HR & ADMIN CAN OPEN ANY REQUEST (2026-11-09)
+==============================================================================
+ 1. Delete invoice also on void invoices. The Delete invoice button
+    now appears on a void invoice too, so the owner, the portal
+    admin and a permission user can delete it with the password
+    pop-up. A department admin still cannot delete someone else's
+    invoice.
+ 2. Signature line centred. In the invoice and request PDFs, the
+    line under each signature was left-aligned while the title, the
+    name and the designation were centred, so the name looked out
+    of line. The line is now centred as well, so the title, the
+    line, the name and the designation all sit on one central axis.
+ 3. Request figures are round. When an Item Request is saved or
+    edited, the rate is rounded to the nearest whole number, so the
+    amount, the subtotal and the grand total are whole numbers too
+    (49,999.99 becomes 50,000; 7 x 50,000 is 350,000). Invoices are
+    unchanged.
+ 4. HR & Admin users can open any request. Any HR & Admin user can
+    now open and see every request in the All request section,
+    whatever department it came from. Only the recipient can edit
+    it, and only the recipient can change its status, as before.
+ 5. Nothing else changed. This build carries all of builds 26-39.
+
+==============================================================================
  UPDATE: NO WATERMARK BY DEFAULT, NEW STATUS NOTIFICATION, DELETE INVOICE
  (2026-11-09)
 ==============================================================================

@@ -2825,7 +2825,65 @@
    phones can reach. QR links work for anyone on the office Wi-Fi
    or LAN; a phone on mobile data cannot reach a 192.168 address.
 
- 58. NO WATERMARK BY DEFAULT, NEW STATUS NOTIFICATION, DELETE INVOICE (2026-11-09)
+ 59. VOID INVOICE DELETE, SIGNATURE LINE CENTRED, ROUND REQUEST
+    FIGURES, HR & ADMIN CAN OPEN ANY REQUEST (2026-11-09)
+ 1. Delete invoice also on void invoices. The Delete invoice button
+    now appears on a void invoice too, so the owner, the portal
+    admin and a permission user can delete it (with the password
+    pop-up, as before). A department admin still cannot delete
+    someone else's invoice. Invoices already marked Void keep that
+    status and the Void filter.
+ 2. Signature line centred. In the invoice and request PDFs, the
+    line under each signature was left-aligned while the title, the
+    name and the designation were centred, so the line sat about 14
+    points to the left of the name and the name looked out of line.
+    The line is now centred as well, so the title, the line, the
+    name and the designation all sit on one central axis in every
+    signature block.
+ 3. Request figures are round. When an Item Request is saved or
+    edited, the rate is rounded to the nearest whole number, so the
+    amount, the subtotal and the grand total are whole numbers too
+    (for example a rate of 49,999.99 becomes 50,000, and 7 x 50,000
+    is 350,000). The amount in words follows the rounded total.
+    Invoices are unchanged.
+ 4. HR & Admin users can open any request. Any HR & Admin user can
+    now open and see every request in the All request section,
+    whatever department it came from (before, only the recipient
+    could open one from another department). Only the recipient —
+    the HR & Admin user the request was sent to — can edit it, and
+    only the recipient can change its status, as before. The owner
+    can still edit their own request.
+ 5. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 39 (no watermark by default, new status notification,
+    Delete invoice), build 38 (the PENDING stamp is grey), build 37
+    (the user's PENDING stamp replaces the grey circular seal),
+    build 36 (single-line meta, signature alignment by count, Mark
+    approved / Mark pending, PENDING status), build 35 (APPROVED
+    seal, QR scan fix, third signature, new invoice and request
+    format, Approved invoice status), build 34 (dept-admin
+    notifications for invoices and requests, print alignment,
+    Department dropdown removed from the Request items tab),
+    build 33 (Search QR looks all over, public QR for every row,
+    request Item name, Other's request only for HR & Admin, print
+    column widths), build 32 (request editing and edit log),
+    build 31 (kind name off the request document), build 30
+    (Request Items), build 29 (login heading "Welcome"), build 28
+    (notification lines gone at the source), build 27 (Dashboard
+    Recent activity removed) and build 26 (stylesheet
+    cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   No database change is needed for this update. Apply only this
+   latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   office can open. The "Public portal address" setting is already
+   set on the live portal and is kept.
+
+58. NO WATERMARK BY DEFAULT, NEW STATUS NOTIFICATION, DELETE INVOICE (2026-11-09)
  1. No watermark by default. The APPROVED seal and the PENDING stamp
     now come ONLY from the invoice's status. A newly created invoice
     shows no watermark at all, even when its template has a watermark
