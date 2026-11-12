@@ -7,7 +7,7 @@
 <form method="post" class="card" id="appForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
 <div class="fd"><label>Kind</label><input type="text" value="{{ kind['name'] if kind else '—' }}" readonly></div>
-<div class="fd"><label>Applied to (HR &amp; Admin Department user)</label><input type="text" value="{{ recipient_name }}" readonly></div>
+<div class="fd"><label>Sent to (your Department user or Department admin — to check)</label><input type="text" value="{{ recipient_name }}" readonly></div>
 <div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" value="{{ app['from_date'] or '' }}" required></div>
 <div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" value="{{ app['to_date'] or '' }}" required></div>
 <div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="{{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }}"></div>
@@ -28,11 +28,11 @@ document.getElementById('toD').addEventListener('change', upd);
   <div class="card"><h2>Application: {{ app['number'] }}</h2>
     <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
     <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied by</b>{{ owner_name }}</div>
-    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied to</b>{{ recipient_name }} (HR &amp; Admin)</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Sent to</b>{{ recipient_name }} (to check)</div>
     <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Status</b>{{ app['status']|title }}</div>
   </div>
   <div class="card"><h2>How editing works</h2>
-    <p class="hint">The owner (while Pending), the recipient and the HR &amp; Admin department admin can all edit this application. Every change is written to the edit log on the application detail page, and the other party is notified. Only the recipient and the HR &amp; Admin department admin can change the status.</p></div>
+    <p class="hint">The owner (while Pending), the checker (while Pending), the HR approver (while Checked) and the HR &amp; Admin department admin can all edit this application. Every change is written to the edit log on the application detail page, and the other party is notified. Only the HR approver and the HR &amp; Admin department admin can change the status, once the checker has forwarded it.</p></div>
   {{ quick_card([
     ('Back to the application', url_for('applications.detail', aid=app['id']), True),
     ('Back to Application Letters', url_for('applications.list_applications'), False),

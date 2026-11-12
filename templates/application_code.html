@@ -7,21 +7,34 @@
 {% elif status=='off' %}<div class="alert">The share code <b>{{ code }}</b> exists, but its public QR is off.</div>
 {% else %}
 <div class="card">
-<div style="font-family:Georgia, 'Times New Roman', serif; line-height:1.7; max-width:640px">
-  <p style="text-align:center; margin:0 0 2px"><b style="font-size:1.15rem">{{ company_name }}</b></p>
-  <p style="text-align:center; color:var(--soft); margin:0 0 14px; font-size:.9rem">Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100</p>
+<div style="font-family:Georgia, 'Times New Roman', serif; line-height:1.7; max-width:640px; margin:0 auto">
+  <p style="text-align:center; margin:0 0 2px"><b style="font-size:1.15rem">{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</b></p>
+  <p style="text-align:center; color:var(--soft); margin:0 0 14px; font-size:.9rem">{{ kind['company_address'] if kind and kind['company_address'] else 'Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100' }}</p>
   <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
-  <p style="margin:0 0 12px">To,<br>{{ recipient['full_name'] if recipient else '' }}<br>HR &amp; Admin<br>{{ company_name }}</p>
-  <p style="margin:0 0 12px"><b>Subject:</b> Application for {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
+  <p style="margin:0 0 12px">To,<br>{{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
+  <p style="margin:0 0 12px"><b>Subject:</b> {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
   <p style="margin:0 0 12px">Respected Sir,</p>
   {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}
   <p style="margin:12px 0 0">Thanking you.<br>Yours faithfully,</p>
-  <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ company_name }}</p>
-  {% if app['hr_note'] or signer %}
+  <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
+  {% if app['hr_note'] or app['signature_path'] or app['checker_signature_path'] or signer or checker %}
   <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">
     <p style="margin:0 0 8px; font-size:.85rem; letter-spacing:1px; color:var(--soft)"><b>FOR OFFICE USE</b></p>
     {% if app['hr_note'] %}<p style="margin:0 0 10px"><b>HR note — {{ signer['full_name'] if signer else (recipient['full_name'] if recipient else '') }}:</b> {{ app['hr_note'] }}</p>{% endif %}
-    {% if signer %}<p style="margin:0"><b>{{ signer['full_name'] }}</b>{% if signer['designation'] %}<br>{{ signer['designation'] }}{% endif %}<br><span class="hint">Status: {{ labels[app['status']] }}</span></p>{% endif %}
+    <div style="display:flex; gap:24px; line-height:1.35">
+      <div style="width:48%; text-align:center">
+        {% if app['checker_signature_path'] %}<img src="{{ url_for('applications.code_signature_image', code=code, kind='checker') }}" alt="" style="height:52px">{% else %}<div style="height:52px"></div>{% endif %}
+        <p style="margin:4px 0 0"><b>Checked By</b></p>
+        <p style="margin:2px 0 0"><b>{{ checker['full_name'] if checker else '' }}</b></p>
+        {% if checker and checker['designation'] %}<p style="margin:0">{{ checker['designation'] }}</p>{% endif %}
+      </div>
+      <div style="width:48%; text-align:center">
+        {% if app['signature_path'] %}<img src="{{ url_for('applications.code_signature_image', code=code, kind='approver') }}" alt="" style="height:52px">{% else %}<div style="height:52px"></div>{% endif %}
+        <p style="margin:4px 0 0"><b>Approved By</b></p>
+        <p style="margin:2px 0 0"><b>{{ signer['full_name'] if signer else '' }}</b></p>
+        {% if signer and signer['designation'] %}<p style="margin:0">{{ signer['designation'] }}</p>{% endif %}
+      </div>
+    </div>
   </div>
   {% endif %}
 </div>

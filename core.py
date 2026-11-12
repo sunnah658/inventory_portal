@@ -345,6 +345,44 @@ def purge_record(db, rid):
     db.execute("DELETE FROM records WHERE id=?", (rid,))      # children are deleted by CASCADE
 
 
+def _ddb_attachment_files(db, rid):
+    """Stored attachment file names of one Department Database row."""
+    out = []
+    for _v in db.execute("SELECT v.value FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id "
+                         "WHERE v.row_id=? AND c.col_type='attachment'", (rid,)):
+        try:
+            import json as _json
+            _info = _json.loads(_v[0] or "")
+            if isinstance(_info, dict) and _info.get("stored"):
+                out.append(_info["stored"])
+        except Exception:
+            pass
+    return out
+
+
+def purge_ddb_row(db, rid):
+    """Erase a Department Database row for good, including its attachment files."""
+    for stored in _ddb_attachment_files(db, rid):
+        try:
+            os.remove(os.path.join(config.UPLOAD_DIR, "ddb_attachments", stored))
+        except Exception:
+            pass
+    db.execute("DELETE FROM ddb_rows WHERE id=?", (rid,))      # values/history/shares are deleted by CASCADE
+
+
+def purge_application(db, aid):
+    """Erase an application letter for good, including its uploaded signature files (the checker's and the approver's)."""
+    row = db.execute("SELECT signature_path, checker_signature_path FROM applications WHERE id=?", (aid,)).fetchone()
+    if row:
+        for _name in (row["signature_path"], row["checker_signature_path"]):
+            if _name:
+                try:
+                    os.remove(os.path.join(config.UPLOAD_DIR, "app_signatures", os.path.basename(_name)))
+                except Exception:
+                    pass
+    db.execute("DELETE FROM applications WHERE id=?", (aid,))  # history is deleted by CASCADE
+
+
 def purge_user_work(db, uid):
     """Erase one user's work: his records (with attachment files), his Department
     Database rows (with attachment files), his invoices and his public QR links.
@@ -353,16 +391,9 @@ def purge_user_work(db, uid):
     for rid in [r[0] for r in db.execute("SELECT id FROM records WHERE owner_id=?", (uid,))]:
         purge_record(db, rid)
     for _rid in [r[0] for r in db.execute("SELECT id FROM ddb_rows WHERE owner_id=?", (uid,))]:
-        for _v in db.execute("SELECT v.value FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id "
-                             "WHERE v.row_id=? AND c.col_type='attachment'", (_rid,)):
-            try:
-                import json as _json
-                _info = _json.loads(_v[0] or "")
-                if isinstance(_info, dict) and _info.get("stored"):
-                    os.remove(os.path.join(config.UPLOAD_DIR, "ddb_attachments", _info["stored"]))
-            except Exception:
-                pass
-        db.execute("DELETE FROM ddb_rows WHERE id=?", (_rid,))
+        purge_ddb_row(db, _rid)
+    for _aid in [r[0] for r in db.execute("SELECT id FROM applications WHERE owner_id=?", (uid,))]:
+        purge_application(db, _aid)
     db.execute("DELETE FROM invoices WHERE owner_id=?", (uid,))
     db.execute("DELETE FROM public_links WHERE owner_id=?", (uid,))
 
@@ -378,6 +409,13 @@ def purge_user_account(db, uid, delete_work):
         return
     purge_user_work(db, uid)
     db.execute("UPDATE records SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("UPDATE ddb_rows SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("UPDATE applications SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("UPDATE applications SET recipient_id=NULL WHERE recipient_id=?", (uid,))
+    db.execute("UPDATE applications SET checker_id=NULL WHERE checker_id=?", (uid,))
+    db.execute("UPDATE applications SET approver_id=NULL WHERE approver_id=?", (uid,))
+    db.execute("UPDATE applications SET signature_by=NULL WHERE signature_by=?", (uid,))
+    db.execute("UPDATE application_history SET user_id=NULL WHERE user_id=?", (uid,))
     db.execute("UPDATE record_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
     db.execute("UPDATE record_user_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
     db.execute("UPDATE repairs SET created_by=NULL WHERE created_by=?", (uid,))
@@ -411,17 +449,13 @@ def purge_expired(db):
     for _rid in [r[0] for r in db.execute(
             "SELECT id FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
             (f"-{config.BIN_DAYS} days",))]:
-        for _v in db.execute("SELECT v.value FROM ddb_values v JOIN ddb_columns c ON c.id=v.column_id "
-                             "WHERE v.row_id=? AND c.col_type='attachment'", (_rid,)):
-            try:
-                import json as _json
-                _info = _json.loads(_v[0] or "")
-                if isinstance(_info, dict) and _info.get("stored"):
-                    os.remove(os.path.join(config.UPLOAD_DIR, "ddb_attachments", _info["stored"]))
-            except Exception:
-                pass
-    db.execute("DELETE FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
-               (f"-{config.BIN_DAYS} days",))
+        purge_ddb_row(db, _rid)
+    # Deleted application letters: after 30 days the letter and its uploaded
+    # signature are erased for good, the same as a deleted record or row.
+    for _aid in [r[0] for r in db.execute(
+            "SELECT id FROM applications WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
+            (f"-{config.BIN_DAYS} days",))]:
+        purge_application(db, _aid)
     # Deleted users: after 30 days the account AND all his work go, together.
     for _uid in [r[0] for r in db.execute(
             "SELECT id FROM users WHERE is_deleted=1 AND deleted_at IS NOT NULL "

@@ -106,6 +106,76 @@ def _signatures_table(sigs, usable, font):
         ("VALIGN", (0, 0), (-1, -1), "TOP")])
 
 
+def _sig_image_fixed_height(path, height):
+    """A signature image drawn at exactly `height` tall, width proportional.
+    Every signature image in a row is the same height, so the line under
+    each signature (which sits at the same place inside its image) lines up
+    across the blocks. Drawing by width (or fitting a box) makes wider
+    signatures shorter, and their lines sit higher — the misalignment the
+    user reported. Returns a Spacer when the file is missing."""
+    try:
+        if not path or not os.path.exists(path):
+            return Spacer(1, height)
+        ir = ImageReader(path)
+        iw, ih = ir.getSize()
+        if not iw or not ih:
+            return Spacer(1, height)
+        return Image(path, width=height * iw / ih, height=height)
+    except Exception:
+        return Spacer(1, height)
+
+
+def _application_sig_table(blocks, usable):
+    """Signature blocks for an application letter, laid out by count the
+    same way as the invoice/request signatures (approved in
+    sig-alignment-demo.jpg): each block is one quarter of the page wide and
+    everything inside it is CENTRED. 1 block sits at the left, 2 sit at
+    the left and the right, 3 sit at the left, the centre and the right,
+    4 spread evenly across the page. More than four wrap in groups of
+    four. A block is (image_path, title, name, designation): the signature
+    image on top (fixed height, so the lines align), then the title, then
+    the name, then the designation — with tight spacing, no extra gap.
+    Returns None when there are no blocks."""
+    if not blocks:
+        return None
+    _t = ParagraphStyle("appt", fontName="Times-Bold", fontSize=12, leading=16, alignment=1)
+    _n = ParagraphStyle("appn", fontName="Times-Bold", fontSize=12, leading=16, alignment=1)
+    _d = ParagraphStyle("appd", fontName="Times-Roman", fontSize=12, leading=16, alignment=1,
+                        textColor=colors.HexColor("#444444"))
+
+    def _block(image_path, title, name, designation):
+        _rows = [[_sig_image_fixed_height(image_path, 0.9 * cm)],
+                 [Paragraph(_times_text(title), _t)],
+                 [Paragraph(_times_text(name), _n)]]
+        if designation:
+            _rows.append([Paragraph(_times_text(designation), _d)])
+        return Table(_rows, colWidths=[usable / 4], style=[
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP")])
+
+    _blocks = [_block(*b) for b in blocks]
+    _w = usable / 4
+    _n = len(_blocks)
+    if _n == 1:
+        _data, _cw = [[_blocks[0]]], [_w]
+    elif _n == 2:
+        _data, _cw = [[_blocks[0], "", _blocks[1]]], [_w, usable / 2, _w]
+    elif _n == 3:
+        _data, _cw = [[_blocks[0], "", _blocks[1], "", _blocks[2]]], [_w, usable / 8, _w, usable / 8, _w]
+    else:
+        _data, _cw = [], [_w] * 4
+        for _i in range(0, _n, 4):
+            _chunk = _blocks[_i:_i + 4]
+            _chunk += [""] * (4 - len(_chunk))
+            _data.append(_chunk)
+    return Table(_data, colWidths=_cw, hAlign="LEFT", style=[
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP")])
+
+
 def _number(value):
     try:
         text = str(value).replace(",", "")
@@ -594,22 +664,31 @@ def _times_text(value):
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
 
 
-def application_pdf(number="", app_date="", kind_name="", status_label="", owner_name="",
-                    owner_designation="", dept_name="", recipient_name="", from_date="", to_date="",
+def application_pdf(number="", app_date="", kind_name="", status="", status_label="", owner_name="",
+                    owner_designation="", dept_name="", checker_name="", checker_designation="",
+                    checker_signature_path=None, recipient_name="", from_date="", to_date="",
                     days=0, reason="", letter_body="", hr_note="", signer_name="", signer_designation="",
                     signature_path=None, signature_date="", code="", company="", company_address="",
                     qr_url=""):
     """Application Letter PDF — a FORMAL application letter, not an invoice
     (approved in leave-application-pdf-formal.jpg). A plain centred
     letterhead (company name and address, one thin rule, no logos, no teal),
-    Ref on the left and the date on the right, then To, Subject, the body,
-    'Thanking you. Yours faithfully,' and the applicant's signature (name,
-    designation, department, company). Then a FOR OFFICE USE section with
-    the HR note and the approver's uploaded signature image above their
-    name and designation, and the status with the date. The body is set in
-    Times (serif), like a typed formal letter. The QR (1.9 cm) and share
-    code stay at the bottom left of every page, with the page number at
-    the bottom right, the same as the other portal documents."""
+    Ref on the left and the date on the right, then To (the checker, with
+    the applicant's department), Subject, the body, 'Thanking you. Yours
+    faithfully,' and the applicant's signature (name, designation,
+    department, company). Then a FOR OFFICE USE section with the HR note
+    and two signature blocks side by side — Checked By (the checker's
+    uploaded signature image above their name and designation) and
+    Approved By (the HR approver's uploaded signature image above their
+    name and designation) — laid out by count the same way as the invoice
+    and item request signatures (2 left and right, 3 left/centre/right,
+    4 across). There is no separate Status or Date line at the bottom:
+    the status is shown by the watermark — the grey APPROVED seal when
+    the application is approved, the grey REJECTED stamp when it is
+    rejected. The body is set in Times (serif), like a typed formal
+    letter. The QR (1.9 cm) and share code stay at the bottom left of
+    every page, with the page number at the bottom right, the same as the
+    other portal documents."""
     import segno as _segno
     font = _fonts()
     buf = io.BytesIO()
@@ -646,13 +725,16 @@ def application_pdf(number="", app_date="", kind_name="", status_label="", owner
                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                               ("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(Spacer(1, 16))
-    # To.
-    to_lines = ["To,", _times_text(recipient_name), "HR &amp; Admin", _times_text(company)]
+    # To: the checker (the own-department person it was sent to), with the
+    # applicant's department and the company.
+    to_lines = ["To,", _times_text(checker_name or recipient_name), _times_text(dept_name), _times_text(company)]
     story.append(Paragraph("<br/>".join([l for l in to_lines if l]), plain))
     story.append(Spacer(1, 12))
-    # Subject: kind, days and dates.
+    # Subject: kind, days and dates. The kind name stands on its own
+    # ("Leave Application for 2 days ...") — no "Application for" in
+    # front of it, or a kind called "Leave Application" reads twice.
     day_word = "day" if days == 1 else "days"
-    subject = (f"Application for {kind_name} for {days} {day_word} "
+    subject = (f"{kind_name} for {days} {day_word} "
                f"({_long_date(from_date)} \u2013 {_long_date(to_date)}).")
     story.append(Paragraph(f"<b>Subject:</b> {_times_text(subject)}", plain))
     story.append(Spacer(1, 12))
@@ -681,48 +763,61 @@ def application_pdf(number="", app_date="", kind_name="", status_label="", owner
         story.append(Table(sig_rows, colWidths=[A4[0] - 3.6 * cm],
                            style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                                   ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
-    # FOR OFFICE USE: the HR note, the approver's uploaded signature image
-    # above their name and designation, and the status with the date.
+    # FOR OFFICE USE: the HR note, then the signature blocks side by
+    # side — Checked By (the checker's signature image above their name
+    # and designation) and Approved By (the HR approver's signature image
+    # above their name and designation). The blocks are laid out by count
+    # the same way as the invoice and item request signatures. There is
+    # no separate Status or Date line: the status is shown by the
+    # watermark (the APPROVED seal or the REJECTED stamp).
     story.append(Spacer(1, 30))
     office = []
     office.append([Paragraph("FOR OFFICE USE", office_h)])
     if hr_note:
         who = signer_name or recipient_name
         office.append([Paragraph(f"<b>HR note \u2014 {_times_text(who)}:</b> {_times_text(hr_note)}", note_s)])
-    # Approver block: signature image (if uploaded), a line, name, designation.
-    approver = []
-    if signature_path and os.path.exists(signature_path):
-        try:
-            approver.append([Image(signature_path, width=3.2 * cm, height=0.9 * cm, kind="proportional")])
-        except Exception:
-            approver.append([Spacer(1, 26)])
-    else:
-        approver.append([Spacer(1, 26)])
-    approver.append([Paragraph(_times_text(signer_name), sig_name)])
-    if signer_designation:
-        approver.append([Paragraph(_times_text(signer_designation), sig_line)])
-    approver_table = Table(approver, colWidths=[5.5 * cm],
-                           style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                                  ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                                  ("LINEABOVE", (0, 1), (-1, 1), 1, colors.HexColor("#1A1A1A"))])
-    status_cell = Paragraph(
-        f"Status: <b>{_times_text(status_label)}</b>"
-        + (f"<br/>Date: {_times_text(_long_date(signature_date))}" if signature_date else ""),
-        ParagraphStyle("astat", fontName=serif, fontSize=11.5, leading=16, alignment=2))
-    office.append([Table([[approver_table, status_cell]], colWidths=[5.5 * cm, (A4[0] - 3.6 * cm) - 5.5 * cm],
-                         style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                                ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                                ("VALIGN", (0, 0), (-1, -1), "TOP")])])
+    _sig_blocks = []
+    _sig_blocks.append((checker_signature_path, "Checked By",
+                        checker_name or "", checker_designation or ""))
+    _sig_blocks.append((signature_path, "Approved By",
+                        signer_name or "", signer_designation or ""))
+    _sig_table = _application_sig_table(_sig_blocks, A4[0] - 3.6 * cm)
+    if _sig_table is not None:
+        office.append([_sig_table])
     office_table = Table(office, colWidths=[A4[0] - 3.6 * cm],
                          style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                                 ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                                 ("LINEABOVE", (0, 0), (-1, 0), 1.2, colors.HexColor("#1A1A1A"))])
     story.append(office_table)
     # Footer: QR + share code bottom left, Page N bottom right (same as the
-    # other portal documents).
+    # other portal documents). The watermark comes from the status only:
+    # the grey APPROVED seal when approved, the grey REJECTED stamp when
+    # rejected. A pending or checked application shows no watermark.
+    # The seal and the stamp are drawn at the same size (5.5 cm) and the
+    # same place (right side, 10 cm up from the bottom), in the blank
+    # space beside the applicant's signature and above FOR OFFICE USE,
+    # so the stamp never reaches as far left as the approver's
+    # signature block. onPage is drawn before the letter content, so
+    # the watermark sits behind the signature blocks instead of on
+    # top of them.
     def _on_page(canvas, _doc):
         canvas.saveState(); canvas.setFont(font["regular"], 8); canvas.setFillColor(colors.HexColor("#506A7B"))
         canvas.drawRightString(A4[0] - 1.4 * cm, 0.8 * cm, f"Page {canvas.getPageNumber()}")
+        if status == "approved":
+            try:
+                _seal = os.path.join(current_app.static_folder, "approved-seal-grey.png")
+                _sw = 5.5 * cm
+                canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 10 * cm, width=_sw, height=_sw, mask="auto")
+            except Exception:
+                pass
+        elif status == "rejected":
+            try:
+                _stamp = os.path.join(current_app.static_folder, "rejected-stamp-grey.png")
+                _sw = 5.5 * cm
+                _sh = _sw * 369 / 612
+                canvas.drawImage(ImageReader(_stamp), A4[0] - 1.4 * cm - _sw, 10 * cm, width=_sw, height=_sh, mask="auto")
+            except Exception:
+                pass
         if code:
             canvas.setFont(font["bold"], 9); canvas.setFillColor(colors.HexColor("#10283A"))
             canvas.drawString(1.4 * cm, 0.8 * cm, f"Share code: {code}")

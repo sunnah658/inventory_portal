@@ -5,25 +5,35 @@ A new page inside More, for all users EXCEPT the portal admin. A dept admin
 makes an Application Letter kind for their OWN department (like an invoice
 template / Item Request kind). A user picks a kind, fills in the leave
 (from date, to date, reason, letter body) and sends the application to a
-SPECIFIC user — who must be a user in the HR & Admin Department. The
-recipient is notified. The specific HR & Admin user the application was sent
-to AND the HR & Admin department admin can edit it, set a note, upload their
-signature to it and change the status: Pending -> Approved / Rejected. A new
-application starts as Pending and gets a number like LV-0001 (sequential per
-kind). The owner can edit their own application while it is still Pending.
+SPECIFIC user in their OWN department — a department user or the person with
+Department admin permission of that department. That person (the checker)
+checks it, uploads their signature, then forwards it to an HR & Admin user.
+HR approves or rejects it and uploads their signature. So the flow is:
+Pending (with the checker) -> Checked (checker signed and forwarded, with
+HR) -> Approved / Rejected. A new application starts as Pending and gets a
+number like LV-0001 (sequential per kind). The owner can edit their own
+application while it is still Pending.
 
 The document is a formal application letter (not an invoice): a letterhead,
-Ref + date, To, Subject, the body, the applicant's signature (name,
-designation, department, company), and a FOR OFFICE USE section with the HR
-note and the approver's uploaded signature. The owner's designation comes
-from their user account and is filled in automatically.
+Ref + date, To (the checker, with the applicant's department), Subject, the
+body, the applicant's signature (name, designation, department, company),
+and a FOR OFFICE USE section with the HR note and two signature blocks side
+by side — Checked By (the checker's uploaded signature image above their
+name and designation) and Approved By (the HR approver's uploaded signature
+image above their name and designation). The owner's designation comes
+from their user account and is filled in automatically. The kind carries
+its own company name and address for the letterhead (blank = portal
+defaults). An approved application shows the grey APPROVED seal on the PDF;
+a rejected one shows the grey REJECTED stamp. There is no separate Status
+or Date line at the bottom of the letter.
 
 Sub-tabs on the page: My applications (only the current user's), All
-applications, Received (only the applications sent TO the current user, for
-HR & Admin users). In All applications, administrative permission users and
-HR & Admin users see ALL departments' applications; users of other
-departments see only their own department's. The portal admin does not use
-this page at all.
+applications, Received (only the applications sent TO the current user —
+the checker while Pending, the HR approver once Checked). In All
+applications, administrative permission users and HR & Admin users see ALL
+departments' applications; users of other departments see only their own
+department's. The portal admin does not use this page at all, except that
+they may open an application and delete it.
 
 Public QR for applications: HRC- + random 5-digit code, e.g. HRC-48392 —
 the same random-code system as invoices, requests and records, unique across
@@ -49,8 +59,8 @@ from models import get_db, log, setting_get
 from routes_requests import can_see_all_departments, hr_admin_dept_id, hr_admin_users
 
 bp = Blueprint("applications", __name__)
-STATUSES = ["pending", "approved", "rejected"]
-STATUS_LABELS = {"pending": "Pending", "approved": "Approved", "rejected": "Rejected"}
+STATUSES = ["pending", "checked", "approved", "rejected"]
+STATUS_LABELS = {"pending": "Pending", "checked": "Checked", "approved": "Approved", "rejected": "Rejected"}
 SIG_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 _MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
            "September", "October", "November", "December"]
@@ -66,10 +76,16 @@ def _dept_admin_required():
 @bp.before_request
 def _letters_allowed():
     """Application Letters are for all users EXCEPT the portal admin. The
-    public code pages (no login) are not affected."""
+    public code pages (no login) are not affected. The true portal admin
+    may still open an application, delete it and download its PDF (they
+    can delete it, so they must be able to reach it) — but not the list,
+    the kinds, or any other application route."""
     if request.endpoint in ("applications.code_page", "applications.code_pdf"):
         return None
     if g.user is not None and is_true_admin(g.user):
+        if request.endpoint in ("applications.detail", "applications.application_delete",
+                                "applications.application_pdf"):
+            return None
         abort(403)
     return None
 
@@ -81,9 +97,20 @@ def _kind(db, kid):
 
 def _app(db, aid):
     row = db.execute("SELECT * FROM applications WHERE id=?", (aid,)).fetchone()
-    if row is None:
+    if row is None or row["deleted_at"]:
         abort(404)
     return row
+
+def _can_delete(db, user, app):
+    """Who can delete an application (it goes to the Recycle Bin, it is not
+    erased at once): ONLY the owner, an administrative permission user and
+    the portal admin. The checker, the HR approver and the HR & Admin
+    department admin CANNOT delete it."""
+    if is_portal_admin(user):
+        return True
+    if app["owner_id"] == user["id"]:
+        return True
+    return False
 
 def _is_hr_dept_admin(db, user):
     """A department admin of the HR & Admin department."""
@@ -109,25 +136,45 @@ def _can_view(db, user, app):
     return False
 
 def _can_edit(db, user, app):
-    """The owner (only while Pending), the recipient (the HR & Admin user it
-    was sent to) and the HR & Admin department admin can edit the
-    application. Nobody else can."""
-    if app["recipient_id"] == user["id"]:
-        return True
+    """The owner (only while Pending), the checker (while Pending), the HR
+    approver (while Checked) and the HR & Admin department admin can edit
+    the application. Nobody else can."""
     if _is_hr_dept_admin(db, user):
         return True
     if app["owner_id"] == user["id"] and app["status"] == "pending":
         return True
+    if app["checker_id"] == user["id"] and app["status"] == "pending":
+        return True
+    if app["approver_id"] == user["id"] and app["status"] == "checked":
+        return True
     return False
 
+def _can_check(db, user, app):
+    """The checker (the own-department person the application was sent to)
+    while it is still Pending. They upload their signature under Checked By
+    and forward it to an HR & Admin user."""
+    return app["checker_id"] == user["id"] and app["status"] == "pending"
+
 def _can_manage(db, user, app):
-    """The recipient and the HR & Admin department admin change the status,
-    set the HR note and upload their signature."""
-    return app["recipient_id"] == user["id"] or _is_hr_dept_admin(db, user)
+    """The HR approver (the HR & Admin user it was forwarded to) and the HR
+    & Admin department admin change the status, set the HR note and upload
+    the Approved By signature — only once the checker has forwarded it
+    (status 'checked')."""
+    if app["status"] != "checked":
+        return False
+    return app["approver_id"] == user["id"] or _is_hr_dept_admin(db, user)
 
 def _can_manage_public(db, user, app):
     return (is_portal_admin(user) or app["owner_id"] == user["id"] or app["recipient_id"] == user["id"]
             or (_is_dept_admin(user) and app["department_id"] == user["department_id"]))
+
+def _own_dept_users(db, dept_id):
+    """Active, approved users in a department — the only people an
+    application can be sent to for checking. Department admins first."""
+    return db.execute("SELECT id, full_name, designation, is_dept_admin FROM users "
+                      "WHERE department_id=? AND is_active=1 AND is_deleted=0 AND approval_status='approved' "
+                      "ORDER BY is_dept_admin DESC, full_name",
+                      (dept_id,)).fetchall()
 
 def _app_history(db, aid):
     return db.execute("SELECT * FROM application_history WHERE application_id=? ORDER BY id DESC LIMIT 100", (aid,)).fetchall()
@@ -176,6 +223,47 @@ def _default_body(kind_name, from_iso, to_iso, days, reason):
 def _qr_svg(url):
     return segno.make(url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
 
+def _trim_signature_image(path):
+    """Crop an uploaded signature picture to the ink, with the same small
+    margin on every side, so the ink sits centred in the picture. A
+    signature photo or scan often has more blank space on one side than
+    the other; without this, the picture is centred in its block but the
+    writing (and any line under it) sits left of the title below it.
+    Handles transparent PNGs and white-background pictures alike. Only
+    rewrites the file when the crop actually removes blank space, and
+    leaves the file alone when the picture cannot be read (Pillow is
+    only an indirect dependency, via reportlab)."""
+    try:
+        from PIL import Image, ImageChops
+    except Exception:
+        return
+    try:
+        im = Image.open(path)
+    except Exception:
+        return
+    try:
+        rgba = im.convert("RGBA")
+        opaque = rgba.split()[3].point(lambda v: 255 if v > 30 else 0)
+        dark = rgba.convert("L").point(lambda v: 255 if v < 235 else 0)
+        ink = ImageChops.multiply(opaque, dark)
+        box = ink.getbbox()
+        if not box:
+            return
+        m = 8
+        crop = (max(0, box[0] - m), max(0, box[1] - m),
+                min(rgba.size[0], box[2] + m), min(rgba.size[1], box[3] + m))
+        if crop == (0, 0, rgba.size[0], rgba.size[1]):
+            return
+        cropped = rgba.crop(crop)
+        fmt = {"png": "PNG", "jpg": "JPEG", "jpeg": "JPEG", "webp": "WEBP"}.get(
+            path.rsplit(".", 1)[-1].lower(), "PNG")
+        if fmt == "JPEG":
+            cropped.convert("RGB").save(path, fmt, quality=92)
+        else:
+            cropped.save(path, fmt)
+    except Exception:
+        return
+
 def _save_signature(file_storage):
     if not file_storage or not file_storage.filename:
         return None
@@ -185,7 +273,9 @@ def _save_signature(file_storage):
     folder = os.path.join(config.UPLOAD_DIR, "app_signatures")
     os.makedirs(folder, exist_ok=True)
     name = secrets.token_hex(10) + "." + ext
-    file_storage.save(os.path.join(folder, name))
+    path = os.path.join(folder, name)
+    file_storage.save(path)
+    _trim_signature_image(path)
     return name
 
 def _signature_path(name):
@@ -211,13 +301,19 @@ def list_applications():
     if tab not in ("my", "all", "received"):
         tab = "my"
     is_hr = bool(hr_admin_dept_id(db)) and g.user["department_id"] == hr_admin_dept_id(db)
-    if tab == "received" and not is_hr:
+    # The Received tab is for anyone an application was sent to: the HR
+    # approver (once it is Checked) and the own-department checker (while
+    # it is Pending). HR users always see it; anyone else sees it when
+    # something was sent to them.
+    has_received = db.execute("SELECT 1 FROM applications WHERE recipient_id=? AND deleted_at IS NULL LIMIT 1", (g.user["id"],)).fetchone() is not None
+    show_received = bool(is_hr or has_received)
+    if tab == "received" and not show_received:
         tab = "all"
     kinds = db.execute("SELECT * FROM application_kinds WHERE department_id=? AND status='active' ORDER BY id",
                        (g.user["department_id"],)).fetchall()
-    # KPI counts for the current user.
-    counts = {"my": 0, "pending": 0, "approved": 0, "rejected": 0}
-    for r in db.execute("SELECT status, COUNT(*) c FROM applications WHERE owner_id=? GROUP BY status", (g.user["id"],)):
+    # KPI counts for the current user (deleted applications are in the Recycle Bin, not here).
+    counts = {"my": 0, "pending": 0, "checked": 0, "approved": 0, "rejected": 0}
+    for r in db.execute("SELECT status, COUNT(*) c FROM applications WHERE owner_id=? AND deleted_at IS NULL GROUP BY status", (g.user["id"],)):
         counts["my"] += r["c"]
         counts[r["status"]] = counts.get(r["status"], 0) + r["c"]
     # The list.
@@ -225,7 +321,7 @@ def list_applications():
     fdept = request.args.get("fdept", type=int)
     fstatus = (request.args.get("status") or "").strip()
     q = (request.args.get("q") or "").strip()
-    where = []
+    where = ["a.deleted_at IS NULL"]
     params = []
     if tab == "my":
         where.append("a.owner_id=?"); params.append(g.user["id"])
@@ -254,7 +350,7 @@ def list_applications():
     depts = db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_all else []
     return render_template("application_list.html", kinds=kinds, rows=rows, tab=tab, counts=counts,
                            can_all=can_all, depts=depts, fdept=fdept, fstatus=fstatus, q=q,
-                           is_hr=is_hr, statuses=STATUSES, labels=STATUS_LABELS)
+                           is_hr=is_hr, show_received=show_received, statuses=STATUSES, labels=STATUS_LABELS)
 
 # ---------------------------------------------------------------- kinds (dept admin)
 @bp.route("/applications/kinds")
@@ -287,11 +383,13 @@ def kind_new():
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
         prefix = (request.form.get("number_prefix") or "LV").strip().upper()[:10]
+        company_name = (request.form.get("company_name") or "").strip()
+        company_address = (request.form.get("company_address") or "").strip()
         if not name:
             flash("Write a kind name.", "error")
             return render_template("application_kind_form.html", kind=None)
-        db.execute("INSERT INTO application_kinds(department_id,created_by,name,number_prefix,status) VALUES (?,?,?,?,?)",
-                   (g.user["department_id"], g.user["id"], name, prefix, "active"))
+        db.execute("INSERT INTO application_kinds(department_id,created_by,name,number_prefix,company_name,company_address,status) VALUES (?,?,?,?,?,?,?)",
+                   (g.user["department_id"], g.user["id"], name, prefix, company_name, company_address, "active"))
         log(db, "application_kind_new", name)
         db.commit(); flash("Application kind saved.", "ok")
         return redirect(url_for("applications.kinds"))
@@ -307,9 +405,11 @@ def kind_edit(kid):
     if request.method == "POST":
         name = (request.form.get("name") or kind["name"]).strip()
         prefix = (request.form.get("number_prefix") or kind["number_prefix"]).strip().upper()[:10]
+        company_name = (request.form.get("company_name") or "").strip()
+        company_address = (request.form.get("company_address") or "").strip()
         status = "active" if request.form.get("status") != "draft" else "draft"
-        db.execute("UPDATE application_kinds SET name=?,number_prefix=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
-                   (name, prefix, status, kid))
+        db.execute("UPDATE application_kinds SET name=?,number_prefix=?,company_name=?,company_address=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
+                   (name, prefix, company_name, company_address, status, kid))
         log(db, "application_kind_edit", name)
         db.commit(); flash("Application kind saved. Changes apply to new applications only.", "ok")
         return redirect(url_for("applications.kinds"))
@@ -325,9 +425,11 @@ def application_new():
     if kind is not None and (kind["department_id"] != g.user["department_id"] or kind["status"] != "active"):
         flash("That application kind is not available to you.", "error")
         return redirect(url_for("applications.list_applications"))
-    recipients = hr_admin_users(db)
+    recipients = _own_dept_users(db, g.user["department_id"])
     if request.method == "POST" and kind is not None:
-        # The recipient must be an HR & Admin Department user — never anyone else.
+        # The recipient must be a user in the applicant's OWN department —
+        # a department user or the person with Department admin permission.
+        # That person checks it, signs it, and forwards it to HR & Admin.
         try:
             recipient_id = int(request.form.get("recipient_id") or 0)
         except ValueError:
@@ -339,7 +441,7 @@ def application_new():
         days = _days_between(from_date, to_date)
         error = None
         if recipient_id not in [r["id"] for r in recipients]:
-            error = "Choose a recipient from the HR & Admin Department."
+            error = "Choose a recipient from your own department."
         elif not from_date or not to_date or days < 1:
             error = "Choose a from date and a to date, with the to date on or after the from date."
         elif not reason:
@@ -351,21 +453,21 @@ def application_new():
         else:
             number = f"{kind['number_prefix']}-{kind['next_number']:04d}"
             db.execute("UPDATE application_kinds SET next_number=next_number+1 WHERE id=?", (kind["id"],))
-            aid = db.execute("INSERT INTO applications(department_id,kind_id,owner_id,recipient_id,number,status,from_date,to_date,days,reason,letter_body) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                             (g.user["department_id"], kind["id"], g.user["id"], recipient_id, number, "pending",
+            aid = db.execute("INSERT INTO applications(department_id,kind_id,owner_id,recipient_id,checker_id,number,status,from_date,to_date,days,reason,letter_body) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (g.user["department_id"], kind["id"], g.user["id"], recipient_id, recipient_id, number, "pending",
                               from_date, to_date, days, reason, body)).lastrowid
             _log_history(db, aid, g.user, "created", "", "", number)
             rec = db.execute("SELECT full_name FROM users WHERE id=?", (recipient_id,)).fetchone()
             log(db, "application_new", number)
             notify(db, [recipient_id],
-                   f"{g.user['full_name']} sent you a {kind['name']} application {number}.",
+                   f"{g.user['full_name']} sent you a {kind['name']} application {number} to check.",
                    url_for("applications.detail", aid=aid), skip=g.user["id"])
             _dept = db.execute("SELECT * FROM departments WHERE id=?", (g.user["department_id"],)).fetchone()
             notify_ddb_task(db, g.user, _dept,
-                            f"{g.user['full_name']} sent a {kind['name']} application {number} to {rec['full_name'] if rec else 'HR & Admin'}.",
+                            f"{g.user['full_name']} sent a {kind['name']} application {number} to {rec['full_name'] if rec else 'their department'} to check.",
                             url_for("applications.detail", aid=aid))
             db.commit()
-            flash(f"Application {number} sent to {rec['full_name'] if rec else 'HR & Admin'}.", "ok")
+            flash(f"Application {number} sent to {rec['full_name'] if rec else 'your department'} to check.", "ok")
             return redirect(url_for("applications.detail", aid=aid))
     return render_template("application_form.html", kind=kind, recipients=recipients)
 
@@ -442,6 +544,8 @@ def detail(aid):
     kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
     owner = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["owner_id"],)).fetchone()
     recipient = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["recipient_id"],)).fetchone() if app["recipient_id"] else None
+    checker = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["checker_id"],)).fetchone() if app["checker_id"] else None
+    approver = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["approver_id"],)).fetchone() if app["approver_id"] else None
     dept = db.execute("SELECT name FROM departments WHERE id=?", (app["department_id"],)).fetchone()
     signer = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["signature_by"],)).fetchone() if app["signature_by"] else None
     qr_svg = qr_url = None
@@ -449,23 +553,127 @@ def detail(aid):
         qr_url = external_url(db, "applications.code_page", code=app["public_code"])
         qr_svg = _qr_svg(qr_url)
     return render_template("application_detail.html", app=app, kind=kind,
-                           owner=owner, recipient=recipient, dept=dept, signer=signer,
+                           owner=owner, recipient=recipient, checker=checker, approver=approver,
+                           dept=dept, signer=signer,
                            qr_svg=qr_svg, qr_url=qr_url,
                            can_manage=_can_manage(db, g.user, app),
                            can_edit=_can_edit(db, g.user, app),
+                           can_delete=_can_delete(db, g.user, app),
+                           can_check=_can_check(db, g.user, app),
                            can_manage_public=_can_manage_public(db, g.user, app),
+                           hr_users=hr_admin_users(db),
                            history=_app_history(db, aid),
                            statuses=STATUSES, labels=STATUS_LABELS)
+
+@bp.route("/applications/<int:aid>/delete", methods=["POST"])
+@login_required
+def application_delete(aid):
+    """Delete an application. It is a soft delete: the application goes to
+    the Recycle Bin for 30 days, where it can be restored, and is only
+    erased for good from there. Its number is never reused. Deleting asks
+    for the user's own password first (the same re-auth as Delete invoice);
+    a wrong password deletes nothing. Only the owner, an administrative
+    permission user and the portal admin can delete it."""
+    db = get_db(); app = _app(db, aid)
+    if not _can_delete(db, g.user, app):
+        abort(403)
+    from security import reauth_ok
+    if not reauth_ok(g.user, request.form):
+        flash("Your password is not correct. Nothing was deleted.", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    db.execute("UPDATE applications SET deleted_at=datetime('now','localtime'), deleted_by=?,"
+               "updated_at=datetime('now','localtime') WHERE id=?", (g.user["id"], aid))
+    _log_history(db, aid, g.user, "deleted", "Application", app["number"], "deleted")
+    log(db, "application_deleted", app["number"])
+    # Tell the other party: the owner if someone else deleted it, the
+    # checker / approver if the owner deleted it.
+    other = app["recipient_id"] if g.user["id"] == app["owner_id"] else app["owner_id"]
+    if other and other != g.user["id"]:
+        notify(db, [other],
+               f"{g.user['full_name']} deleted the application {app['number']}. It is in the Recycle Bin for 30 days.",
+               url_for("applications.list_applications"), skip=g.user["id"])
+    db.commit()
+    flash(f"Application {app['number']} deleted. It is in the Recycle bin for {config.BIN_DAYS} days — it can be restored from there.", "ok")
+    return redirect(url_for("applications.list_applications"))
+
+# ---------------------------------------------------------------- check and forward (the checker)
+@bp.route("/applications/<int:aid>/check-signature", methods=["POST"])
+@login_required
+def check_signature(aid):
+    """The checker uploads their signature image (it appears above
+    'Checked By', with their name and designation under it). The checker
+    must have uploaded a signature before they can forward the application
+    to HR."""
+    db = get_db(); app = _app(db, aid)
+    if not _can_check(db, g.user, app):
+        abort(403)
+    name = _save_signature(request.files.get("signature"))
+    if not name:
+        flash("Upload a signature image (png, jpg, jpeg or webp).", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    if app["checker_signature_path"]:
+        try:
+            old = os.path.join(config.UPLOAD_DIR, "app_signatures", os.path.basename(app["checker_signature_path"]))
+            if os.path.exists(old):
+                os.remove(old)
+        except Exception:
+            pass
+    db.execute("UPDATE applications SET checker_signature_path=?,checker_signature_at=datetime('now','localtime'),updated_at=datetime('now','localtime') WHERE id=?",
+               (name, aid))
+    _log_history(db, aid, g.user, "edit", "Checker signature", "", g.user["full_name"])
+    log(db, "application_checked_signature", app["number"])
+    db.commit()
+    flash("Your signature has been added under Checked By. You can now forward the application to HR & Admin.", "ok")
+    return redirect(url_for("applications.detail", aid=aid))
+
+@bp.route("/applications/<int:aid>/forward", methods=["POST"])
+@login_required
+def forward_to_hr(aid):
+    """The checker forwards the application to ONE specific HR & Admin user.
+    The checker must have uploaded their signature first. Forwarding sets
+    the status to Checked, makes the HR user the person it is currently
+    with (recipient and approver), and notifies the HR user and the owner."""
+    db = get_db(); app = _app(db, aid)
+    if not _can_check(db, g.user, app):
+        abort(403)
+    if not app["checker_signature_path"]:
+        flash("Upload your signature first — you can only forward the application once your signature is under Checked By.", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    try:
+        hr_id = int(request.form.get("hr_user_id") or 0)
+    except ValueError:
+        hr_id = 0
+    hr_users = hr_admin_users(db)
+    if hr_id not in [r["id"] for r in hr_users]:
+        flash("Choose an HR & Admin user to forward it to.", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    db.execute("UPDATE applications SET recipient_id=?,approver_id=?,status='checked',updated_at=datetime('now','localtime') WHERE id=?",
+               (hr_id, hr_id, aid))
+    _log_history(db, aid, g.user, "status", "Status", STATUS_LABELS["pending"], STATUS_LABELS["checked"])
+    log(db, "application_forwarded", f"{app['number']} -> HR user {hr_id}")
+    hr = db.execute("SELECT full_name FROM users WHERE id=?", (hr_id,)).fetchone()
+    notify(db, [hr_id],
+           f"{g.user['full_name']} checked the application {app['number']} and forwarded it to you for approval.",
+           url_for("applications.detail", aid=aid), skip=g.user["id"])
+    notify(db, [app["owner_id"]],
+           f"{g.user['full_name']} checked your application {app['number']} and forwarded it to {hr['full_name'] if hr else 'HR & Admin'}.",
+           url_for("applications.detail", aid=aid), skip=g.user["id"])
+    db.commit()
+    flash(f"Application {app['number']} forwarded to {hr['full_name'] if hr else 'HR & Admin'}. It is now Checked.", "ok")
+    return redirect(url_for("applications.detail", aid=aid))
 
 @bp.route("/applications/<int:aid>/status", methods=["POST"])
 @login_required
 def change_status(aid):
+    """The HR approver (or the HR & Admin dept admin) approves or rejects
+    the application, once the checker has forwarded it (status Checked).
+    The checker and the owner are both told."""
     db = get_db(); app = _app(db, aid)
     if not _can_manage(db, g.user, app):
         abort(403)
     new_status = (request.form.get("status") or "").strip()
-    if new_status not in STATUSES:
-        flash("Choose a status: Pending, Approved or Rejected.", "error")
+    if new_status not in ("approved", "rejected"):
+        flash("Choose a status: Approved or Rejected.", "error")
         return redirect(url_for("applications.detail", aid=aid))
     if new_status == app["status"]:
         flash("Status is already " + STATUS_LABELS[new_status] + ".", "ok")
@@ -476,10 +684,14 @@ def change_status(aid):
     notify(db, [app["owner_id"]],
            f"{g.user['full_name']} changed your application {app['number']} to {STATUS_LABELS[new_status]}.",
            url_for("applications.detail", aid=aid), skip=g.user["id"])
+    if app["checker_id"] and app["checker_id"] != app["owner_id"]:
+        notify(db, [app["checker_id"]],
+               f"{g.user['full_name']} changed the application {app['number']} you checked to {STATUS_LABELS[new_status]}.",
+               url_for("applications.detail", aid=aid), skip=g.user["id"])
     _notify_dept_admins(db, app, f"{g.user['full_name']} changed the application {app['number']} to {STATUS_LABELS[new_status]}.",
                         url_for("applications.detail", aid=aid))
     db.commit()
-    flash(f"Status changed to {STATUS_LABELS[new_status]}. The applicant has been notified.", "ok")
+    flash(f"Status changed to {STATUS_LABELS[new_status]}. The applicant and the checker have been notified.", "ok")
     return redirect(url_for("applications.detail", aid=aid))
 
 @bp.route("/applications/<int:aid>/note", methods=["POST"])
@@ -522,6 +734,48 @@ def upload_signature(aid):
     db.commit()
     flash("Your signature has been added to the application.", "ok")
     return redirect(url_for("applications.detail", aid=aid))
+
+@bp.route("/applications/<int:aid>/signature/<kind>")
+@login_required
+def signature_image(aid, kind):
+    """Serve a signature image inline for the detail page letter preview.
+    kind is 'checker' or 'approver'. Only users who can view the
+    application can see it."""
+    from flask import send_file
+    db = get_db(); app = _app(db, aid)
+    if not _can_view(db, g.user, app):
+        abort(403)
+    if kind == "checker":
+        name = app["checker_signature_path"]
+    elif kind == "approver":
+        name = app["signature_path"]
+    else:
+        abort(404)
+    path = _signature_path(name)
+    if not path:
+        abort(404)
+    return send_file(path)
+
+@bp.route("/applications/code/<code>/signature/<kind>")
+def code_signature_image(code, kind):
+    """Serve a signature image inline for the public code page letter
+    preview. Public, like the code PDF — only when the application's
+    public QR is on and it is not deleted."""
+    from flask import send_file
+    db = get_db()
+    app = db.execute("SELECT * FROM applications WHERE public_code=?", (code.strip().upper(),)).fetchone()
+    if app is None or app["deleted_at"] or not _public_check(db, app):
+        abort(404)
+    if kind == "checker":
+        name = app["checker_signature_path"]
+    elif kind == "approver":
+        name = app["signature_path"]
+    else:
+        abort(404)
+    path = _signature_path(name)
+    if not path:
+        abort(404)
+    return send_file(path)
 
 @bp.route("/applications/<int:aid>/pdf")
 @login_required
@@ -569,7 +823,7 @@ def code_page(code):
     """Public code view: anyone who scans the QR (or types HRC-#####) sees the application letter and downloads the PDF. No login needed."""
     db = get_db()
     app = db.execute("SELECT * FROM applications WHERE public_code=?", (code.strip().upper(),)).fetchone()
-    if app is None:
+    if app is None or app["deleted_at"]:
         return render_template("application_code.html", code=code, status="missing", app=None), 404
     if not _public_check(db, app):
         return render_template("application_code.html", code=code, status="off", app=app), 410
@@ -577,17 +831,20 @@ def code_page(code):
     kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
     owner = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["owner_id"],)).fetchone()
     recipient = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["recipient_id"],)).fetchone() if app["recipient_id"] else None
+    checker = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["checker_id"],)).fetchone() if app["checker_id"] else None
+    approver = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["approver_id"],)).fetchone() if app["approver_id"] else None
     dept = db.execute("SELECT name FROM departments WHERE id=?", (app["department_id"],)).fetchone()
     signer = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["signature_by"],)).fetchone() if app["signature_by"] else None
     return render_template("application_code.html", code=code, status="ok", app=app, kind=kind,
-                           owner=owner, recipient=recipient, dept=dept, signer=signer,
+                           owner=owner, recipient=recipient, checker=checker, approver=approver,
+                           dept=dept, signer=signer,
                            labels=STATUS_LABELS)
 
 @bp.route("/applications/code/<code>/pdf")
 def code_pdf(code):
     db = get_db()
     app = db.execute("SELECT * FROM applications WHERE public_code=?", (code.strip().upper(),)).fetchone()
-    if app is None or not _public_check(db, app):
+    if app is None or app["deleted_at"] or not _public_check(db, app):
         abort(404)
     data = _build_pdf(db, app)
     resp = Response(data, mimetype="application/pdf")
@@ -597,20 +854,34 @@ def code_pdf(code):
 def _build_pdf(db, app):
     kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
     owner = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["owner_id"],)).fetchone()
+    checker = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["checker_id"],)).fetchone() if app["checker_id"] else None
     recipient = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["recipient_id"],)).fetchone() if app["recipient_id"] else None
     dept = db.execute("SELECT name FROM departments WHERE id=?", (app["department_id"],)).fetchone()
     signer = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["signature_by"],)).fetchone() if app["signature_by"] else None
-    company = setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME)
-    address = config.DEFAULT_COMPANY_ADDRESS
+    approver = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["approver_id"],)).fetchone() if app["approver_id"] else None
+    # The kind carries its own company name and address for the letterhead;
+    # blank means the portal name and default address.
+    company = (kind["company_name"] or "").strip() if kind else ""
+    address = (kind["company_address"] or "").strip() if kind else ""
+    if not company:
+        company = setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME)
+    if not address:
+        address = config.DEFAULT_COMPANY_ADDRESS
     qr_url = external_url(db, "applications.code_page", code=app["public_code"]) if app["public_code"] else ""
     return exports.application_pdf(
         number=app["number"] or "", app_date=app["created_at"][:10] if app["created_at"] else "",
-        kind_name=kind["name"] if kind else "", status_label=STATUS_LABELS.get(app["status"], app["status"].title()),
+        kind_name=kind["name"] if kind else "", status=app["status"],
+        status_label=STATUS_LABELS.get(app["status"], app["status"].title()),
         owner_name=owner["full_name"] if owner else "", owner_designation=owner["designation"] if owner else "",
-        dept_name=dept["name"] if dept else "", recipient_name=recipient["full_name"] if recipient else "",
+        dept_name=dept["name"] if dept else "",
+        checker_name=checker["full_name"] if checker else (recipient["full_name"] if recipient else ""),
+        checker_designation=checker["designation"] if checker else "",
+        checker_signature_path=_signature_path(app["checker_signature_path"]),
+        recipient_name=recipient["full_name"] if recipient else "",
         from_date=app["from_date"] or "", to_date=app["to_date"] or "", days=app["days"] or 0,
         reason=app["reason"] or "", letter_body=app["letter_body"] or "", hr_note=app["hr_note"] or "",
-        signer_name=signer["full_name"] if signer else "", signer_designation=signer["designation"] if signer else "",
+        signer_name=(signer["full_name"] if signer else "") or (approver["full_name"] if approver else ""),
+        signer_designation=(signer["designation"] if signer else "") or (approver["designation"] if approver else ""),
         signature_path=_signature_path(app["signature_path"]), signature_date=app["signature_at"][:10] if app["signature_at"] else "",
         code=app["public_code"] if app["public_enabled"] else "",
         company=company, company_address=address, qr_url=qr_url)

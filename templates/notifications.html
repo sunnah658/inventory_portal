@@ -41,6 +41,7 @@
 <div class="stack rail">
   <div class="card"><h2>Who gets told what</h2>
     <p class="hint">Nobody is told about the portal admin's tasks. The portal admin is told about permission-user and department-admin tasks. A permission user is told about department-admin tasks. A department admin is told when a user in their department adds, edits, shares or deletes a Department Database row, creates an invoice draft, finalises an invoice, changes an invoice's status to Approved or Pending, deletes an invoice, sends an Item Request, edits a request, or when a request from their department has its status changed.</p>
+    <p class="hint">Applications: the department user an application is sent to is told when it arrives; the applicant is told when the checker forwards it to HR &amp; Admin and when HR approves or rejects it; the checker is told when HR approves or rejects it.</p>
     <p class="hint">Editing an invoice draft, or changing a public QR, tells nobody.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),

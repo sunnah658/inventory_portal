@@ -2,7 +2,7 @@
 {% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Recycle bin{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records stay here for {{ days }} days, then are erased for good. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
+<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records, Department Database rows and application letters stay here for {{ days }} days, then are erased for good. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
 <div class="kp">
   {{ kpi('Deleted records', items|length) }}
   {% if portal %}{{ kpi('Deleted users', users|length) }}{% endif %}
@@ -31,21 +31,21 @@ function purgeUser(form){
 {% else %}
 <div class="tb">
 {% if items %}<table><thead><tr><th>Record</th><th>Department</th><th>Owner</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
-{% for r in items %}<tr class="r"><td><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></td><td>{{ r['department_name'] }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>
+{% for r in items %}<tr class="r"><td>{% if r['view_url'] %}<a href="{{ r['view_url'] }}">{{ r['summary'] }}</a>{% else %}{{ r['summary'] }}{% endif %}<div class="sub">{{ r['kind_label'] }}</div></td><td>{{ r['department_name'] }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>
   <td>{{ r['deleted_at'] }}<div class="sub">by {{ r['deleted_by_name'] or '' }}</div></td>
   <td>{{ r['erase_on'] }} {% if r['days_left'] <= 3 %}<span class="s r">{{ r['days_left'] if r['days_left'] > 0 else 0 }} days left</span>{% endif %}</td>
   <td class="actcell">
-    <form method="post" action="{{ url_for('records.bin_restore', rid=r['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Restore</button></form>
-    <form method="post" action="{{ url_for('records.bin_purge', rid=r['id']) }}" onsubmit="return confirm('Erase this record for good? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg sm" type="submit">Delete forever</button></form></td></tr>{% endfor %}
+    <form method="post" action="{{ r['restore_url'] }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Restore</button></form>
+    <form method="post" action="{{ r['purge_url'] }}" onsubmit="return confirm('Erase this for good? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg sm" type="submit">Delete forever</button></form></td></tr>{% endfor %}
 </tbody></table>{% else %}<div class="empty">The recycle bin is empty.</div>{% endif %}
 </div>
 {% endif %}
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens here</h2>
-    <p class="hint">A deleted record can be restored any time within {{ days }} days. After that it is erased for good.</p>
+    <p class="hint">A deleted record, Department Database row or application letter can be restored any time within {{ days }} days. After that it is erased for good.</p>
     <p class="hint">Deleting a user for good asks: "You want to delete this user all work from the portal too?" — <b>Yes</b> erases the work at once, <b>No</b> leaves the work until the {{ days }} days end. A purged user can never be restored.</p>
-    <p class="hint">A permission user can restore anything, but only the portal admin can erase a record or a user account that a permission user deleted.</p></div>
+    <p class="hint">A permission user can restore anything, but only the portal admin can erase a record, row or application that a permission user deleted.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),
     ('All records', url_for('admin.all_records'), False) if can_portal_admin else None,

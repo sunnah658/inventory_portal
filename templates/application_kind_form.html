@@ -9,6 +9,8 @@
 <div class="fm">
 <div class="fd"><label>Kind name</label><input type="text" name="name" value="{{ kind['name'] if kind else '' }}" required placeholder="Annual Leave"></div>
 <div class="fd"><label>Application number prefix</label><input type="text" name="number_prefix" value="{{ kind['number_prefix'] if kind else 'LV' }}"><div class="sub">The number is per-kind, e.g. LV-0001, and never reused.</div></div>
+<div class="fd"><label>Company name (letterhead)</label><input type="text" name="company_name" value="{{ kind['company_name'] if kind else '' }}" placeholder="HRC Technologies Limited"><div class="sub">Printed at the top of the letter for applications of this kind. Leave it blank to use the portal company name.</div></div>
+<div class="fd"><label>Company address (letterhead)</label><input type="text" name="company_address" value="{{ kind['company_address'] if kind else '' }}" placeholder="Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100"><div class="sub">Printed under the company name on the letter. Leave it blank to use the portal default address.</div></div>
 <div class="fd"><label>Status</label><select name="status"><option value="active" {{ 'selected' if not kind or kind['status']=='active' }}>Active</option><option value="draft" {{ 'selected' if kind and kind['status']=='draft' }}>Draft (hidden from employees)</option></select></div>
 </div>
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save kind</button><a class="b" href="{{ url_for('applications.kinds') }}">Cancel</a></div>
@@ -16,7 +18,7 @@
 </div>
 <div class="stack rail">
   <div class="card"><h2>How it works</h2>
-    <p class="hint">The kind is frozen into each application when it is sent, so changing the kind later never changes a sent application. Applications are sent only to HR &amp; Admin Department users.</p></div>
+    <p class="hint">The kind is frozen into each application when it is sent, so changing the kind later never changes a sent application. The company name and address you set here print on the letterhead of applications made from this kind. Applications are sent to a user in the applicant's own department, who checks them and forwards them to HR &amp; Admin.</p></div>
   {{ quick_card([
     ('Back to kinds', url_for('applications.kinds'), True),
   ]) }}

@@ -4,11 +4,20 @@
 {% block title %}{{ app['number'] or 'Application' }}{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Application {% if app['number'] %}· {{ app['number'] }}{% endif %}</h1>
-<p class="hint">{{ kind['name'] if kind else '' }} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }} · Applied by: {{ owner['full_name'] if owner else '' }} · Applied to: {{ recipient['full_name'] if recipient else '' }}</p></div>
+<p class="hint">{{ kind['name'] if kind else '' }} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }} · Applied by: {{ owner['full_name'] if owner else '' }} · Sent to: {{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }} to check</p></div>
 <div class="acts noprint">
 {% if can_edit %}<a class="b" href="{{ url_for('applications.application_edit', aid=app['id']) }}">Edit</a>{% endif %}
 <a class="b p" href="{{ url_for('applications.application_pdf', aid=app['id']) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>
+{% if can_delete %}<button class="b dg" type="button" onclick="document.getElementById('delApp').style.display='flex'">Delete</button>{% endif %}
 </div></div>
+{% if can_delete %}<div id="delApp" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center">
+<div class="card" style="max-width:460px;width:92%;margin:0">
+<h2>Delete this application?</h2>
+<p>Application {{ app['number'] or '' }} will go to the Recycle Bin for 30 days, where it can be restored. Its number will never be reused.</p>
+<form method="post" action="{{ url_for('applications.application_delete', aid=app['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label>Your password to confirm</label><input type="password" name="admin_password" required autocomplete="current-password"></div>
+<div class="acts"><button class="b dg" type="submit">Delete</button><button class="b" type="button" onclick="document.getElementById('delApp').style.display='none'">Cancel</button></div>
+</form></div></div>{% endif %}
 <div class="kp">
   {{ kpi('Days', app['days']) }}
   {{ kpi('Status', labels[app['status']]) }}
@@ -17,39 +26,61 @@
 </div>
 <div class="tw"><div>
 <div class="card"><div><span class="s {{ 'g' if app['status'] == 'approved' else ('r' if app['status'] == 'rejected' else 'a') }}">{{ labels[app['status']] }}</span>
-<span class="hint"> Applied by {{ owner['full_name'] if owner else '' }} · Applied to {{ recipient['full_name'] if recipient else '' }} (HR &amp; Admin)</span></div>
+<span class="hint"> Applied by {{ owner['full_name'] if owner else '' }} · Checked by {{ checker['full_name'] if checker else '—' }}{% if checker %} ({{ dept['name'] if dept else '' }}){% endif %}{% if approver %} · Approved by {{ approver['full_name'] }} (HR &amp; Admin){% elif app['status'] == 'checked' %} · Waiting on HR &amp; Admin{% endif %}</span></div>
+{% if can_check %}
+<form method="post" action="{{ url_for('applications.check_signature', aid=app['id']) }}" enctype="multipart/form-data" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label>Your signature (image) — Checked By</label><input type="file" name="signature" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Upload your signature image. It appears on the application and its PDF, above Checked By, with your name and designation under it. You must upload it before you can forward the application.</div></div>
+{% if app['checker_signature_path'] %}<p class="hint">Signature on file{% if app['checker_signature_at'] %} — uploaded on {{ app['checker_signature_at'][:10] }}{% endif %}.</p>{% endif %}
+<button class="b p" type="submit">Upload my signature</button></form>
+<form method="post" action="{{ url_for('applications.forward_to_hr', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label>Forward to (HR &amp; Admin user)</label><select name="hr_user_id" required><option value="">Choose an HR &amp; Admin user…</option>{% for u in hr_users %}<option value="{{ u['id'] }}">{{ u['full_name'] }}</option>{% endfor %}</select><div class="sub">The application goes to this HR &amp; Admin user, who approves or rejects it. Its status becomes Checked.</div></div>
+<button class="b p" type="submit" {{ 'disabled' if not app['checker_signature_path'] }}>Forward to HR &amp; Admin</button>{% if not app['checker_signature_path'] %} <span class="hint">Upload your signature first.</span>{% endif %}</form>
+{% endif %}
 {% if can_manage %}
 <form method="post" action="{{ url_for('applications.change_status', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fm"><div class="fd"><label>Change status (only the recipient and the HR &amp; Admin department admin can change it)</label><select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if app['status']==s }}>{{ labels[s] }}</option>{% endfor %}</select></div></div>
-<button class="b p" type="submit">Save status</button> <span class="hint">The applicant is notified of the change.</span></form>
+<div class="fm"><div class="fd"><label>Change status (only the HR approver and the HR &amp; Admin department admin can change it, once the checker has forwarded it)</label><select name="status"><option value="approved" {{ 'selected' if app['status']=='approved' }}>Approved</option><option value="rejected" {{ 'selected' if app['status']=='rejected' }}>Rejected</option></select></div></div>
+<button class="b p" type="submit">Save status</button> <span class="hint">The applicant and the checker are notified of the change.</span></form>
 <form method="post" action="{{ url_for('applications.set_note', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fd"><label>HR note</label><textarea name="hr_note" rows="3">{{ app['hr_note'] or '' }}</textarea><div class="sub">Shown on the application and its PDF, under "FOR OFFICE USE".</div></div>
 <button class="b" type="submit">Save note</button></form>
 <form method="post" action="{{ url_for('applications.upload_signature', aid=app['id']) }}" enctype="multipart/form-data" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fd"><label>Your signature (image)</label><input type="file" name="signature" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Upload your signature image. It appears on the application and its PDF, above your name, under the applicant's signature. Uploading a new one replaces the old one.</div></div>
+<div class="fd"><label>Your signature (image) — Approved By</label><input type="file" name="signature" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Upload your signature image. It appears on the application and its PDF, above Approved By, with your name and designation under it. Uploading a new one replaces the old one.</div></div>
 {% if app['signature_path'] %}<p class="hint">Signature on file — uploaded by {{ signer['full_name'] if signer else '' }}{% if app['signature_at'] %} on {{ app['signature_at'][:10] }}{% endif %}.</p>{% endif %}
 <button class="b" type="submit">Upload signature</button></form>
-{% else %}
-<p class="hint" style="margin-top:14px">Only the recipient ({{ recipient['full_name'] if recipient else '' }}) and the HR &amp; Admin department admin can change the status, set a note or upload a signature.{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
+{% elif not can_check %}
+<p class="hint" style="margin-top:14px">{% if app['status'] == 'pending' %}Only the checker ({{ checker['full_name'] if checker else '' }}) can check it and forward it to HR &amp; Admin.{% elif app['status'] == 'checked' %}Only the HR approver ({{ approver['full_name'] if approver else '' }}) and the HR &amp; Admin department admin can change the status, set a note or upload a signature.{% else %}This application has been decided.{% endif %}{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
 {% endif %}
 </div>
 <div class="card" style="margin-top:16px">
   <h2>The letter</h2>
-  <div style="font-family:Georgia, 'Times New Roman', serif; line-height:1.7; max-width:640px">
-    <p style="text-align:center; margin:0 0 2px"><b style="font-size:1.15rem">{{ company_name }}</b></p>
-    <p style="text-align:center; color:var(--soft); margin:0 0 14px; font-size:.9rem">Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100</p>
+  <div style="font-family:Georgia, 'Times New Roman', serif; line-height:1.7; max-width:640px; margin:0 auto">
+    <p style="text-align:center; margin:0 0 2px"><b style="font-size:1.15rem">{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</b></p>
+    <p style="text-align:center; color:var(--soft); margin:0 0 14px; font-size:.9rem">{{ kind['company_address'] if kind and kind['company_address'] else 'Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100' }}</p>
     <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
-    <p style="margin:0 0 12px">To,<br>{{ recipient['full_name'] if recipient else '' }}<br>HR &amp; Admin<br>{{ company_name }}</p>
-    <p style="margin:0 0 12px"><b>Subject:</b> Application for {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
+    <p style="margin:0 0 12px">To,<br>{{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
+    <p style="margin:0 0 12px"><b>Subject:</b> {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
     <p style="margin:0 0 12px">Respected Sir,</p>
     {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}
     <p style="margin:12px 0 0">Thanking you.<br>Yours faithfully,</p>
-    <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ company_name }}</p>
-    {% if app['hr_note'] or app['signature_path'] or signer %}
+    <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
+    {% if app['hr_note'] or app['signature_path'] or app['checker_signature_path'] or signer or checker %}
     <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">
       <p style="margin:0 0 8px; font-size:.85rem; letter-spacing:1px; color:var(--soft)"><b>FOR OFFICE USE</b></p>
       {% if app['hr_note'] %}<p style="margin:0 0 10px"><b>HR note — {{ signer['full_name'] if signer else (recipient['full_name'] if recipient else '') }}:</b> {{ app['hr_note'] }}</p>{% endif %}
-      {% if signer %}<p style="margin:0"><b>{{ signer['full_name'] }}</b>{% if signer['designation'] %}<br>{{ signer['designation'] }}{% endif %}<br><span class="hint">Status: {{ labels[app['status']] }}</span></p>{% endif %}
+      <div style="display:flex; gap:24px; line-height:1.35">
+        <div style="width:48%; text-align:center">
+          {% if app['checker_signature_path'] %}<img src="{{ url_for('applications.signature_image', aid=app['id'], kind='checker') }}" alt="" style="height:52px">{% else %}<div style="height:52px"></div>{% endif %}
+          <p style="margin:4px 0 0"><b>Checked By</b></p>
+          <p style="margin:2px 0 0"><b>{{ checker['full_name'] if checker else '' }}</b></p>
+          {% if checker and checker['designation'] %}<p style="margin:0">{{ checker['designation'] }}</p>{% endif %}
+        </div>
+        <div style="width:48%; text-align:center">
+          {% if app['signature_path'] %}<img src="{{ url_for('applications.signature_image', aid=app['id'], kind='approver') }}" alt="" style="height:52px">{% else %}<div style="height:52px"></div>{% endif %}
+          <p style="margin:4px 0 0"><b>Approved By</b></p>
+          <p style="margin:2px 0 0"><b>{{ signer['full_name'] if signer else '' }}</b></p>
+          {% if signer and signer['designation'] %}<p style="margin:0">{{ signer['designation'] }}</p>{% endif %}
+        </div>
+      </div>
     </div>
     {% endif %}
   </div>
@@ -72,7 +103,9 @@
 <div class="card"><h2>Details</h2>
   <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied by</b>{{ owner['full_name'] if owner else '' }}{% if owner and owner['designation'] %} ({{ owner['designation'] }}){% endif %}</div>
-  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied to</b>{{ recipient['full_name'] if recipient else '' }} (HR &amp; Admin)</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Sent to</b>{{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }}{% if checker and checker['designation'] %} ({{ checker['designation'] }}){% endif %} — to check</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Checked by</b>{{ checker['full_name'] if checker else '—' }}{% if app['checker_signature_at'] %} · {{ app['checker_signature_at'][:10] }}{% endif %}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Approved by</b>{{ approver['full_name'] if approver else (signer['full_name'] if signer else '—') }}{% if approver and approver['designation'] %} ({{ approver['designation'] }}){% elif signer and signer['designation'] %} ({{ signer['designation'] }}){% endif %}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">From</b>{{ app['from_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">To</b>{{ app['to_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Reason</b>{{ app['reason'] or '—' }}</div>

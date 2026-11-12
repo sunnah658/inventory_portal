@@ -24,10 +24,10 @@ import config
 from auth import admin_required, login_required
 from utils import is_portal_admin, is_true_admin
 import scanner
-from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, external_url, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_history, ddb_is_tab_admin, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, external_url, first_text_value, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, col_weight, create_record, dept_member_ids, filter_clause, get_columns, get_record,
-                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_record, purge_user_account, rec_select, reminder_rows,
+                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_application, purge_ddb_row, purge_record, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
                   update_record, values_for, viewable_departments)
 from models import get_db, log
@@ -723,7 +723,11 @@ def delete_attachment(aid):
 @login_required
 def bin_page():
     """Recycle bin. Portal admin / permission user: two tabs, Records and Users.
-    Everyone else: only their own deleted records, no Users tab."""
+    Everyone else: only their own deleted records, no Users tab.
+    The Records tab lists everything that was deleted and can be restored:
+    personal records, Department Database rows and application letters.
+    Before this fix it only listed personal records, so a deleted Department
+    Database row never appeared here at all."""
     db = get_db()
     portal = is_portal_admin(g.user)
     tab = request.args.get("tab", "records")
@@ -742,17 +746,165 @@ def bin_page():
             users.append(dict(r, erase_on=erase.strftime("%d %b %Y") if erase else "",
                               days_left=(erase - datetime.now()).days if erase else 0))
         return render_template("bin.html", items=[], users=users, tab=tab, portal=portal, days=config.BIN_DAYS)
+
+    def _erase(deleted_at):
+        erase = datetime.strptime(deleted_at, "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS)
+        return erase.strftime("%d %b %Y"), (erase - datetime.now()).days
+
+    items = []
+    # 1. Personal records (as before).
     where = "r.deleted_at IS NOT NULL" + ("" if portal else " AND r.owner_id=?")
     params = [] if portal else [g.user["id"]]
     rows = db.execute(rec_select(", (SELECT full_name FROM users WHERE id=r.deleted_by) AS deleted_by_name")
                       + " WHERE " + where + " ORDER BY r.deleted_at DESC", params).fetchall()
     sums = summaries_for(db, rows)
-    items = []
     for r in rows:
-        erase = datetime.strptime(r["deleted_at"], "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS)
-        items.append(dict(r, summary=sums[r["id"]], erase_on=erase.strftime("%d %b %Y"),
-                          days_left=(erase - datetime.now()).days))
+        erase_on, days_left = _erase(r["deleted_at"])
+        items.append(dict(r, summary=sums[r["id"]], erase_on=erase_on, days_left=days_left,
+                          kind_label="Personal record",
+                          view_url=url_for("records.detail", rid=r["id"]),
+                          restore_url=url_for("records.bin_restore", rid=r["id"]),
+                          purge_url=url_for("records.bin_purge", rid=r["id"])))
+    # 2. Department Database rows. A deleted row is soft-deleted (deleted_at
+    # is set) and is erased for good after 30 days, but it never appeared in
+    # this bin before — only personal records did.
+    where = "r.deleted_at IS NOT NULL" + ("" if portal else " AND r.owner_id=?")
+    params = [] if portal else [g.user["id"]]
+    drows = db.execute("SELECT r.*, u.full_name AS owner_name, u.is_active AS owner_is_active, "
+                       "u.is_deleted AS owner_is_deleted, d.name AS department_name, "
+                       "t.name AS tab_name, "
+                       "(SELECT full_name FROM users WHERE id=r.deleted_by) AS deleted_by_name "
+                       "FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
+                       "JOIN departments d ON d.id=r.department_id "
+                       "LEFT JOIN ddb_tabs t ON t.id=r.tab_id "
+                       "WHERE " + where + " ORDER BY r.deleted_at DESC", params).fetchall()
+    for r in drows:
+        erase_on, days_left = _erase(r["deleted_at"])
+        name = first_text_value(db, r["id"]) or f"Row #{r['id']}"
+        items.append(dict(r, summary=name, erase_on=erase_on, days_left=days_left,
+                          kind_label="Department row" + (f" · {r['tab_name']}" if r["tab_name"] else ""),
+                          view_url=None,
+                          restore_url=url_for("records.bin_ddb_restore", rid=r["id"]),
+                          purge_url=url_for("records.bin_ddb_purge", rid=r["id"])))
+    # 3. Application letters. A deleted application is soft-deleted and is
+    # erased for good after 30 days. The owner or the recipient sees it here;
+    # a portal admin or permission user sees them all.
+    where = "a.deleted_at IS NOT NULL" + ("" if portal else " AND (a.owner_id=? OR a.recipient_id=?)")
+    params = [] if portal else [g.user["id"], g.user["id"]]
+    arows = db.execute("SELECT a.*, k.name AS kind_name, o.full_name AS owner_name, "
+                       "o.is_active AS owner_is_active, o.is_deleted AS owner_is_deleted, "
+                       "d.name AS department_name, "
+                       "(SELECT full_name FROM users WHERE id=a.deleted_by) AS deleted_by_name "
+                       "FROM applications a LEFT JOIN application_kinds k ON k.id=a.kind_id "
+                       "JOIN users o ON o.id=a.owner_id "
+                       "JOIN departments d ON d.id=a.department_id "
+                       "WHERE " + where + " ORDER BY a.deleted_at DESC", params).fetchall()
+    for r in arows:
+        erase_on, days_left = _erase(r["deleted_at"])
+        items.append(dict(r, summary=(r["number"] or "Application") + (f" · {r['kind_name']}" if r["kind_name"] else ""),
+                          erase_on=erase_on, days_left=days_left,
+                          kind_label="Application letter",
+                          view_url=None,
+                          restore_url=url_for("records.bin_app_restore", aid=r["id"]),
+                          purge_url=url_for("records.bin_app_purge", aid=r["id"])))
+    items.sort(key=lambda it: it["deleted_at"] or "", reverse=True)
     return render_template("bin.html", items=items, users=[], tab=tab, portal=portal, days=config.BIN_DAYS)
+
+
+def _bin_purge_blocked(db, deleted_by):
+    """True when the current user may NOT erase this deleted item for good.
+    A permission user cannot erase a record, row or application that he
+    deleted himself, that the portal admin deleted, or that any permission
+    user deleted. Only the portal admin can erase those."""
+    if is_true_admin(g.user) or not deleted_by:
+        return False
+    if deleted_by == g.user["id"]:
+        return True
+    deleter = db.execute("SELECT role, can_portal_admin FROM users WHERE id=?", (deleted_by,)).fetchone()
+    return bool(deleter and (deleter["role"] == "admin" or deleter["can_portal_admin"]))
+
+
+@bp.route("/bin/ddb/<int:rid>/restore", methods=["POST"])
+@login_required
+def bin_ddb_restore(rid):
+    """Restore a deleted Department Database row from the Recycle Bin. The
+    owner or a department admin of that department can do it."""
+    db = get_db()
+    row = db.execute("SELECT * FROM ddb_rows WHERE id=?", (rid,)).fetchone()
+    if row is None or not row["deleted_at"]:
+        abort(404)
+    if row["owner_id"] != g.user["id"] and not ddb_is_tab_admin(db, g.user, row["department_id"]):
+        abort(403)
+    db.execute("UPDATE ddb_rows SET deleted_at=NULL, deleted_by=NULL, version=version+1 WHERE id=?", (rid,))
+    ddb_history(db, rid, g.user, "restored")
+    log(db, "ddb_restore", f"row {rid} (from the Recycle Bin)")
+    db.commit()
+    flash("Row restored.", "ok")
+    return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/ddb/<int:rid>/purge", methods=["POST"])
+@login_required
+def bin_ddb_purge(rid):
+    """Erase a deleted Department Database row for good, from the Recycle Bin."""
+    db = get_db()
+    row = db.execute("SELECT * FROM ddb_rows WHERE id=?", (rid,)).fetchone()
+    if row is None or not row["deleted_at"]:
+        abort(404)
+    if row["owner_id"] != g.user["id"] and not ddb_is_tab_admin(db, g.user, row["department_id"]):
+        abort(403)
+    if _bin_purge_blocked(db, row["deleted_by"]):
+        flash("Only the portal admin can erase this row for good.", "error")
+        return redirect(url_for("records.bin_page"))
+    purge_ddb_row(db, rid)
+    log(db, "ddb_erase", f"row {rid} erased for good")
+    db.commit()
+    flash("Row erased for good.", "ok")
+    return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/applications/<int:aid>/restore", methods=["POST"])
+@login_required
+def bin_app_restore(aid):
+    """Restore a deleted application letter from the Recycle Bin. The owner,
+    the recipient, the HR & Admin department admin or the portal admin can
+    do it."""
+    db = get_db()
+    app = db.execute("SELECT * FROM applications WHERE id=?", (aid,)).fetchone()
+    if app is None or not app["deleted_at"]:
+        abort(404)
+    from routes_applications import _is_hr_dept_admin
+    if not (is_portal_admin(g.user) or app["owner_id"] == g.user["id"]
+            or app["recipient_id"] == g.user["id"] or _is_hr_dept_admin(db, g.user)):
+        abort(403)
+    db.execute("UPDATE applications SET deleted_at=NULL, deleted_by=NULL, updated_at=datetime('now','localtime') WHERE id=?", (aid,))
+    db.execute("INSERT INTO application_history(application_id,user_id,username,full_name,action,field,old_value,new_value) VALUES (?,?,?,?,?,?,?,?)",
+               (aid, g.user["id"], g.user["username"], g.user["full_name"], "restored", "Application", app["number"] or "", "restored"))
+    log(db, "application_restore", app["number"] or str(aid))
+    db.commit()
+    flash(f"Application {app['number']} restored.", "ok")
+    return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/applications/<int:aid>/purge", methods=["POST"])
+@login_required
+def bin_app_purge(aid):
+    """Erase a deleted application letter for good, from the Recycle Bin."""
+    db = get_db()
+    app = db.execute("SELECT * FROM applications WHERE id=?", (aid,)).fetchone()
+    if app is None or not app["deleted_at"]:
+        abort(404)
+    if not (is_portal_admin(g.user) or app["owner_id"] == g.user["id"]
+            or app["recipient_id"] == g.user["id"]):
+        abort(403)
+    if _bin_purge_blocked(db, app["deleted_by"]):
+        flash("Only the portal admin can erase this application for good.", "error")
+        return redirect(url_for("records.bin_page"))
+    purge_application(db, aid)
+    log(db, "application_erase", f"{app['number']} erased for good")
+    db.commit()
+    flash(f"Application {app['number']} erased for good.", "ok")
+    return redirect(url_for("records.bin_page"))
 
 
 @bp.route("/bin/<int:rid>/restore", methods=["POST"])

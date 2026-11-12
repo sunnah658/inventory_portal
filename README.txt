@@ -3027,3 +3027,240 @@
    http://192.168.1.116:8100, so new QRs point at the address your
    office can open. The "Public portal address" setting is already
    set on the live portal and is kept.
+
+ 61. RECYCLE BIN NOW SHOWS DELETED DEPARTMENT ROWS AND APPLICATION LETTERS (2026-11-10)
+ 1. The bug. The Recycle Bin only ever listed personal records. A row
+    deleted from the Department Database was soft-deleted (it stayed in
+    the database for 30 days and was only erased for good after that),
+    but it never appeared in the Recycle Bin at all — whoever deleted
+    it, the owner, a permission user or the portal admin. So there was
+    no way to see it or restore it from the bin. The bin showed 0
+    deleted records even after rows had been deleted.
+ 2. Deleted Department Database rows now appear in the Recycle Bin.
+    The Records tab lists them next to deleted personal records, with
+    the row's first value, its department and tab, who deleted it and
+    when, and the date it will be erased. Each row has Restore and
+    Delete forever. The owner or a department admin of that department
+    can restore it; restoring puts it back in its tab. The 30-day rule
+    is unchanged: a row that stays deleted for 30 days is erased for
+    good, exactly as before.
+ 3. Application letters can now be deleted, and go to the Recycle Bin
+    too. There was no Delete on an application before. The detail page
+    has a Delete button for the owner, the recipient, the HR & Admin
+    department admin and the portal admin. Deleting is a soft delete:
+    the application goes to the Recycle Bin for 30 days, where it can
+    be restored, and is only erased for good from there. Its number
+    (for example AL-0001) is never reused. A deleted application no
+    longer appears in the Application Letters list, its detail page,
+    its public QR code page or Search QR.
+ 4. Who sees what in the bin. A portal admin or permission user sees
+    every deleted record, row and application. Any other user sees only
+    their own deleted records and rows, and application letters they
+    applied for or were sent. The same purge rule as for personal
+    records applies to rows and applications: a permission user can
+    restore anything, but only the portal admin can erase for good a
+    row or application that a permission user, the portal admin or he
+    himself deleted.
+ 5. Invoices are unchanged. Delete invoice still erases the invoice
+    and its lines for good at once, as in build 39, so a deleted
+    invoice does not appear in the Recycle Bin. That is by design: the
+    number is never reused and there is nothing to restore.
+ 6. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 41 (Application Letters, designation on user accounts and
+    My settings), build 40 (void invoice delete, signature line
+    centred, round request figures, HR & Admin can open any request),
+    build 39 (no watermark by default, new status notification,
+    Delete invoice), build 38 (the PENDING stamp is grey), build 37
+    (the user's PENDING stamp replaces the grey circular seal),
+    build 36 (single-line meta, signature alignment by count, Mark
+    approved / Mark pending, PENDING status), build 35 (APPROVED seal,
+    QR scan fix, third signature, new invoice and request format,
+    Approved invoice status), build 34 (dept-admin notifications for
+    invoices and requests, print alignment, Department dropdown
+    removed from the Request items tab), build 33 (Search QR looks all
+    over, public QR for every row, request Item name, Other's request
+    only for HR & Admin, print column widths), build 32 (request
+    editing and edit log), build 31 (kind name off the request
+    document), build 30 (Request Items), build 29 (login heading
+    "Welcome"), build 28 (notification lines gone at the source),
+    build 27 (Dashboard Recent activity removed) and build 26
+    (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   The database upgrades itself: the deleted_by column is added to
+   Department Database rows and the deleted_at / deleted_by columns
+   are added to application letters. No data is lost. Apply only
+   this latest zip, not the older ones in order. After upgrading, set
+   Portal settings -> "Public portal address" once, for example
+   http://192.168.1.116:8100, so new QRs point at the address your
+   office can open. The "Public portal address" setting is already
+   set on the live portal and is kept.
+
+62. TWO-STAGE APPLICATION APPROVAL, KIND LETTERHEAD, PASSWORD IN MY
+    SETTINGS, NARROWED APPLICATION DELETE, AND THE LETTER PDF FIXES
+    (2026-11-10)
+ 1. Two-stage approval replaces sending straight to HR. A user now
+    sends their application to a user in their OWN department — a
+    department user or the person with Department admin permission
+    of that department. That person is the checker. The checker
+    checks it, uploads their signature under Checked By, then
+    forwards it to ONE specific HR & Admin user. HR approves or
+    rejects it and uploads their signature under Approved By. The
+    statuses are now Pending (with the checker) -> Checked (checker
+    signed and forwarded, waiting on HR) -> Approved / Rejected.
+    The checker cannot forward until their signature is uploaded.
+    The letter's "To," is the checker, with the applicant's
+    department and the company — not HR & Admin. The Received
+    sub-tab shows an application to whoever it was sent to: the
+    checker while it is Pending, the HR approver once it is Checked.
+ 2. The letter and the PDF show two signature blocks side by side
+    under FOR OFFICE USE — Checked By (the checker's signature image
+    on top, then Checked By, then the checker's name, then the
+    checker's designation) and Approved By (the HR approver's
+    signature image on top, then Approved By, then the approver's
+    name, then the approver's designation). The blocks are laid out
+    by count the same way as the invoice and item request
+    signatures: two sit left and right, three would sit left,
+    centre and right, four would spread across the page. Every
+    signature image is drawn at the same height, so the line under
+    each signature sits on the same level, and every image is
+    CENTRED above its own title, name and designation — the image
+    used to sit at the left edge of its block while the text was
+    centred, so the line under it did not line up with the name
+    below. The spacing between the title, the name and the
+    designation is tight, like the applicant's own signature block.
+ 3. The PDF watermark comes from the status only. An approved
+    application shows the grey APPROVED seal already in the project
+    (the same seal as on an approved invoice). A rejected
+    application shows the grey REJECTED stamp (the image you
+    uploaded, converted to grey), drawn at the same size and place
+    as the seal (5.5 cm, bottom right) so it never reaches as far
+    left as the approver's signature block. A pending or checked
+    application shows no watermark. There is no separate Status or
+    Date line at the bottom of the letter or the PDF any more — the
+    status is shown by the seal or the stamp, and the date is
+    already at the top of the letter (Ref / date line).
+ 4. The application kind carries its own company name and address.
+    The department admin sets them when making or editing a kind;
+    they print on the letterhead of applications made from that
+    kind. Leave them blank and the portal company name and default
+    address are used instead. The kinds list shows the company for
+    each kind.
+ 5. Change password is now inside My settings. The My settings
+    page has a Change password box (current password, new password,
+    new password again) with the same rules as the standalone
+    Change password page: the current password must be right, the
+    two new ones must match, and the new one must differ from the
+    old one. Changing it ends the user's other logins. The
+    standalone Change password page still works.
+ 6. Application delete is narrowed and asks for a password. The
+    Delete button sits to the right of Print on the detail page
+    (Edit / Download PDF / Print / Delete, all the same height in
+    one row). Clicking it opens a password box, like Delete invoice.
+    Only the owner, an administrative permission user and the
+    portal admin can delete an application — the checker, the HR
+    approver and the HR & Admin department admin cannot. A wrong
+    password deletes nothing. A deleted application goes to the
+    Recycle Bin for 30 days, as in build 42, and its number is
+    never reused. The portal admin may open an application and
+    delete it (and download its PDF), while the Application Letters
+    list stays hidden from them.
+ 7. The letter preview is centred in its card on the detail page
+    and on the public code page, not shifted to the left. The
+    header buttons and the user-menu buttons are aligned: a form
+    inside a button row is now a flex item, so its button sits on
+    the same baseline as the links and buttons beside it.
+ 8. The detail page shows the checker and the approver in the
+    status line and in the Details rail (Sent to, Checked by,
+    Approved by). While the application is Pending, the checker
+    sees a "Check and forward" card: upload their signature, then
+    pick an HR & Admin user and forward it. Once it is Checked,
+    the HR approver (and the HR & Admin department admin) see the
+    status, note and signature forms. The owner is told when the
+    checker forwards it and when HR approves or rejects it; the
+    checker is told when HR approves or rejects it. The
+    notifications page "Who gets told what" card says so.
+ 9. NOTHING ELSE CHANGED. This build also carries the whole of
+    build 42 (Recycle Bin shows deleted Department Database rows
+    and application letters), build 41 (Application Letters,
+    designation on user accounts and My settings), build 40 (void
+    invoice delete, signature line centred, round request figures,
+    HR & Admin can open any request), build 39 (no watermark by
+    default, new status notification, Delete invoice), build 38
+    (the PENDING stamp is grey), build 37 (the user's PENDING
+    stamp replaces the grey circular seal), build 36 (single-line
+    meta, signature alignment by count, Mark approved / Mark
+    pending, PENDING status), build 35 (APPROVED seal, QR scan fix,
+    third signature, new invoice and request format, Approved
+    invoice status), build 34 (dept-admin notifications for
+    invoices and requests, print alignment, Department dropdown
+    removed from the Request items tab), build 33 (Search QR looks
+    all over, public QR for every row, request Item name, Other's
+    request only for HR & Admin, print column widths), build 32
+    (request editing and edit log), build 31 (kind name off the
+    request document), build 30 (Request Items), build 29 (login
+    heading "Welcome"), build 28 (notification lines gone at the
+    source), build 27 (Dashboard Recent activity removed) and
+    build 26 (stylesheet cache-busting, inline flat-table style).
+
+ UPGRADE: ./backup.sh, then copy your live .env OUTSIDE the portal
+   folder first (unzipping overwrites .env with the older copy in
+   the zip), unzip over the old folder, compare and restore your
+   live .env if it differs, then docker compose up -d --build.
+   The database upgrades itself: the checker and approver columns
+   are added to application letters (checker_id,
+   checker_signature_path, checker_signature_at, approver_id) and
+   the company name and address columns are added to application
+   kinds. Existing applications keep working: applications sent
+   before this build keep their HR recipient as the person they
+   are with, and their "To," still shows that recipient. No data
+   is lost. Apply only this latest zip, not the older ones in
+   order. After upgrading, set Portal settings -> "Public portal
+   address" once, for example http://192.168.1.116:8100, so new
+   QRs point at the address your office can open. The "Public
+   portal address" setting is already set on the live portal and
+   is kept.
+
+==============================================================================
+63. APPLICATION LETTER SUBJECT, WATERMARK POSITION AND SIGNATURE TRIMMING
+    (2026-11-11)
+==============================================================================
+ 1. The subject line no longer repeats "Application". It used to read
+    "Application for Leave Application for 2 days ..." when the kind
+    itself was called "Leave Application". The subject is now the kind
+    name on its own: "Leave Application for 2 days (11 November 2026
+    – 12 November 2026).". The same change is made on the letter
+    preview on the detail page and on the public code page, so the
+    subject reads the same everywhere. Other kinds read the same way:
+    "Annual Leave for 2 days ...", "Sick Leave for 2 days ...".
+ 2. The watermark (the grey APPROVED seal, or the grey REJECTED stamp)
+    on the application letter PDF has moved up, from 6.2 cm above the
+    bottom of the page to 10 cm above the bottom. It now sits in the
+    blank space on the right side of the page, beside the applicant's
+    signature and above FOR OFFICE USE, clear of both signature
+    blocks. It is still drawn at the same size (5.5 cm) and in the
+    same place for approved and rejected letters, and it still sits
+    behind the letter content. The invoice seal and stamp have NOT
+    moved — only the application letter watermark.
+ 3. An uploaded signature picture is now trimmed when it is saved.
+    A signature photo or scan often has more blank space on one side
+    than the other, so the picture was centred in its block but the
+    writing (and any line under it) sat left of the title below it.
+    Saving now crops the picture to the ink, with the same small
+    margin on every side, so the ink — and any line under it — is
+    centred above its title, name and designation. This applies to
+    both the checker's and the approver's signature, and to the
+    signature as shown on the detail page, the public code page and
+    the PDF, because all three show the same saved picture. Pictures
+    that are already tight are left alone. Signatures uploaded before
+    this build are not changed; they are trimmed the next time that
+    person uploads a signature.
+    Upgrade: nothing to back up beyond the usual. Apply only this
+    latest zip, not the older ones in order. After upgrading, set
+    Portal settings -> "Public portal address" once, for example
+    http://192.168.1.116:8100, so new QRs point at the address your
+    office can open. The "Public portal address" setting is already
+    set on the live portal and is kept.

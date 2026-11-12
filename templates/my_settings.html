@@ -16,7 +16,12 @@
 <div class="stack rail">
   <div class="card"><h2>Where your designation shows</h2>
     <p class="hint">Invoice — Prepared By · Item Request — Requested By · Application — Applicant. The designation is taken from your account at the time the document is made, so changing it here updates every new invoice, request and application you create.</p></div>
-  <div class="card"><h2>Password</h2>
-    <p class="hint">To change your password, use the Password link in your user menu.</p></div>
+  <div class="card"><h2>Change password</h2>
+    <form method="post" action="{{ url_for('auth.my_settings_password') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fd"><label for="current">Current password</label><input id="current" name="current" type="password" required autocomplete="current-password"></div>
+      <div class="fd"><label for="new">New password</label><input id="new" name="new" type="password" required autocomplete="new-password"></div>
+      <div class="fd"><label for="again">New password again</label><input id="again" name="again" type="password" required autocomplete="new-password"><div class="sub">The same rules as the Change password page: the current password must be right, the two new ones must match, and the new one must differ from the old one. Your other logins end when you change it.</div></div>
+      <div class="acts"><button class="b p" type="submit">Change password</button></div>
+    </form></div>
 </div></div>
 {% endblock %}

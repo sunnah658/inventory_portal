@@ -1090,7 +1090,8 @@ def delete_row(rid):
     db, row = _row(rid)
     if row["deleted_at"] or not ddb_can_delete_row(db, g.user, row):
         abort(403)
-    db.execute("UPDATE ddb_rows SET deleted_at=datetime('now','localtime') WHERE id=?", (rid,))
+    db.execute("UPDATE ddb_rows SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
+               (g.user["id"], rid))
     ddb_history(db, rid, g.user, "deleted")
     log(db, "ddb_delete", f"row {rid}")
     dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
@@ -1099,7 +1100,7 @@ def delete_row(rid):
                     f"{g.user['full_name']} deleted a row from the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
                     url_for("ddb.index", dept=dept["id"], tab=tab["id"] if tab else None))
     db.commit()
-    flash("Row deleted. A department admin can restore it for %d days." % config.BIN_DAYS, "ok")
+    flash("Row deleted. It is in the Recycle bin for %d days — it can be restored from there." % config.BIN_DAYS, "ok")
     return redirect(url_for("ddb.index", dept=row["department_id"]) if is_portal_admin(g.user)
                     else url_for("ddb.index"))
 
@@ -1110,7 +1111,7 @@ def restore_row(rid):
     db, row = _row(rid)
     if not ddb_is_tab_admin(db, g.user, row["department_id"]) or not row["deleted_at"]:
         abort(403)
-    db.execute("UPDATE ddb_rows SET deleted_at=NULL, version=version+1 WHERE id=?", (rid,))
+    db.execute("UPDATE ddb_rows SET deleted_at=NULL, deleted_by=NULL, version=version+1 WHERE id=?", (rid,))
     ddb_history(db, rid, g.user, "restored")
     log(db, "ddb_restore", f"row {rid}")
     dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()

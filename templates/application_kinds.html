@@ -9,9 +9,9 @@
   {{ kpi('Active', rows|selectattr('status', 'equalto', 'active')|list|length) }}
 </div>
 <div class="tw"><div>
-<div class="tb"><table><thead><tr><th>Kind</th><th>Numbering</th><th>Status</th><th></th></tr></thead><tbody>
-{% for t in rows %}<tr class="r"><td><b>{{ t['name'] }}</b><div class="sub">Application Letter</div></td><td>{{ t['number_prefix'] }}-0001</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('applications.kind_edit', kid=t['id']) }}">Edit</a></td></tr>
-{% else %}<tr><td colspan="4"><div class="empty">No kinds yet. Create the starter kinds above.</div></td></tr>{% endfor %}
+<div class="tb"><table><thead><tr><th>Kind</th><th>Numbering</th><th>Company (letterhead)</th><th>Status</th><th></th></tr></thead><tbody>
+{% for t in rows %}<tr class="r"><td><b>{{ t['name'] }}</b><div class="sub">Application Letter</div></td><td>{{ t['number_prefix'] }}-0001</td><td>{{ t['company_name'] or '—' }}{% if t['company_address'] %}<div class="sub">{{ t['company_address'] }}</div>{% endif %}</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('applications.kind_edit', kid=t['id']) }}">Edit</a></td></tr>
+{% else %}<tr><td colspan="5"><div class="empty">No kinds yet. Create the starter kinds above.</div></td></tr>{% endfor %}
 </tbody></table></div>
 </div>
 <div class="stack rail">

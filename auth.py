@@ -161,6 +161,36 @@ def change_password():
     return render_template("change_password.html")
 
 
+@bp.route("/my-settings/password", methods=["POST"])
+@login_required
+def my_settings_password():
+    """Change password from inside My settings: the same rules as the
+    standalone Change password page (current password must be right, the
+    two new ones must match, the new one must differ from the old one).
+    On success the user's other sessions end, as on the standalone page."""
+    current = request.form.get("current") or ""
+    new = request.form.get("new") or ""
+    again = request.form.get("again") or ""
+    db = get_db()
+    if not check_password_hash(g.user["password_hash"], current):
+        flash("Your current password is not correct.", "error")
+    elif password_problem(new, g.user["username"]):
+        flash(password_problem(new, g.user["username"]), "error")
+    elif new != again:
+        flash("The two new passwords do not match.", "error")
+    elif new == current:
+        flash("Choose a password different from the old one.", "error")
+    else:
+        db.execute("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?",
+                   (generate_password_hash(new), g.user["id"]))
+        db.execute("UPDATE sessions SET revoked=1 WHERE user_id=? AND id != ?",
+                   (g.user["id"], session.get("sid")))          # other logins of this user end
+        log(db, "change_password")
+        db.commit()
+        flash("Password changed.", "ok")
+    return redirect(url_for("auth.my_settings"))
+
+
 @bp.route("/my-settings", methods=["GET", "POST"])
 @login_required
 def my_settings():
@@ -169,7 +199,8 @@ def my_settings():
     username is refused). The designation is shown under the user's name in
     the owner signature on their invoices, item requests and applications.
     Changing the username takes effect at once; the user signs in with the
-    new username next time. The password stays on its own page."""
+    new username next time. The password is changed from the Change password
+    box on this same page (POST /my-settings/password)."""
     db = get_db()
     if request.method == "POST":
         full_name = (request.form.get("full_name") or "").strip()

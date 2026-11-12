@@ -330,6 +330,7 @@ CREATE TABLE IF NOT EXISTS ddb_rows (
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     deleted_at    TEXT,
+    deleted_by    INTEGER REFERENCES users(id),
     source_record_id INTEGER,               -- the personal record it was copied from (if any)
     public_code   TEXT,                     -- random HRC-##### share code for the row's public QR
     public_enabled INTEGER NOT NULL DEFAULT 0,
@@ -555,6 +556,8 @@ CREATE TABLE IF NOT EXISTS application_kinds (
     created_by    INTEGER REFERENCES users(id),
     name          TEXT NOT NULL,
     number_prefix TEXT NOT NULL DEFAULT 'LV',
+    company_name  TEXT,
+    company_address TEXT,
     next_number   INTEGER NOT NULL DEFAULT 1,
     status        TEXT NOT NULL DEFAULT 'active',
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
@@ -566,6 +569,10 @@ CREATE TABLE IF NOT EXISTS applications (
     kind_id       INTEGER REFERENCES application_kinds(id),
     owner_id      INTEGER NOT NULL REFERENCES users(id),
     recipient_id  INTEGER REFERENCES users(id),
+    checker_id    INTEGER REFERENCES users(id),
+    checker_signature_path TEXT,
+    checker_signature_at TEXT,
+    approver_id   INTEGER REFERENCES users(id),
     number        TEXT,
     status        TEXT NOT NULL DEFAULT 'pending',
     from_date     TEXT,
@@ -581,7 +588,9 @@ CREATE TABLE IF NOT EXISTS applications (
     public_enabled INTEGER NOT NULL DEFAULT 0,
     public_views  INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    deleted_at    TEXT,
+    deleted_by    INTEGER REFERENCES users(id)
 );
 CREATE TABLE IF NOT EXISTS application_history (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -598,6 +607,8 @@ CREATE TABLE IF NOT EXISTS application_history (
 CREATE INDEX IF NOT EXISTS idx_app_kind ON applications(kind_id);
 CREATE INDEX IF NOT EXISTS idx_app_owner ON applications(owner_id);
 CREATE INDEX IF NOT EXISTS idx_app_recip ON applications(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_app_checker ON applications(checker_id);
+CREATE INDEX IF NOT EXISTS idx_app_approver ON applications(approver_id);
 CREATE INDEX IF NOT EXISTS idx_app_hist ON application_history(application_id);
 CREATE INDEX IF NOT EXISTS idx_records_dept    ON records(department_id);
 CREATE INDEX IF NOT EXISTS idx_values_column   ON record_values(column_id);
@@ -778,6 +789,15 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "ddb_rows", "public_code", "TEXT")  # public QR share code (2026-11-09)
     _ensure_column(conn, "ddb_rows", "public_enabled", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "ddb_rows", "public_views", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "ddb_rows", "deleted_by", "INTEGER REFERENCES users(id)")  # who deleted the row, shown in the Recycle Bin (2026-11-10)
+    _ensure_column(conn, "applications", "deleted_at", "TEXT")  # soft delete, shown in the Recycle Bin (2026-11-10)
+    _ensure_column(conn, "applications", "deleted_by", "INTEGER REFERENCES users(id)")
+    _ensure_column(conn, "applications", "checker_id", "INTEGER REFERENCES users(id)")  # own-department checker (two-stage, 2026-11-10)
+    _ensure_column(conn, "applications", "checker_signature_path", "TEXT")  # checker's uploaded signature image
+    _ensure_column(conn, "applications", "checker_signature_at", "TEXT")  # when the checker signed
+    _ensure_column(conn, "applications", "approver_id", "INTEGER REFERENCES users(id)")  # HR & Admin user it was forwarded to
+    _ensure_column(conn, "application_kinds", "company_name", "TEXT")  # letterhead company for this kind (2026-11-10)
+    _ensure_column(conn, "application_kinds", "company_address", "TEXT")  # letterhead address for this kind
     _ensure_column(conn, "item_request_lines", "item_name", "TEXT")  # item name per line (2026-11-09)
     # per-tab column unique index (old index was department-wide)
     idx = conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='ux_ddb_column_name'").fetchone()

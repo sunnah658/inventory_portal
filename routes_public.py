@@ -182,7 +182,7 @@ def search_qr():
                     return redirect(url_for("requests.code_page", code=_req["public_code"]))
                 # application letter public code: HRC-##### -> application code page
                 try:
-                    _app = db.execute("SELECT public_code FROM applications WHERE public_code=?", (_wanted,)).fetchone()
+                    _app = db.execute("SELECT public_code FROM applications WHERE public_code=? AND deleted_at IS NULL", (_wanted,)).fetchone()
                 except Exception:
                     _app = None
                 if _app is not None:

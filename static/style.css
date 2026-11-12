@@ -48,6 +48,11 @@ main{padding:24px 28px;max-width:1400px;margin:0 auto}main.bare{padding:0;max-wi
 .narrow{max-width:460px;margin:0 auto}.medium{max-width:820px}
 .hd{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:18px;animation:up .5s both}
 .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.grp{margin:22px 0 8px;font-size:1rem}
+/* A form inside a button row (e.g. a Delete form) must be a flex item too,
+or its button sits on a different baseline from the links and buttons
+beside it. Same for the Log out form in the user menu. */
+.acts form{display:flex;align-items:center}
+.usermenu .row form{display:flex;align-items:center}
 .alert{padding:12px 16px;border-radius:var(--r);background:var(--warn-bg);border:1px solid var(--warn-bd);color:var(--warn-tx);margin-bottom:16px;font-size:.92rem}
 /* ---------- buttons: ONE rule centres text and icons the same for links and buttons */
 .b{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 17px;height:40px;line-height:1.1;border-radius:var(--r);font:inherit;font-weight:700;font-size:.9rem;border:1.5px solid var(--accent);color:var(--accent);background:var(--card);cursor:pointer;text-decoration:none;white-space:nowrap;transition:transform .15s,box-shadow .25s,background .2s}

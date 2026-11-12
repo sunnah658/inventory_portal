@@ -5,13 +5,13 @@
 {% if not kind %}<div class="card"><h1>Choose a kind first</h1><p class="hint">Go to the Application Letters page and press Create on a kind card.</p><a class="b p" href="{{ url_for('applications.list_applications') }}">Back to Application Letters</a></div>
 {% else %}
 <div class="tw"><div>
-<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Sending gives the application a number ({{ kind['number_prefix'] }}-0001…) and notifies the HR &amp; Admin user you send it to. A new application starts as Pending.</p></div></div>
+<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Sending gives the application a number ({{ kind['number_prefix'] }}-0001…) and notifies the department user you send it to. A new application starts as Pending.</p></div></div>
 <form method="post" class="card" id="appForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
-<div class="fd"><label>Send to (HR &amp; Admin Department user)</label><select name="recipient_id" required>
-{% if not recipients %}<option value="">No HR &amp; Admin user found</option>
-{% else %}<option value="">Choose a recipient…</option>{% for r in recipients %}<option value="{{ r['id'] }}">{{ r['full_name'] }} ({{ r['username'] }})</option>{% endfor %}{% endif %}
-</select><div class="sub">Applications can only be sent to a user in the HR &amp; Admin Department.</div></div>
+<div class="fd"><label>Send to (your Department user or Department admin)</label><select name="recipient_id" required>
+{% if not recipients %}<option value="">No user found in your department</option>
+{% else %}<option value="">Choose a recipient…</option>{% for r in recipients %}<option value="{{ r['id'] }}">{{ r['full_name'] }}{% if r['designation'] %} ({{ r['designation'] }}){% endif %}{% if r['is_dept_admin'] %} — Department admin{% endif %}</option>{% endfor %}{% endif %}
+</select><div class="sub">Applications are sent to a user in your own department — a department user or the person with Department admin permission. They check it, sign it, and forward it to HR &amp; Admin.</div></div>
 <div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" required></div>
 <div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" required></div>
 <div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="—"><div class="sub">Counted from the from date to the to date, both days included.</div></div>
@@ -47,11 +47,11 @@ document.getElementById('reasonT').addEventListener('input', fillBody);
 <div class="stack rail">
   <div class="card"><h2>Kind: {{ kind['name'] }}</h2>
     <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Numbering</b>{{ kind['number_prefix'] }}-0001…</div>
-    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Send to</b>HR &amp; Admin user only</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Send to</b>Your department user / admin</div>
     <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Document</b>Formal application letter</div>
   </div>
   <div class="card"><h2>How it works</h2>
-    <p class="hint">Sending gives the application a number and notifies the recipient. The recipient and the HR &amp; Admin department admin can edit it, set a note, upload their signature and change the status — you are notified of the change and can see it in "My applications". The PDF is a formal letter, not an invoice.</p></div>
+    <p class="hint">Sending gives the application a number and notifies the department user you send it to. They check it, upload their signature under Checked By, and forward it to an HR &amp; Admin user, who approves or rejects it and signs under Approved By. You are notified at each step and can see it in "My applications". The PDF is a formal letter, not an invoice.</p></div>
   {{ quick_card([
     ('Back to Application Letters', url_for('applications.list_applications'), True),
     ('Application kinds', url_for('applications.kinds'), False),

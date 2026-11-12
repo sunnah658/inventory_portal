@@ -1,4 +1,87 @@
 ==============================================================================
+ UPDATE: APPLICATION LETTER SUBJECT, WATERMARK POSITION AND SIGNATURE
+ TRIMMING (2026-11-11)
+==============================================================================
+ 1. The subject line no longer repeats "Application". It used to read
+    "Application for Leave Application for 2 days ..." when the kind
+    itself was called "Leave Application". It now reads "Leave
+    Application for 2 days (11 November 2026 – 12 November 2026)."
+    — the kind name on its own — on the letter PDF, the detail page
+    and the public code page.
+ 2. The watermark (the grey APPROVED seal, or the grey REJECTED
+    stamp) on the application letter PDF has moved up into the blank
+    space on the right side of the page, beside the applicant's
+    signature and above FOR OFFICE USE, clear of both signature
+    blocks. The invoice seal and stamp have not moved.
+ 3. An uploaded signature picture is now trimmed when it is saved,
+    so the writing (and any line under it) is centred above its
+    title, name and designation instead of sitting left of it. This
+    applies to both the checker's and the approver's signature.
+    Signatures uploaded before this build are trimmed the next time
+    that person uploads one.
+
+==============================================================================
+ UPDATE: TWO-STAGE APPLICATION APPROVAL, KIND LETTERHEAD, PASSWORD IN MY
+ SETTINGS, AND THE LETTER PDF FIXES (2026-11-10)
+==============================================================================
+ 1. Two-stage approval. An application is now sent to a user in the
+    applicant's OWN department to check, not straight to HR. The
+    checker uploads their signature under Checked By, then forwards
+    it to an HR & Admin user, who approves or rejects it and signs
+    under Approved By. Statuses: Pending -> Checked -> Approved /
+    Rejected. The checker cannot forward until their signature is
+    uploaded. The letter's "To," is the checker, with the
+    applicant's department.
+ 2. The letter and PDF show Checked By and Approved By side by side,
+    each with the signature image on top, then the title, the name
+    and the designation — laid out by count like the invoice and
+    item request signatures, with the lines under the signatures
+    level with each other and tight spacing. Every signature image
+    is centred above its own title, name and designation, so the
+    line under it lines up with the name below. An approved
+    application shows the grey APPROVED seal; a rejected one shows
+    the grey REJECTED stamp (your uploaded image, converted to
+    grey), drawn at the same size and place as the seal so it never
+    reaches as far left as the approver's signature block. There is
+    no separate Status or Date line at the bottom.
+ 3. The application kind carries its own company name and address,
+    set by the department admin when making the kind; they print on
+    the letterhead. Blank means the portal defaults.
+ 4. Change password is now inside My settings (current / new /
+    confirm, same rules as before). The standalone page still works.
+ 5. Application delete is narrowed: only the owner, an
+    administrative permission user and the portal admin can delete
+    it. The Delete button sits to the right of Print and opens a
+    password box, like Delete invoice. The checker, the HR approver
+    and the HR dept admin cannot delete it. Deleted applications
+    still go to the Recycle Bin for 30 days.
+ 6. The letter preview is centred, and the detail-page buttons
+    (Edit / Download PDF / Print / Delete) are all the same height
+    in one row.
+
+==============================================================================
+ UPDATE: RECYCLE BIN SHOWS DELETED DEPARTMENT ROWS AND APPLICATIONS (2026-11-10)
+==============================================================================
+ 1. The bug is fixed. The Recycle Bin only ever listed personal
+    records, so a row deleted from the Department Database never
+    appeared there — whoever deleted it. Deleted Department Database
+    rows now appear in the Recycle Bin, with Restore and Delete
+    forever, and the 30-day rule. The owner or a department admin can
+    restore a row from the bin.
+ 2. Application letters can now be deleted, and go to the Recycle Bin
+    too. The detail page has a Delete button for the owner, the
+    recipient, the HR & Admin department admin and the portal admin.
+    A deleted application stays in the bin for 30 days, can be
+    restored, and its number is never reused. It no longer appears in
+    the Application Letters list or on its public QR page.
+ 3. A portal admin or permission user sees every deleted record, row
+    and application in the bin. Other users see only their own. The
+    purge rule is the same as for personal records: only the portal
+    admin can erase for good something a permission user deleted.
+ 4. Invoices are unchanged: Delete invoice still erases the invoice
+    for good at once, so a deleted invoice does not appear in the bin.
+
+==============================================================================
  UPDATE: APPLICATION LETTERS, DESIGNATION AND MY SETTINGS (2026-11-10)
 ==============================================================================
  1. Application Letters — a new page inside More, for every user
