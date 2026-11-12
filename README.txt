@@ -3264,3 +3264,36 @@
     http://192.168.1.116:8100, so new QRs point at the address your
     office can open. The "Public portal address" setting is already
     set on the live portal and is kept.
+
+==============================================================================
+64. FIX: CONTAINER RESTARTING AFTER UPGRADE FROM BUILD 41/42 (2026-11-12)
+==============================================================================
+ 1. What went wrong. After applying build 44 over a portal that was
+    still on build 41 or 42, the container kept restarting and the
+    portal never came up. The log showed:
+    "sqlite3.OperationalError: no such column: checker_id" in
+    models.init_db(), at conn.executescript(SCHEMA).
+ 2. Why. Build 43 added the checker_id and approver_id columns to
+    the applications table, plus two indexes on them (idx_app_checker,
+    idx_app_approver), and put those indexes inside the SCHEMA text.
+    On startup init_db() runs the SCHEMA first and only afterwards
+    adds missing columns to tables that already exist
+    (_ensure_column). On a database made before build 43, the
+    applications table has no checker_id yet, so creating the index
+    on it crashed the whole startup — before the column could be
+    added. A fresh database never hit this, because its applications
+    table is created with all columns at once; that is why the tests
+    (which always use a fresh database) never caught it.
+ 3. The fix. The two indexes are no longer in the SCHEMA text. They
+    are now created in init_db() AFTER the _ensure_column calls that
+    add checker_id and approver_id, so the columns always exist
+    before the indexes are built. Fresh databases and upgraded
+    databases both work, and a second startup is a no-op. No data is
+    lost and nothing else changes: build 44's subject, watermark and
+    signature-trimming work is all still in here.
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). If the container is currently
+    restarting, this build fixes it — the database is upgraded on
+    the first startup and the portal comes up. Back up first and
+    keep your live .env untouched, as before. Apply only this
+    latest zip, not the older ones in order.

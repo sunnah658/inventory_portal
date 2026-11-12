@@ -1,4 +1,16 @@
 ==============================================================================
+ UPDATE: FIX FOR THE CONTAINER RESTARTING AFTER UPGRADE (2026-11-12)
+==============================================================================
+ 1. If you applied build 44 over a portal still on build 41 or 42,
+    the container kept restarting and the portal never came up, with
+    "sqlite3.OperationalError: no such column: checker_id" in the
+    log. This build fixes it. The two indexes on the applications
+    table are now created after the new columns are added, so the
+    database upgrades cleanly on the first startup and the portal
+    comes up. No data is lost. Build 44's subject, watermark and
+    signature-trimming work is all still in here.
+
+==============================================================================
  UPDATE: APPLICATION LETTER SUBJECT, WATERMARK POSITION AND SIGNATURE
  TRIMMING (2026-11-11)
 ==============================================================================

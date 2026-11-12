@@ -607,8 +607,6 @@ CREATE TABLE IF NOT EXISTS application_history (
 CREATE INDEX IF NOT EXISTS idx_app_kind ON applications(kind_id);
 CREATE INDEX IF NOT EXISTS idx_app_owner ON applications(owner_id);
 CREATE INDEX IF NOT EXISTS idx_app_recip ON applications(recipient_id);
-CREATE INDEX IF NOT EXISTS idx_app_checker ON applications(checker_id);
-CREATE INDEX IF NOT EXISTS idx_app_approver ON applications(approver_id);
 CREATE INDEX IF NOT EXISTS idx_app_hist ON application_history(application_id);
 CREATE INDEX IF NOT EXISTS idx_records_dept    ON records(department_id);
 CREATE INDEX IF NOT EXISTS idx_values_column   ON record_values(column_id);
@@ -796,6 +794,13 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "applications", "checker_signature_path", "TEXT")  # checker's uploaded signature image
     _ensure_column(conn, "applications", "checker_signature_at", "TEXT")  # when the checker signed
     _ensure_column(conn, "applications", "approver_id", "INTEGER REFERENCES users(id)")  # HR & Admin user it was forwarded to
+    # The checker/approver indexes live HERE, after the columns above —
+    # not in SCHEMA. SCHEMA runs before _ensure_column, so on a database
+    # made before build 43 (no checker_id/approver_id yet) the index
+    # creation in SCHEMA crashed init_db with "no such column:
+    # checker_id" and the container kept restarting (2026-11-12).
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_app_checker ON applications(checker_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_app_approver ON applications(approver_id)")
     _ensure_column(conn, "application_kinds", "company_name", "TEXT")  # letterhead company for this kind (2026-11-10)
     _ensure_column(conn, "application_kinds", "company_address", "TEXT")  # letterhead address for this kind
     _ensure_column(conn, "item_request_lines", "item_name", "TEXT")  # item name per line (2026-11-09)
