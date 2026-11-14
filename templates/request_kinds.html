@@ -3,23 +3,26 @@
 {% block title %}Item Request kinds{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Item Request kinds</h1><p class="hint">Design every request format once. Dept admin creates for their own department. Employees choose from these in the Request items tab. Kinds are made by the dept admin, not the portal admin.</p></div>
-<div class="acts"><a class="b p" href="{{ url_for('requests.kind_new') }}">+ New kind</a><form method="post" action="{{ url_for('requests.kind_starters') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Create starter kind</button></form></div></div>
+<div class="acts">{% if can_manage_kinds %}<a class="b p" href="{{ url_for('requests.kind_new') }}">+ New kind</a><form method="post" action="{{ url_for('requests.kind_starters') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Create starter kind</button></form>{% endif %}{% if depts %}<form method="get" action="{{ url_for('requests.kinds') }}"><select name="dept" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept_id }}>{{ d['name'] }}</option>{% endfor %}</select></form>{% endif %}</div></div>
 <div class="kp">
   {{ kpi('Kinds', rows|length) }}
   {{ kpi('Active', rows|selectattr('status', 'equalto', 'active')|list|length) }}
 </div>
 <div class="tw"><div>
-<div class="tb"><table><thead><tr><th>Kind</th><th>Numbering</th><th>Currency</th><th>Signatures</th><th>Status</th><th></th></tr></thead><tbody>
-{% for t in rows %}<tr class="r"><td><b>{{ t['name'] }}</b><div class="sub">Item Request</div></td><td>{{ t['number_prefix'] }}-0001</td><td>{{ t['default_currency'] }}</td><td>{{ (t['signatures_json']|length) if t['signatures_json'] else 0 }} signature blocks</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('requests.kind_edit', kid=t['id']) }}">Edit</a></td></tr>
-{% else %}<tr><td colspan="6"><div class="empty">No kinds yet. Create the starter kind above.</div></td></tr>{% endfor %}
+<form method="post" action="{{ url_for('requests.kinds_delete') }}" onsubmit="return confirm('Delete the selected kinds? The requests already made from them stay as they are.')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="tb"><table><thead><tr><th><input type="checkbox" onclick="var cs=document.querySelectorAll('input[name=kind_ids]');for(var i=0;i<cs.length;i++){cs[i].checked=this.checked;}"></th><th>Kind</th><th>Numbering</th><th>Currency</th><th>Signatures</th><th>Status</th><th></th></tr></thead><tbody>
+{% for t in rows %}<tr class="r"><td><input type="checkbox" name="kind_ids" value="{{ t['id'] }}"></td><td><b>{{ t['name'] }}</b><div class="sub">Item Request</div></td><td>{{ t['number_prefix'] }}-0001</td><td>{{ t['default_currency'] }}</td><td>{{ t['sig_count'] }} signature blocks</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell">{% if can_manage_kinds %}<a class="b sm" href="{{ url_for('requests.kind_edit', kid=t['id']) }}">Edit</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7"><div class="empty">No kinds yet. Create the starter kind above.</div></td></tr>{% endfor %}
 </tbody></table></div>
+<div class="acts" style="margin-top:12px"><button class="b dg" type="submit">Delete selected</button><span class="hint">Deleted kinds disappear at once. The requests made from them stay as they are.</span></div>
+</form>
 </div>
 <div class="stack rail">
   <div class="card"><h2>How kinds work</h2>
-    <p class="hint">Requests already sent keep the format they were made with, even if you change the kind later. The request number is per-kind and never reused. The kind's signature blocks are the ones that appear on the request — add as many as you want.</p></div>
+    <p class="hint">Requests already sent keep the format they were made with, even if you change the kind later. The request number is per-kind and never reused. Requests are approved through the steps the user picks when sending — the kind no longer carries signature blocks.</p></div>
   {{ quick_card([
-    ('+ New kind', url_for('requests.kind_new'), True),
+    ('+ New kind', url_for('requests.kind_new'), True) if can_manage_kinds else None,
     ('Back to Request items', url_for('requests.list_requests'), False),
-  ]) }}
+  ] | select) }}
 </div></div>
 {% endblock %}

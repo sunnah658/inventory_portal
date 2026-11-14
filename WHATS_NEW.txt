@@ -1,4 +1,35 @@
 ==============================================================================
+ UPDATE: INVOICE + REQUEST APPROVAL CHAINS, WATERMARK CHOICE, TEMPLATE/KIND DELETE (2026-11-14)
+==============================================================================
+ 1. The department admin no longer has a signature option on the
+    invoice format or request item format — that section is gone
+    from both forms. The user creating the invoice or request
+    picks up to 3 approval steps instead, exactly like
+    Application Letters, with the same "Use my signature" tick
+    before approving or rejecting.
+ 2. Invoices: Finalise now gives the number and starts the
+    invoice forwarding (status Pending). Roles None, Checked By,
+    Approved By, Authorised By, people from any department. A
+    rejection stops it and the REJECTED stamp appears; the final
+    approval shows the APPROVED seal. "Mark approved" and "Mark
+    pending" are gone.
+ 3. Requests: roles None, Checked By, Send/Request To, Approved
+    By, Authorised By, people from your department, HR & Admin
+    or Management. Exactly one step is Send/Request To. After
+    the last approval the APPROVED seal appears and the
+    Send/Request To user can change the status to Pending,
+    Issued, Paid or Handover.
+ 4. Two PDF download buttons on invoices and requests: with the
+    watermark, and without it.
+ 5. Tick boxes + "Delete selected" on the Invoice templates and
+    Item Request kinds pages (dept admin: own department;
+    portal admin and permission users: any department). Deleted
+    templates/kinds disappear at once, not into the Recycle
+    Bin; the invoices and requests already made from them stay.
+ 6. Old signatures and old documents are unchanged; only new
+    invoices and requests use the chain.
+
+==============================================================================
  UPDATE: CUSTOM APPLICATION + CLOSING IN THE BODY (2026-11-14)
 ==============================================================================
  1. A new "Custom Application" kind exists by default in every

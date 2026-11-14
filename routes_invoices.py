@@ -39,7 +39,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import display_code, external_url, new_random_code_text, notify_ddb_row_task, notify_ddb_task, notify_dept_task
+from core import display_code, external_url, new_random_code_text, notify, notify_admin_task, notify_ddb_row_task, notify_ddb_task, notify_dept_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("invoices", __name__)
@@ -266,14 +266,62 @@ def shared_list():
 @bp.route("/invoices/templates")
 @login_required
 def templates():
-    _dept_admin_required()
+    # A department admin sees their own department's templates; the
+    # portal admin and administrative permission users see any
+    # department's (with a department switcher) so they can delete a
+    # template from any department.
+    if not (_is_dept_admin(g.user) or is_portal_admin(g.user)):
+        abort(403)
     db = get_db()
-    rows = db.execute("SELECT * FROM invoice_templates WHERE department_id=? ORDER BY id", (g.user["department_id"],)).fetchall()
+    if is_portal_admin(g.user):
+        dept_id = request.args.get("dept", type=int) or g.user["department_id"] or db.execute("SELECT id FROM departments ORDER BY id LIMIT 1").fetchone()["id"]
+        depts = db.execute("SELECT id, name FROM departments ORDER BY id").fetchall()
+    else:
+        dept_id = g.user["department_id"]
+        depts = []
+    rows = db.execute("SELECT * FROM invoice_templates WHERE department_id=? AND status != 'deleted' ORDER BY id", (dept_id,)).fetchall()
+    # The list shows how many signature blocks the template still carries.
+    # (The template used to render len() of the raw JSON text, which counted
+    # characters — '[]' showed as 2. Old templates keep their stored blocks;
+    # new ones carry none.)
+    rows = [dict(r, sig_count=len(json.loads(r["signatures_json"] or "[]"))) for r in rows]
     shared = db.execute("SELECT s.*, t.name AS template_name, t.kind AS kind, d.name AS from_dept FROM invoice_template_shares s "
                         "JOIN invoice_templates t ON t.id=s.template_id JOIN departments d ON d.id=s.from_department_id "
                         "WHERE s.to_department_id=? AND s.revoked=0 AND (s.expires IS NULL OR s.expires='' OR s.expires >= date('now','localtime')) ORDER BY s.id DESC",
-                        (g.user["department_id"],)).fetchall()
-    return render_template("invoice_templates.html", rows=rows, shared=shared, colours=KIND_COLOURS)
+                        (dept_id,)).fetchall()
+    return render_template("invoice_templates.html", rows=rows, shared=shared, colours=KIND_COLOURS,
+                           depts=depts, dept_id=dept_id,
+                           can_manage_templates=(_is_dept_admin(g.user) and g.user["department_id"] == dept_id))
+
+@bp.route("/invoices/templates/delete", methods=["POST"])
+@login_required
+def templates_delete():
+    """Delete the selected invoice templates. A department admin deletes
+    only their own department's templates; the portal admin and
+    administrative permission users delete any department's. A deleted
+    template disappears from the list and the picker at once and does not
+    go to the Recycle Bin — but the invoices already made from it stay
+    exactly as they are: their frozen copy keeps working, and the
+    template row is kept behind the scenes for them."""
+    db = get_db()
+    ids = [int(x) for x in request.form.getlist("template_ids") if str(x).isdigit()]
+    if not ids:
+        flash("Select at least one template to delete.", "error")
+        return redirect(url_for("invoices.templates"))
+    rows = db.execute("SELECT * FROM invoice_templates WHERE id IN (%s)" % ",".join("?" * len(ids)), tuple(ids)).fetchall()
+    if not rows:
+        flash("Those templates were not found.", "error")
+        return redirect(url_for("invoices.templates"))
+    for t in rows:
+        if not (is_portal_admin(g.user) or (_is_dept_admin(g.user) and t["department_id"] == g.user["department_id"])):
+            abort(403)
+    db.execute("UPDATE invoice_templates SET status='deleted' WHERE id IN (%s)" % ",".join("?" * len(ids)), tuple(ids))
+    log(db, "invoice_template_deleted", f"{len(rows)} template(s)")
+    db.commit()
+    flash(f"Deleted {len(rows)} template{'s' if len(rows) != 1 else ''}. The invoices made from them stay as they are.", "ok")
+    if is_portal_admin(g.user):
+        return redirect(url_for("invoices.templates", dept=rows[0]["department_id"]))
+    return redirect(url_for("invoices.templates"))
 
 @bp.route("/invoices/templates/starters", methods=["POST"])
 @login_required
@@ -281,7 +329,7 @@ def starters():
     _dept_admin_required()
     db = get_db()
     for s in STARTERS:
-        if db.execute("SELECT 1 FROM invoice_templates WHERE department_id=? AND name=?", (g.user["department_id"], s["name"])).fetchone():
+        if db.execute("SELECT 1 FROM invoice_templates WHERE department_id=? AND name=? AND status != 'deleted'", (g.user["department_id"], s["name"])).fetchone():
             continue
         db.execute("INSERT INTO invoice_templates(department_id,created_by,name,kind,title,subtitle,number_prefix,default_currency,vat_percent,show_tax,notes,item_columns_json,top_fields_json,signatures_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (g.user["department_id"], g.user["id"], s["name"], s["kind"], s["title"], s["subtitle"], s["prefix"], "BDT", s["vat"], s["show_tax"], s["notes"], s["cols"], s["top"], json.dumps([{"title": "Authorized by", "person": "", "designation": ""}, {"title": "Approved by", "person": "", "designation": ""}]), "active"))
@@ -462,6 +510,15 @@ def invoice_new():
         cur = request.form.get("currency") or tpl["default_currency"]
         if cur not in CURRENCIES:
             cur = tpl["default_currency"]
+        # Who approves it: up to 3 steps, picked here, exactly like an
+        # application letter. The dept admin no longer sets signatures on
+        # the template — the user picks the chain when the invoice is made.
+        chain, chain_err = _parse_invoice_chain(request.form, _invoice_chain_people(db))
+        if chain_err:
+            flash(chain_err, "error")
+            return render_template("invoice_form.html", tpl=tpl, inv=None, lines=[], currencies=CURRENCIES,
+                                   chain_people=_invoice_chain_people(db), chain_depts=_invoice_chain_depts(db),
+                                   steps=_chain_from_form(request.form))
         lines = _parse_lines(request.form, tpl["kind"])
         if not lines:
             flash("Add at least one line.", "error")
@@ -469,13 +526,13 @@ def invoice_new():
             # Tax tick: unticked template = no tax option at all for the user.
             sub, vat, total = _totals(lines, tpl["vat_percent"] if tpl["show_tax"] else 0)
             words = amount_in_words(total, cur) if tpl["show_amount_in_words"] else ""
-            sigs = _sigs(request.form, tpl)
             iid = db.execute("INSERT INTO invoices(department_id,owner_id,template_id,title,subtitle,currency,customer_name,customer_address,reference,invoice_date,status,subtotal,vat_amount,total,amount_in_words,notes,signatures_json,template_snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (g.user["department_id"], g.user["id"], tpl["id"], tpl["title"], tpl["subtitle"], cur,
                               (request.form.get("customer_name") or "").strip(), request.form.get("customer_address") or "", (request.form.get("reference") or "").strip(),
                               request.form.get("invoice_date") or date.today().isoformat(), "draft", float(sub), float(vat), float(total), words,
-                              request.form.get("notes") or tpl["notes"], json.dumps(sigs),
+                              request.form.get("notes") or tpl["notes"], "[]",
                               json.dumps({"name": tpl["name"], "kind": tpl["kind"], "title": tpl["title"], "subtitle": tpl["subtitle"], "vat_percent": tpl["vat_percent"], "show_tax": tpl["show_tax"], "logo_left": tpl["logo_left"], "logo_right": tpl["logo_right"], "watermark_on": tpl["watermark_on"], "watermark_text": tpl["watermark_text"], "company_name": tpl["company_name"], "company_address": tpl["company_address"], "show_address": tpl["show_address"]}))).lastrowid
+            _save_invoice_chain(db, iid, chain)
             for i, l in enumerate(lines):
                 db.execute("INSERT INTO invoice_lines(invoice_id,position,description,qty,rate,amount,line_date,from_place,to_place,mode,purpose,spec) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (iid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"]), l["line_date"], l["from_place"], l["to_place"], l["mode"], l["purpose"], l["spec"]))
@@ -491,15 +548,17 @@ def invoice_new():
             db.commit()
             flash("Draft saved. Finalize it to give it a number.", "ok")
             return redirect(url_for("invoices.detail", iid=iid))
-    return render_template("invoice_form.html", tpl=tpl, inv=None, lines=[], sigs=json.loads(tpl["signatures_json"] or "[]") if tpl else [], currencies=CURRENCIES)
+    return render_template("invoice_form.html", tpl=tpl, inv=None, lines=[], currencies=CURRENCIES,
+                           chain_people=_invoice_chain_people(db), chain_depts=_invoice_chain_depts(db), steps=[])
 
 @bp.route("/invoices/<int:iid>/edit", methods=["GET", "POST"])
 @login_required
 def invoice_edit(iid):
     db = get_db(); inv = _invoice(db, iid)
-    # The owner can edit a draft, an approved invoice or a pending invoice
-    # that has no number yet. Once it has a number it is locked.
-    if inv["owner_id"] != g.user["id"] or inv["status"] not in ("draft", "approved", "pending") or inv["number"]:
+    # The owner can edit a draft. Once it has a number it is locked. The
+    # owner no longer sets Approved or Pending here — the chain decides
+    # the status once the invoice is finalised.
+    if inv["owner_id"] != g.user["id"] or inv["status"] != "draft" or inv["number"]:
         abort(403)
     tpl = _template(db, inv["template_id"]) if inv["template_id"] else None
     lines = _lines(db, iid)
@@ -507,103 +566,74 @@ def invoice_edit(iid):
         cur = request.form.get("currency") or inv["currency"]
         if cur not in CURRENCIES:
             cur = inv["currency"]
-        # The owner can set the status to Approved or Pending while editing
-        # (or back to Draft). Anything else is ignored.
-        _st = (request.form.get("status") or "").strip().lower()
-        new_status = _st if _st in ("approved", "pending") else "draft"
+        chain, chain_err = _parse_invoice_chain(request.form, _invoice_chain_people(db))
+        if chain_err:
+            flash(chain_err, "error")
+            return render_template("invoice_form.html", tpl=tpl, inv=inv, lines=lines, currencies=CURRENCIES,
+                                   chain_people=_invoice_chain_people(db), chain_depts=_invoice_chain_depts(db),
+                                   steps=_chain_from_form(request.form))
         new_lines = _parse_lines(request.form, tpl["kind"])
         sub, vat, total = _totals(new_lines, tpl["vat_percent"] if tpl["show_tax"] else 0)
         words = amount_in_words(total, cur) if tpl["show_amount_in_words"] else ""
-        db.execute("UPDATE invoices SET currency=?,customer_name=?,customer_address=?,reference=?,invoice_date=?,subtotal=?,vat_amount=?,total=?,amount_in_words=?,notes=?,signatures_json=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
+        db.execute("UPDATE invoices SET currency=?,customer_name=?,customer_address=?,reference=?,invoice_date=?,subtotal=?,vat_amount=?,total=?,amount_in_words=?,notes=?,updated_at=datetime('now','localtime') WHERE id=?",
                    (cur, (request.form.get("customer_name") or "").strip(), request.form.get("customer_address") or "", (request.form.get("reference") or "").strip(),
-                    request.form.get("invoice_date") or inv["invoice_date"], float(sub), float(vat), float(total), words, request.form.get("notes") or inv["notes"], json.dumps(_sigs(request.form, tpl)), new_status, iid))
+                    request.form.get("invoice_date") or inv["invoice_date"], float(sub), float(vat), float(total), words, request.form.get("notes") or inv["notes"], iid))
+        _save_invoice_chain(db, iid, chain)
         db.execute("DELETE FROM invoice_lines WHERE invoice_id=?", (iid,))
         for i, l in enumerate(new_lines):
             db.execute("INSERT INTO invoice_lines(invoice_id,position,description,qty,rate,amount,line_date,from_place,to_place,mode,purpose,spec) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                        (iid, i, l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"]), l["line_date"], l["from_place"], l["to_place"], l["mode"], l["purpose"], l["spec"]))
-        # The dept admin is told when the owner approves the invoice here,
-        # or marks it Pending.
-        if new_status in ("approved", "pending") and inv["status"] != new_status:
-            _dept = db.execute("SELECT * FROM departments WHERE id=?", (inv["department_id"],)).fetchone()
-            notify_ddb_task(db, g.user, _dept,
-                            f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to {'Approved' if new_status == 'approved' else 'Pending'}.",
-                            url_for("invoices.detail", iid=iid))
         db.commit(); flash("Draft saved.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
-    return render_template("invoice_form.html", tpl=tpl, inv=inv, lines=lines, sigs=json.loads(inv["signatures_json"] or "[]") if inv["signatures_json"] else (json.loads(tpl["signatures_json"] or "[]") if tpl else []), currencies=CURRENCIES)
+    return render_template("invoice_form.html", tpl=tpl, inv=inv, lines=lines, currencies=CURRENCIES,
+                           chain_people=_invoice_chain_people(db), chain_depts=_invoice_chain_depts(db),
+                           steps=[{"role": s["role"], "user_id": s["user_id"]} for s in _invoice_steps(db, iid)])
 
 @bp.route("/invoices/<int:iid>/finalize", methods=["POST"])
 @login_required
 def invoice_finalize(iid):
     db = get_db(); inv = _invoice(db, iid)
-    if inv["owner_id"] != g.user["id"] or inv["status"] not in ("draft", "approved", "pending"):
+    if inv["owner_id"] != g.user["id"] or inv["status"] != "draft":
         abort(403)
+    steps = _invoice_steps(db, iid)
+    if not steps:
+        # A draft made before the chain existed has nobody to forward to:
+        # the owner picks the steps on the edit page first.
+        flash("Choose who approves this invoice first — edit the draft and pick at least one step.", "error")
+        return redirect(url_for("invoices.invoice_edit", iid=iid))
     tpl = _template(db, inv["template_id"])
     number = f"{tpl['number_prefix']}-{tpl['next_number']:04d}"
     db.execute("UPDATE invoice_templates SET next_number=next_number+1 WHERE id=?", (tpl["id"],))
-    # An invoice the owner already approved keeps its Approved status (and
-    # its seal) when it gets a number; a pending one keeps Pending (and its
-    # seal); a plain draft becomes Issued.
-    new_status = inv["status"] if inv["status"] in ("approved", "pending") else "issued"
-    db.execute("UPDATE invoices SET number=?,status=?,updated_at=datetime('now','localtime') WHERE id=?", (number, new_status, iid))
+    # Finalising gives the invoice its number and starts it forwarding:
+    # the status becomes Pending and the first person in the chain is
+    # told it is with them. The last step's approval makes it Approved;
+    # a rejection at any step makes it Rejected.
+    db.execute("UPDATE invoices SET number=?,status='pending',updated_at=datetime('now','localtime') WHERE id=?", (number, iid))
     log(db, "invoice_issued", number)
+    first = steps[0]
+    if first["user_id"]:
+        notify(db, [first["user_id"]],
+               f"{g.user['full_name']} sent you invoice {number} to {INVOICE_STEP_VERBS[first['role']]}.",
+               url_for("invoices.detail", iid=iid), skip=g.user["id"])
     # The department admin is told a user in their department finalised
-    # (issued) an invoice.
+    # an invoice — except the first person in the chain, who was already
+    # told directly above.
     _dept = db.execute("SELECT * FROM departments WHERE id=?", (inv["department_id"],)).fetchone()
     notify_ddb_task(db, g.user, _dept,
                     f"{g.user['full_name']} finalised invoice {number}.",
-                    url_for("invoices.detail", iid=iid))
-    db.commit(); flash(f"Invoice finalized and numbered {number}. It is now locked.", "ok")
+                    url_for("invoices.detail", iid=iid), skip=first["user_id"] if first["user_id"] else None)
+    db.commit()
+    flash(f"Invoice finalized and numbered {number}. It is now with {first['full_name'] or 'the first approver'}. It is now locked.", "ok")
     return redirect(url_for("invoices.detail", iid=iid))
 
-@bp.route("/invoices/<int:iid>/pending", methods=["POST"])
+@bp.route("/invoices/<int:iid>/step-signature", methods=["POST"])
 @login_required
-def invoice_pending(iid):
-    """The owner (or the dept admin) marks an invoice Pending. The grey
-    PENDING stamp then appears on its PDF. This replaces the old Mark Paid
-    action: an invoice is Approved or Pending, not Paid."""
-    db = get_db(); inv = _invoice(db, iid)
-    if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] not in ("draft", "issued", "approved"):
-        abort(403)
-    db.execute("UPDATE invoices SET status='pending',updated_at=datetime('now','localtime') WHERE id=?", (iid,))
-    log(db, "invoice_pending", inv["number"] or str(iid))
-    # A dept admin marking it Pending is a dept task (portal admin +
-    # permission user are told); the owner marking his own invoice Pending
-    # is a user task in the Department Database (that department's dept
-    # admin is told).
-    if _is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"]:
-        notify_dept_task(db, g.user,
-                         f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Pending.",
-                         url_for("invoices.detail", iid=iid))
-    else:
-        notify_ddb_row_task(db, g.user, inv["department_id"],
-                            f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Pending.",
-                            url_for("invoices.detail", iid=iid))
-    db.commit()
-    flash("Marked Pending. The PENDING stamp now shows on its PDF.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
+def invoice_step_signature(iid):
+    return _sign_invoice_step(iid)
 
-@bp.route("/invoices/<int:iid>/approve", methods=["POST"])
+@bp.route("/invoices/<int:iid>/decide", methods=["POST"])
 @login_required
-def invoice_approve(iid):
-    """The owner (or the dept admin) marks an invoice Approved. The grey
-    APPROVED seal then appears on its PDF."""
-    db = get_db(); inv = _invoice(db, iid)
-    if not (inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])) or inv["status"] not in ("draft", "issued", "pending"):
-        abort(403)
-    db.execute("UPDATE invoices SET status='approved',updated_at=datetime('now','localtime') WHERE id=?", (iid,))
-    log(db, "invoice_approved", inv["number"] or str(iid))
-    # A dept admin approving is a dept task (portal admin + permission
-    # user are told); the owner approving his own invoice is a user task
-    # in the Department Database (that department's dept admin is told).
-    if _is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"]:
-        notify_dept_task(db, g.user,
-                         f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Approved.",
-                         url_for("invoices.detail", iid=iid))
-    else:
-        notify_ddb_row_task(db, g.user, inv["department_id"],
-                            f"{g.user['full_name']} changed the status for {inv['number'] or 'draft'} to Approved.",
-                            url_for("invoices.detail", iid=iid))
-    db.commit()
-    flash("Marked Approved. The APPROVED seal now shows on its PDF.", "ok"); return redirect(url_for("invoices.detail", iid=iid))
+def invoice_decide(iid):
+    return _decide_invoice(iid)
 
 @bp.route("/invoices/<int:iid>/void", methods=["POST"])
 @login_required
@@ -639,9 +669,13 @@ def detail(iid):
     if inv["public_code"] and inv["public_enabled"]:
         qr_url = external_url(db, "invoices.code_page", code=inv["public_code"])
         qr_svg = _qr_svg(qr_url)
+    steps = _invoice_steps(db, iid)
     return render_template("invoice_detail.html", inv=inv, lines=lines, tpl=tpl, owner_name=owner["full_name"] if owner else "",
                            qr_svg=qr_svg, qr_url=qr_url, colour=KIND_COLOURS.get((json.loads(inv["template_snapshot_json"] or "{}").get("kind") or "billing"), "#0F7CA6"),
-                           can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] in ("draft", "approved", "pending") and not inv["number"]),
+                           steps=steps, step_roles=INVOICE_STEP_ROLES, current_step=_current_invoice_step(db, iid),
+                           can_act=_can_act_invoice(db, g.user, inv),
+                           can_finalize=(inv["owner_id"] == g.user["id"] and inv["status"] == "draft" and not inv["number"]),
+                           can_edit=(inv["owner_id"] == g.user["id"] and inv["status"] == "draft" and not inv["number"]),
                            can_delete=(is_portal_admin(g.user) or inv["owner_id"] == g.user["id"]),
                            can_manage=(is_portal_admin(g.user) or inv["owner_id"] == g.user["id"] or (_is_dept_admin(g.user) and inv["department_id"] == g.user["department_id"])))
 
@@ -661,6 +695,16 @@ def invoice_delete(iid):
         return redirect(url_for("invoices.detail", iid=iid))
     number = inv["number"] or "draft"
     dept_id = inv["department_id"]
+    # The chain steps' signature files are removed too (the step rows go
+    # with the invoice through the foreign key, but the files do not).
+    for _s in _invoice_steps(db, iid):
+        if _s["signature_path"]:
+            try:
+                _f = os.path.join(config.UPLOAD_DIR, "inv_signatures", os.path.basename(_s["signature_path"]))
+                if os.path.exists(_f):
+                    os.remove(_f)
+            except Exception:
+                pass
     db.execute("DELETE FROM invoice_lines WHERE invoice_id=?", (iid,))
     db.execute("DELETE FROM invoices WHERE id=?", (iid,))
     log(db, "invoice_deleted", number)
@@ -682,7 +726,10 @@ def invoice_pdf(iid):
     db = get_db(); inv = _invoice(db, iid)
     if not _can_view(db, g.user, inv):
         abort(403)
-    data = _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True)
+    # ?watermark=0 downloads the PDF without any watermark (no seal, no
+    # stamp, no diagonal template watermark); the default shows it.
+    data = _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True,
+                      hide_watermark=(request.args.get("watermark") == "0"))
     resp = Response(data, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = f'attachment; filename="{(inv["number"] or "invoice")}.pdf"'
     return resp
@@ -749,7 +796,7 @@ def code_pdf(code):
     resp.headers["Content-Disposition"] = f'attachment; filename="{code}.pdf"'
     return resp
 
-def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True):
+def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True, hide_watermark=False):
     lines = _lines(db, inv["id"])
     try:
         snap = json.loads(inv["template_snapshot_json"] or "{}")
@@ -783,7 +830,8 @@ def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True):
         company=company, company_address=address, show_address=bool(show_address),
         logo_left=_logo_path(snap.get("logo_left")), logo_right=_logo_path(snap.get("logo_right")),
         watermark_on=bool(snap.get("watermark_on")), watermark_text=snap.get("watermark_text") or "",
-        qr_url=qr_url, is_approved=(inv["status"] == "approved"), is_pending=(inv["status"] == "pending"))
+        qr_url=qr_url, is_approved=(inv["status"] == "approved"), is_pending=(inv["status"] == "pending"),
+        is_rejected=(inv["status"] == "rejected"), hide_watermark=hide_watermark)
 
 def _pdf_cols(kind):
     if kind == "conveyance":
@@ -823,18 +871,241 @@ def _pdf_totals(inv, show_amounts):
     return out
 
 def _pdf_sigs(inv):
-    """Every signature on the invoice: the owner's (Prepared By) plus ALL
-    of the template's signatures (Checked By, Approved, Authorized By, and
-    any more the dept admin set). The PDF used to take only the first two
-    template signatures and cap the total at three, so the third one never
-    showed. Each entry is (title, person, designation)."""
+    """Every signature on the invoice. A chained invoice (made after the
+    approval chain) shows the owner's block (Prepared By) plus one block
+    per chain step, each with the step's saved signature image, the role
+    label ("Rejected By" when that step rejected), the name, the
+    designation and the department — the same blocks as the application
+    letter's FOR OFFICE USE. An older invoice keeps exactly what it had:
+    the owner's block plus ALL of the template's signatures as text
+    (title, person, designation), from its own frozen copy."""
+    steps = _invoice_steps(get_db(), inv["id"])
+    owner = get_db().execute("SELECT full_name, designation FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
+    if steps:
+        out = [("Prepared By", owner["full_name"] if owner else "", owner["designation"] if owner else "")]
+        for s in steps:
+            label = "Rejected By" if s["status"] == "rejected" else INVOICE_STEP_ROLES.get(s["role"], s["role"])
+            img = os.path.join(config.UPLOAD_DIR, "inv_signatures", os.path.basename(s["signature_path"])) if s["signature_path"] else None
+            out.append((label, s["full_name"] or "", s["designation"] or "", s["dept_name"] or "", img))
+        return out
     try:
         sigs = json.loads(inv["signatures_json"] or "[]")
     except Exception:
         sigs = []
     out = []
-    owner = get_db().execute("SELECT full_name, designation FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
     out.append(("Prepared By", owner["full_name"] if owner else "", owner["designation"] if owner else ""))
     for s in sigs:
         out.append((s.get("title") or "Authorized", s.get("person") or "", s.get("designation") or ""))
     return out
+
+# ---------------------------------------------------------------- approval chain
+# An invoice is approved the same way as an application letter: the owner
+# picks up to 3 steps when the draft is made (role + a person from ANY
+# department), Finalise gives the invoice its number and starts it
+# forwarding through the steps in order, each person must tick "Use my
+# signature" before approving or rejecting, and the invoice's status
+# follows the chain — Pending while it forwards, Approved when the last
+# person approves, Rejected as soon as anyone rejects.
+INVOICE_STEP_ROLES = {"checked": "Checked By", "approved": "Approved By", "authorised": "Authorised By"}
+INVOICE_STEP_VERBS = {"checked": "check", "approved": "approve", "authorised": "authorise"}
+
+def _invoice_steps(db, iid):
+    """The approval chain for an invoice, in order, with each step's user's name, designation and department. A step whose user was purged has user_id None and no name — it still shows, with a blank name."""
+    return db.execute("SELECT s.*, u.full_name, u.designation, d.name AS dept_name FROM invoice_steps s "
+                      "LEFT JOIN users u ON u.id=s.user_id LEFT JOIN departments d ON d.id=u.department_id "
+                      "WHERE s.invoice_id=? ORDER BY s.position", (iid,)).fetchall()
+
+def _current_invoice_step(db, iid):
+    """The first step that has not decided yet — the person it is currently with. None once every step has decided."""
+    for s in _invoice_steps(db, iid):
+        if s["status"] == "pending":
+            return s
+    return None
+
+def _invoice_step_user_ids(db, iid):
+    return [s["user_id"] for s in _invoice_steps(db, iid) if s["user_id"]]
+
+def _sync_invoice_from_steps(db, iid):
+    """Keep the invoice's status in step with its chain: Rejected as soon as any step rejects, Approved once every step has approved, Pending while any step is still waiting."""
+    steps = _invoice_steps(db, iid)
+    if not steps:
+        return
+    if any(s["status"] == "rejected" for s in steps):
+        new_status = "rejected"
+    elif all(s["status"] == "approved" for s in steps):
+        new_status = "approved"
+    else:
+        new_status = "pending"
+    db.execute("UPDATE invoices SET status=?,updated_at=datetime('now','localtime') WHERE id=?", (new_status, iid))
+
+def _invoice_chain_people(db):
+    """Everyone a step in an invoice chain can be sent to: active, approved users in ANY department. Department admins first in each department, then by name."""
+    return db.execute("SELECT id, full_name, designation, is_dept_admin, department_id FROM users "
+                      "WHERE is_active=1 AND is_deleted=0 AND approval_status='approved' "
+                      "ORDER BY department_id, is_dept_admin DESC, full_name").fetchall()
+
+def _invoice_chain_depts(db):
+    return db.execute("SELECT id, name FROM departments ORDER BY id").fetchall()
+
+def _parse_invoice_chain(form, people):
+    """Read the three step rows (stepN_role / stepN_user) from the form. Returns (chain, error): chain is a list of (role, user_id) in order. At least one step must be chosen, no person twice, and every person must be one of the chain people."""
+    chain = []
+    seen = set()
+    ids = {p["id"] for p in people}
+    for i in (1, 2, 3):
+        role = (form.get(f"step{i}_role") or "none").strip().lower()
+        if role == "none":
+            continue
+        if role not in INVOICE_STEP_ROLES:
+            return None, "Choose a role for each step: None, Checked By, Approved By or Authorised By."
+        try:
+            uid = int(form.get(f"step{i}_user") or 0)
+        except ValueError:
+            uid = 0
+        if uid not in ids:
+            return None, "Choose a person for each step."
+        if uid in seen:
+            return None, "Choose a different person for each step."
+        seen.add(uid)
+        chain.append((role, uid))
+    if not chain:
+        return None, "Choose at least one step — who approves this invoice?"
+    return chain, None
+
+def _chain_from_form(form):
+    """The step rows as the form sent them, for re-showing the form after an error: a list of {"role": ..., "user_id": ...} dicts, one per used step."""
+    out = []
+    for i in (1, 2, 3):
+        role = (form.get(f"step{i}_role") or "none").strip().lower()
+        if role == "none":
+            continue
+        try:
+            uid = int(form.get(f"step{i}_user") or 0)
+        except ValueError:
+            uid = 0
+        out.append({"role": role, "user_id": uid})
+    return out
+
+def _save_invoice_chain(db, iid, chain):
+    db.execute("DELETE FROM invoice_steps WHERE invoice_id=?", (iid,))
+    for pos, (role, uid) in enumerate(chain, start=1):
+        db.execute("INSERT INTO invoice_steps(invoice_id,position,role,user_id) VALUES (?,?,?,?)", (iid, pos, role, uid))
+
+def _use_my_signature_for(folder):
+    """Copy the logged-in user's saved signature (the PNG from My settings) into the given signatures folder, under a new random name, so the document keeps its own copy even if the user later changes their signature in My settings. Returns the new file name, or None when the user has no saved signature."""
+    saved = g.user["signature_path"] if g.user is not None and "signature_path" in g.user.keys() else None
+    if not saved:
+        return None
+    src = os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(saved))
+    if not os.path.exists(src):
+        return None
+    dest = os.path.join(config.UPLOAD_DIR, folder)
+    os.makedirs(dest, exist_ok=True)
+    name = secrets.token_hex(10) + ".png"
+    try:
+        import shutil
+        shutil.copyfile(src, os.path.join(dest, name))
+    except Exception:
+        return None
+    return name
+
+def _can_act_invoice(db, user, inv):
+    """Only the person whose turn it is in the chain can approve or reject, and only while the invoice is Pending (the chain is still running)."""
+    if inv["status"] != "pending":
+        return False
+    step = _current_invoice_step(db, inv["id"])
+    return bool(step and step["user_id"] == user["id"])
+
+def _notify_invoice_watchers(db, inv, iid, text, link):
+    """The invoice's department admins are told, except the owner and the chain people — those were already told directly in the same action. A dept-admin actor is also told to the portal admin and permission users above them, a permission-user actor to the portal admin."""
+    _admins = [r[0] for r in db.execute(
+        "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+        (inv["department_id"],))]
+    _told = {inv["owner_id"]} | set(_invoice_step_user_ids(db, iid))
+    notify(db, [uid for uid in _admins if uid not in _told], text, link, skip=g.user["id"])
+    if _is_dept_admin(g.user):
+        notify_dept_task(db, g.user, text, link)
+    elif is_portal_admin(g.user):
+        notify_admin_task(db, g.user, text, link)
+
+def _sign_invoice_step(iid):
+    """The person whose turn it is ticks "Use my signature": their saved signature is copied onto the invoice under their step's role. They must have used their signature before they can approve or reject."""
+    db = get_db(); inv = _invoice(db, iid)
+    if not _can_act_invoice(db, g.user, inv):
+        abort(403)
+    step = _current_invoice_step(db, iid)
+    label = INVOICE_STEP_ROLES.get(step["role"], step["role"]) if step else ""
+    if not request.form.get("use_my_signature"):
+        flash("Tick 'Use my signature' to use the signature you saved in My settings.", "error")
+        return redirect(url_for("invoices.detail", iid=iid))
+    name = _use_my_signature_for("inv_signatures")
+    if not name:
+        flash("You haven't uploaded a signature yet — upload one in My settings first.", "error")
+        return redirect(url_for("invoices.detail", iid=iid))
+    if step["signature_path"]:
+        try:
+            old = os.path.join(config.UPLOAD_DIR, "inv_signatures", os.path.basename(step["signature_path"]))
+            if os.path.exists(old):
+                os.remove(old)
+        except Exception:
+            pass
+    db.execute("UPDATE invoice_steps SET signature_path=?,signature_at=datetime('now','localtime') WHERE id=?", (name, step["id"]))
+    log(db, "invoice_step_signature", f"{inv['number']} step {step['position']} {step['role']}")
+    db.commit()
+    flash(f"Your signature has been added under {label}. You can now approve or reject the invoice.", "ok")
+    return redirect(url_for("invoices.detail", iid=iid))
+
+def _decide_invoice(iid):
+    """The person whose turn it is approves or rejects the invoice. They must have ticked "Use my signature" first. Approving moves it to the next step until the last step approves (status Approved, and the APPROVED seal appears on the PDF). Rejecting ends it at once (status Rejected, and the REJECTED stamp appears on the PDF)."""
+    db = get_db(); inv = _invoice(db, iid)
+    if not _can_act_invoice(db, g.user, inv):
+        abort(403)
+    step = _current_invoice_step(db, iid)
+    steps = _invoice_steps(db, iid)
+    label = INVOICE_STEP_ROLES.get(step["role"], step["role"]) if step else ""
+    is_last = bool(step) and step["position"] == len(steps)
+    new_status = (request.form.get("status") or "").strip()
+    if new_status not in ("approved", "rejected"):
+        flash("Choose a status: Approved or Rejected.", "error")
+        return redirect(url_for("invoices.detail", iid=iid))
+    if not step or not step["signature_path"]:
+        flash(f"Use your signature first — you can only save the status once your signature is under {label}.", "error")
+        return redirect(url_for("invoices.detail", iid=iid))
+    db.execute("UPDATE invoice_steps SET status=? WHERE id=?", (new_status, step["id"]))
+    _sync_invoice_from_steps(db, iid)
+    log(db, "invoice_status", f"{inv['number']} step {step['position']} -> {new_status}")
+    nxt = _current_invoice_step(db, iid)
+    nxt_name = nxt["full_name"] if nxt else ""
+    verb = "approved" if new_status == "approved" else "rejected"
+    if new_status == "approved" and not is_last:
+        notify(db, [nxt["user_id"]] if nxt else [],
+               f"{g.user['full_name']} approved the invoice {inv['number']} and sent it to you to {INVOICE_STEP_VERBS[nxt['role']]}.",
+               url_for("invoices.detail", iid=iid), skip=g.user["id"])
+        notify(db, [inv["owner_id"]],
+               f"{g.user['full_name']} approved your invoice {inv['number']} — it is now with {nxt_name}.",
+               url_for("invoices.detail", iid=iid), skip=g.user["id"])
+        for _s in steps:
+            if _s["position"] < step["position"] and _s["user_id"] and _s["user_id"] != inv["owner_id"]:
+                notify(db, [_s["user_id"]],
+                       f"{g.user['full_name']} approved the invoice {inv['number']} — it is now with {nxt_name}.",
+                       url_for("invoices.detail", iid=iid), skip=g.user["id"])
+        _notify_invoice_watchers(db, inv, iid,
+                                 f"{g.user['full_name']} approved the invoice {inv['number']} — it is now with {nxt_name}.",
+                                 url_for("invoices.detail", iid=iid))
+    else:
+        # A final approval or a rejection: the owner is told directly, and
+        # so is everyone who already decided.
+        notify(db, [inv["owner_id"]],
+               f"{g.user['full_name']} {verb} your invoice {inv['number']}.",
+               url_for("invoices.detail", iid=iid), skip=g.user["id"])
+        for _s in steps:
+            if _s["position"] < step["position"] and _s["user_id"] and _s["user_id"] != inv["owner_id"]:
+                notify(db, [_s["user_id"]],
+                       f"{g.user['full_name']} {verb} the invoice {inv['number']}.",
+                       url_for("invoices.detail", iid=iid), skip=g.user["id"])
+        _notify_invoice_watchers(db, inv, iid,
+                                 f"{g.user['full_name']} {verb} the invoice {inv['number']}.",
+                                 url_for("invoices.detail", iid=iid))
+    db.commit()
+    flash(f"Invoice {verb}.", "ok")
+    return redirect(url_for("invoices.detail", iid=iid))

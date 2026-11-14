@@ -85,7 +85,25 @@ def _signatures_table(sigs, usable, font):
             ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ("VALIGN", (0, 0), (-1, -1), "TOP")])
 
-    _blocks = [_block(t, n, d) for t, n, d in sigs]
+    def _block_img(t, n, d, dept, image):
+        # A chain step: the saved signature image on top at a fixed height
+        # (a blank space of the same height when the step has not signed
+        # yet, so the lines align), then the role label, the name, the
+        # designation and the department, all centred — the same block as
+        # the application letter's FOR OFFICE USE.
+        _rows = [[_sig_image_fixed_height(image, 1.4 * cm)],
+                 [Paragraph(f"<b>{_pdf_text(t)}</b>", _sig_title)],
+                 [Paragraph(f"<b>{_pdf_text(n)}</b>", _sig_name)],
+                 [Paragraph(_pdf_text(d), _sig_role)]]
+        if dept:
+            _rows.append([Paragraph(_pdf_text(dept), _sig_role)])
+        return Table(_rows, colWidths=[usable / 4], style=[
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP")])
+
+    _blocks = [_block_img(*s) if len(s) == 5 else _block(s[0], s[1], s[2]) for s in sigs]
     _w = usable / 4
     _n = len(_blocks)
     if _n == 1:
@@ -347,7 +365,7 @@ def sheets_file(fmt, title, sheets, company="", filename="report", subtitle=""):
 # ------------------------------------------------------------------ Invoice PDF (v4 layout)
 def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals, words, terms, sigs, code, company="",
                 company_address="", show_address=True,
-                logo_left=None, logo_right=None, watermark_on=False, watermark_text="", qr_url="", is_approved=False, is_pending=False):
+                logo_left=None, logo_right=None, watermark_on=False, watermark_text="", qr_url="", is_approved=False, is_pending=False, is_rejected=False, hide_watermark=False):
     """Invoice PDF, layout v5 (approved in invoice-format-v5.jpg):
     Top row: left logo + company name and address CENTRED in the middle,
     right second logo in the top right corner. Then meta, one field per
@@ -456,12 +474,16 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     # right, with nothing in between.
     def _on_page(canvas, _doc):
         _wm = (watermark_text or "").strip().lower() if watermark_text else ""
-        # The seal and the stamp come ONLY from the invoice's status.
-        # A newly created invoice shows no watermark at all; the seal
-        # appears when the owner marks it Approved and the stamp when
-        # the owner marks it Pending. The template's watermark text
-        # never makes one appear on its own.
-        if is_pending:
+        # The seal and the stamps come ONLY from the invoice's status:
+        # the APPROVED seal when the last step in the chain approved, the
+        # grey PENDING stamp while the chain is still running, and the
+        # grey REJECTED stamp as soon as any step rejects. A newly created
+        # invoice shows no watermark at all. The template's watermark text
+        # never makes one appear on its own. hide_watermark (the PDF
+        # download without a watermark) draws nothing at all.
+        if hide_watermark:
+            pass
+        elif is_pending:
             # The PENDING stamp (the grey rectangular stamp the user
             # supplied), at the bottom right of the page, in the empty
             # space below the signatures. It appears when the owner set
@@ -477,11 +499,23 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
         elif is_approved:
             # The APPROVED seal (grey), at the bottom right of the page,
             # in the empty space below the signatures. It appears when the
-            # owner set the invoice's status to Approved.
+            # last step in the chain has approved.
             try:
                 _seal = os.path.join(current_app.static_folder, "approved-seal-grey.png")
                 _sw = 5.5 * cm
                 canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sw, mask="auto")
+            except Exception:
+                pass
+        elif is_rejected:
+            # The REJECTED stamp (grey), at the bottom right of the page,
+            # in the empty space below the signatures. It appears as soon
+            # as any step in the chain rejects. The stamp is a wide
+            # rectangle (612x369), drawn 7.5 cm wide like the PENDING stamp.
+            try:
+                _seal = os.path.join(current_app.static_folder, "rejected-stamp-grey.png")
+                _sw = 7.5 * cm
+                _sh = _sw * 369 / 612
+                canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sh, mask="auto")
             except Exception:
                 pass
         elif watermark_on and watermark_text and _wm not in ("approved", "pending"):
@@ -518,7 +552,8 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
 
 
 def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, code, company="",
-                company_address="", show_address=True, logo_left=None, logo_right=None, qr_url=""):
+                company_address="", show_address=True, logo_left=None, logo_right=None, qr_url="",
+                is_approved=False, is_rejected=False, hide_watermark=False):
     """Item Request PDF, layout v5 (same header as the invoice, approved in
     invoice-format-v5.jpg): top row: left logo + company name and address
     CENTRED in the middle, right second logo in the top right corner (the
@@ -621,6 +656,27 @@ def request_pdf(meta_left, meta_right, cols, rows, totals, words, terms, sigs, c
     # at the bottom left (see _on_page) and the page number at the bottom
     # right, with nothing in between.
     def _on_page(canvas, _doc):
+        # The watermark comes ONLY from the request's status: the grey
+        # APPROVED seal when the last step in the chain approved, and the
+        # grey REJECTED stamp as soon as any step rejects. Requests never
+        # had a watermark before this build. hide_watermark (the PDF
+        # download without a watermark) draws nothing at all.
+        if not hide_watermark:
+            if is_approved:
+                try:
+                    _seal = os.path.join(current_app.static_folder, "approved-seal-grey.png")
+                    _sw = 5.5 * cm
+                    canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sw, mask="auto")
+                except Exception:
+                    pass
+            elif is_rejected:
+                try:
+                    _seal = os.path.join(current_app.static_folder, "rejected-stamp-grey.png")
+                    _sw = 7.5 * cm
+                    _sh = _sw * 369 / 612
+                    canvas.drawImage(ImageReader(_seal), A4[0] - 1.4 * cm - _sw, 6.2 * cm, width=_sw, height=_sh, mask="auto")
+                except Exception:
+                    pass
         canvas.saveState(); canvas.setFont(font["regular"], 8); canvas.setFillColor(colors.HexColor("#506A7B"))
         canvas.drawRightString(A4[0] - 1.4 * cm, 0.8 * cm, f"Page {canvas.getPageNumber()}")
         if code:

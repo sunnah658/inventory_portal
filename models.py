@@ -631,6 +631,32 @@ CREATE TABLE IF NOT EXISTS application_steps (
     UNIQUE (application_id, position)
 );
 CREATE INDEX IF NOT EXISTS idx_app_steps ON application_steps(application_id, position);
+CREATE TABLE IF NOT EXISTS invoice_steps (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id     INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    position       INTEGER NOT NULL,
+    role           TEXT NOT NULL CHECK (role IN ('checked','approved','authorised')),
+    user_id        INTEGER REFERENCES users(id),
+    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    signature_path TEXT,
+    signature_at   TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE (invoice_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_inv_steps ON invoice_steps(invoice_id, position);
+CREATE TABLE IF NOT EXISTS item_request_steps (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id     INTEGER NOT NULL REFERENCES item_requests(id) ON DELETE CASCADE,
+    position       INTEGER NOT NULL,
+    role           TEXT NOT NULL CHECK (role IN ('checked','send_to','approved','authorised')),
+    user_id        INTEGER REFERENCES users(id),
+    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    signature_path TEXT,
+    signature_at   TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE (request_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_req_steps ON item_request_steps(request_id, position);
 CREATE INDEX IF NOT EXISTS idx_app_owner ON applications(owner_id);
 CREATE INDEX IF NOT EXISTS idx_app_recip ON applications(recipient_id);
 CREATE INDEX IF NOT EXISTS idx_app_hist ON application_history(application_id);

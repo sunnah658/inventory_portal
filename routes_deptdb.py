@@ -448,7 +448,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
     for tid in sub:
         counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
-    for st in ("issued", "paid", "draft", "void", "approved", "pending"):
+    for st in ("issued", "paid", "draft", "void", "approved", "pending", "rejected"):
         counts[st] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND status=?",
                                 scope + [st]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
@@ -515,7 +515,7 @@ def _request_tab_view(db, dept, is_admin, args):
     by name or Department). A request is sent to one specific HR & Admin
     user; the recipient can print it, download its PDF and change its
     status (Pending / Issued / Paid / Handovered)."""
-    from routes_requests import STATUSES, can_see_all_departments, hr_admin_dept_id
+    from routes_requests import ALL_STATUSES, STATUSES, can_see_all_departments, hr_admin_dept_id
     can_all = can_see_all_departments(db, g.user)
     show_mine = _show_mine(dept)
     # Other's request is only for HR & Admin users: only they can receive a
@@ -548,7 +548,7 @@ def _request_tab_view(db, dept, is_admin, args):
                                 scope + [g.user["id"]]).fetchone()[0]
     counts["others"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND recipient_id=?",
                                   scope + [g.user["id"]]).fetchone()[0]
-    for st in STATUSES:
+    for st in ALL_STATUSES:
         counts[st] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND status=?",
                                 scope + [st]).fetchone()[0]
     # filters: status, department, search, sort — on top of the sub-tab
@@ -561,7 +561,7 @@ def _request_tab_view(db, dept, is_admin, args):
         where.append("r.owner_id=?"); params.append(g.user["id"])
     elif reqtab == "others":
         where.append("r.recipient_id=?"); params.append(g.user["id"])
-    if status in STATUSES:
+    if status in ALL_STATUSES:
         where.append("r.status=?"); params.append(status)
     if q:
         like = like_pattern(q)
@@ -577,7 +577,8 @@ def _request_tab_view(db, dept, is_admin, args):
                        "LEFT JOIN users ru ON ru.id=r.recipient_id LEFT JOIN item_request_kinds k ON k.id=r.kind_id "
                        "LEFT JOIN departments d ON d.id=r.department_id" + sql_where, params).fetchone()[0]
     page, pages, offset = page_info(total, args.get("page", 1, type=int), config.PER_PAGE)
-    rows = db.execute("SELECT r.*, k.name AS kind_name, u.full_name AS owner_name, ru.full_name AS recipient_name, d.name AS dept_name "
+    rows = db.execute("SELECT r.*, k.name AS kind_name, u.full_name AS owner_name, ru.full_name AS recipient_name, d.name AS dept_name, "
+                      "NOT EXISTS (SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.status='pending') AS chain_done "
                       "FROM item_requests r LEFT JOIN item_request_kinds k ON k.id=r.kind_id "
                       "LEFT JOIN users u ON u.id=r.owner_id LEFT JOIN users ru ON ru.id=r.recipient_id "
                       "LEFT JOIN departments d ON d.id=r.department_id"
@@ -594,7 +595,7 @@ def _request_tab_view(db, dept, is_admin, args):
                            total=total, page=page, pages=pages, keep=keep, create_kinds=create_kinds,
                            show_mine=show_mine, show_others=show_others, can_all=can_all,
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_all else [],
-                           can_status=lambda r: r["recipient_id"] == g.user["id"])
+                           can_status=lambda r: r["recipient_id"] == g.user["id"] and r["chain_done"])
 
 
 # ---------------------------------------------------------------- tabs (admins / delegates)

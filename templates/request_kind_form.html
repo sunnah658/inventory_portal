@@ -25,22 +25,14 @@
 <h2>3 · Totals</h2>
 <label class="ck"><input type="checkbox" name="amount_in_words" {{ 'checked' if not kind or kind['show_amount_in_words'] }}> Amount in words</label>
 <h2>4 · Notes and terms</h2><div class="fd"><textarea name="notes">{{ kind['notes'] if kind else '' }}</textarea></div>
-<h2>5 · Signatures</h2><p class="hint">How many signatures, with title, person name and designation. Add as many as you want — press "+ Add signature" for another row. The request shows every signature you set, lower on the page. Leave a row blank to skip it.</p>
-<div id="sigs">
-{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm sigrow"><div class="fd"><label>Signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Requested by"></div><div class="fd"><label>Person name</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
-</div>
-<button class="b" type="button" onclick="addSig()">+ Add signature</button>
-<script>
-function addSig(){var rows=document.querySelectorAll('#sigs .sigrow'); var last=rows[rows.length-1]; var c=last.cloneNode(true); c.querySelectorAll('input').forEach(function(i){i.value='';}); var n=rows.length+1; c.querySelectorAll('label').forEach(function(l){l.textContent=l.textContent.replace(/Signature \d+/, 'Signature '+n);}); document.getElementById('sigs').appendChild(c);}
-</script>
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save kind</button><a class="b" href="{{ url_for('requests.kinds') }}">Cancel</a></div>
 </form>
 </div>
 <div class="stack rail">
   <div class="card"><h2>How it works</h2>
-    <p class="hint">The kind is frozen into each request when it is sent, so changing the kind later never changes a sent request. The request number is per-kind and never reused. Requests are sent only to HR &amp; Admin Department users.</p></div>
+    <p class="hint">The kind is frozen into each request when it is sent, so changing the kind later never changes a sent request. The request number is per-kind and never reused. Requests are approved through the steps the user picks when sending — one step is always Send/Request To, the person who receives the request.</p></div>
   <div class="card"><h2>Sections</h2>
-    <p class="hint">1 General · 2 Heading · 3 Totals · 4 Notes and terms · 5 Signatures</p></div>
+    <p class="hint">1 General · 2 Heading · 3 Totals · 4 Notes and terms</p></div>
   {{ quick_card([
     ('Back to kinds', url_for('requests.kinds'), True),
   ]) }}

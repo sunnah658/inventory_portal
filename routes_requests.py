@@ -4,12 +4,19 @@ routes_requests.py - Item Requests (NEW in this version, section 49 in README).
 A default "Request items" tab inside Department Database (like Invoices).
 A dept admin makes an Item Request kind for their OWN department (like an
 invoice template). A user picks a kind in the Request items tab, fills in
-the items, and sends the request to a SPECIFIC user — who must be a user in
-the HR & Admin Department. The recipient is notified, sees the request in
-their "Other's request" sub-tab, and can print it, download its PDF, and
-change its status: Pending -> Issued -> Paid -> Handovered. A new request
-starts as Pending. When the recipient changes the status, the creator is
-notified and can see the new status in "My request".
+the items, and picks up to 3 approval steps — one step and only one step
+being "Send/Request To", the person who receives the request — from their
+own department, HR & Admin or Management. The steps run in order, each
+person must tick "Use my signature" before approving or rejecting, and
+the request's status follows the chain: Pending while it forwards,
+Approved when the last person approves (the APPROVED seal appears on the
+PDF), Rejected as soon as anyone rejects (the REJECTED stamp appears).
+Once approved, the Send/Request To user changes the status: Pending ->
+Issued -> Paid -> Handovered. The recipient sees the request in their
+"Other's request" sub-tab, and can print it and download its PDF. A new
+request starts as Pending. When the Send/Request To user changes the
+status, the creator is notified and can see the new status in
+"My request".
 
 Sub-tabs: My request (only the current user's requests), All request,
 Other's request (only requests sent TO the current user). In All request,
@@ -41,13 +48,14 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import external_url, notify, notify_ddb_task
+from core import external_url, notify, notify_admin_task, notify_ddb_task, notify_dept_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("requests", __name__)
 CURRENCIES = ["BDT", "USD", "EUR", "GBP", "INR"]
 STATUSES = ["pending", "issued", "paid", "handovered"]
-STATUS_LABELS = {"pending": "Pending", "issued": "Issued", "paid": "Paid", "handovered": "Handovered"}
+ALL_STATUSES = ["pending", "issued", "paid", "handovered", "approved", "rejected"]
+STATUS_LABELS = {"pending": "Pending", "issued": "Issued", "paid": "Paid", "handovered": "Handovered", "approved": "Approved", "rejected": "Rejected"}
 
 # ---------------------------------------------------------------- helpers
 def _money(v):
@@ -148,8 +156,10 @@ def _can_view(db, user, req):
     return False
 
 def _can_change_status(db, user, req):
-    """Only the recipient (the HR & Admin user the request was sent to) changes the status."""
-    return req["recipient_id"] == user["id"]
+    """Only the Send/Request To user changes the status — and only once the approval chain has finished (every step decided). While the chain is still running, the chain decides the status."""
+    if req["recipient_id"] != user["id"]:
+        return False
+    return all(s["status"] != "pending" for s in _request_steps(db, req["id"]))
 
 def _can_manage_public(db, user, req):
     return (is_portal_admin(user) or req["owner_id"] == user["id"] or req["recipient_id"] == user["id"]
@@ -160,9 +170,255 @@ def _lines(db, rid):
 
 def _can_edit(db, user, req):
     """Both the owner (the user who made the request) and the recipient (the
-    HR & Admin user it was sent to) can edit the request record. Nobody else
+    Send/Request To user it was sent to) can edit the request record. Nobody else
     — not the portal admin, not other users in the department — can edit it."""
     return req["owner_id"] == user["id"] or req["recipient_id"] == user["id"]
+
+# ---------------------------------------------------------------- approval chain
+# A request is approved the same way as an application letter: the owner
+# picks up to 3 steps when the request is sent (role + a person from their
+# own department, HR & Admin or Management), one step and only one step
+# being "Send/Request To" — the person who receives the request. The steps
+# run in order, each person must tick "Use my signature" before approving
+# or rejecting, and the request's status follows the chain — Pending while
+# it forwards, Approved when the last person approves (the APPROVED seal
+# appears on the PDF), Rejected as soon as anyone rejects (the REJECTED
+# stamp appears). Once approved, the Send/Request To user changes the
+# status to Pending, Issued, Paid or Handovered.
+REQUEST_STEP_ROLES = {"checked": "Checked By", "send_to": "Send/Request To", "approved": "Approved By", "authorised": "Authorised By"}
+REQUEST_STEP_VERBS = {"checked": "check", "send_to": "receive", "approved": "approve", "authorised": "authorise"}
+
+def _request_steps(db, rid):
+    """The approval chain for a request, in order, with each step's user's name, designation and department. A step whose user was purged has user_id None and no name — it still shows, with a blank name."""
+    return db.execute("SELECT s.*, u.full_name, u.designation, d.name AS dept_name FROM item_request_steps s "
+                      "LEFT JOIN users u ON u.id=s.user_id LEFT JOIN departments d ON d.id=u.department_id "
+                      "WHERE s.request_id=? ORDER BY s.position", (rid,)).fetchall()
+
+def _current_request_step(db, rid):
+    """The first step that has not decided yet — the person it is currently with. None once every step has decided."""
+    for s in _request_steps(db, rid):
+        if s["status"] == "pending":
+            return s
+    return None
+
+def _request_step_user_ids(db, rid):
+    return [s["user_id"] for s in _request_steps(db, rid) if s["user_id"]]
+
+def _sync_request_from_steps(db, rid):
+    """Keep the request's status in step with its chain, and keep the
+    recipient the Send/Request To user: Rejected as soon as any step
+    rejects, Approved once every step has approved, Pending while any
+    step is still waiting."""
+    steps = _request_steps(db, rid)
+    if not steps:
+        return
+    if any(s["status"] == "rejected" for s in steps):
+        new_status = "rejected"
+    elif all(s["status"] == "approved" for s in steps):
+        new_status = "approved"
+    else:
+        new_status = "pending"
+    send_to = next((s for s in steps if s["role"] == "send_to"), None)
+    db.execute("UPDATE item_requests SET status=?,recipient_id=?,updated_at=datetime('now','localtime') WHERE id=?",
+               (new_status, send_to["user_id"] if send_to else None, rid))
+
+def _request_chain_people(db, dept_id):
+    """Everyone a step in a request chain can be sent to: active, approved
+    users in the owner's own department, HR & Admin and Management (when
+    there is a department called Management). Department admins first in
+    each department, then by name."""
+    dept_ids = [dept_id]
+    for _did in (hr_admin_dept_id(db), management_dept_id(db)):
+        if _did and _did not in dept_ids:
+            dept_ids.append(_did)
+    rows = db.execute("SELECT id, full_name, designation, is_dept_admin, department_id FROM users "
+                      "WHERE department_id IN (%s) AND is_active=1 AND is_deleted=0 AND approval_status='approved' "
+                      "ORDER BY department_id, is_dept_admin DESC, full_name" % ",".join("?" * len(dept_ids)),
+                      tuple(dept_ids)).fetchall()
+    return rows
+
+def _request_chain_depts(db, dept_id):
+    """The departments _request_chain_people draws from, in the same order, for grouping the person dropdown."""
+    dept_ids = [dept_id]
+    for _did in (hr_admin_dept_id(db), management_dept_id(db)):
+        if _did and _did not in dept_ids:
+            dept_ids.append(_did)
+    return db.execute("SELECT id, name FROM departments WHERE id IN (%s) ORDER BY id" % ",".join("?" * len(dept_ids)),
+                      tuple(dept_ids)).fetchall()
+
+def _parse_request_chain(form, people):
+    """Read the three step rows (stepN_role / stepN_user) from the form. Returns (chain, error): chain is a list of (role, user_id) in order. At least one step must be chosen, no person twice, every person must be one of the chain people, and exactly one step must be Send/Request To — the person who receives the request."""
+    chain = []
+    seen = set()
+    ids = {p["id"] for p in people}
+    for i in (1, 2, 3):
+        role = (form.get(f"step{i}_role") or "none").strip().lower()
+        if role == "none":
+            continue
+        if role not in REQUEST_STEP_ROLES:
+            return None, "Choose a role for each step: None, Checked By, Send/Request To, Approved By or Authorised By."
+        try:
+            uid = int(form.get(f"step{i}_user") or 0)
+        except ValueError:
+            uid = 0
+        if uid not in ids:
+            return None, "Choose a person from your department, HR & Admin or Management for each step."
+        if uid in seen:
+            return None, "Choose a different person for each step."
+        seen.add(uid)
+        chain.append((role, uid))
+    if not chain:
+        return None, "Choose at least one step — who approves this request?"
+    if sum(1 for role, _uid in chain if role == "send_to") != 1:
+        return None, "Choose exactly one step as Send/Request To — the person who receives the request."
+    return chain, None
+
+def _chain_from_form(form):
+    """The step rows as the form sent them, for re-showing the form after an error: a list of {"role": ..., "user_id": ...} dicts, one per used step."""
+    out = []
+    for i in (1, 2, 3):
+        role = (form.get(f"step{i}_role") or "none").strip().lower()
+        if role == "none":
+            continue
+        try:
+            uid = int(form.get(f"step{i}_user") or 0)
+        except ValueError:
+            uid = 0
+        out.append({"role": role, "user_id": uid})
+    return out
+
+def _save_request_chain(db, rid, chain):
+    db.execute("DELETE FROM item_request_steps WHERE request_id=?", (rid,))
+    for pos, (role, uid) in enumerate(chain, start=1):
+        db.execute("INSERT INTO item_request_steps(request_id,position,role,user_id) VALUES (?,?,?,?)", (rid, pos, role, uid))
+
+def _use_my_signature_for(folder):
+    """Copy the logged-in user's saved signature (the PNG from My settings) into the given signatures folder, under a new random name, so the document keeps its own copy even if the user later changes their signature in My settings. Returns the new file name, or None when the user has no saved signature."""
+    saved = g.user["signature_path"] if g.user is not None and "signature_path" in g.user.keys() else None
+    if not saved:
+        return None
+    src = os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(saved))
+    if not os.path.exists(src):
+        return None
+    dest = os.path.join(config.UPLOAD_DIR, folder)
+    os.makedirs(dest, exist_ok=True)
+    name = secrets.token_hex(10) + ".png"
+    try:
+        import shutil
+        shutil.copyfile(src, os.path.join(dest, name))
+    except Exception:
+        return None
+    return name
+
+def _can_act_request(db, user, req):
+    """Only the person whose turn it is in the chain can approve or reject, and only while the request is Pending (the chain is still running)."""
+    if req["status"] != "pending":
+        return False
+    step = _current_request_step(db, req["id"])
+    return bool(step and step["user_id"] == user["id"])
+
+def _notify_request_watchers(db, req, rid, text, link):
+    """The request's department admins are told, except the owner and the chain people — those were already told directly in the same action. A dept-admin actor is also told to the portal admin and permission users above them, a permission-user actor to the portal admin."""
+    _admins = [r[0] for r in db.execute(
+        "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+        (req["department_id"],))]
+    _told = {req["owner_id"]} | set(_request_step_user_ids(db, rid))
+    notify(db, [uid for uid in _admins if uid not in _told], text, link, skip=g.user["id"])
+    if _is_dept_admin(g.user):
+        notify_dept_task(db, g.user, text, link)
+    elif is_portal_admin(g.user):
+        notify_admin_task(db, g.user, text, link)
+
+def _sign_request_step(rid):
+    """The person whose turn it is ticks "Use my signature": their saved signature is copied onto the request under their step's role. They must have used their signature before they can approve or reject."""
+    db = get_db(); req = _request(db, rid)
+    if not _can_act_request(db, g.user, req):
+        abort(403)
+    step = _current_request_step(db, rid)
+    label = REQUEST_STEP_ROLES.get(step["role"], step["role"]) if step else ""
+    if not request.form.get("use_my_signature"):
+        flash("Tick 'Use my signature' to use the signature you saved in My settings.", "error")
+        return redirect(url_for("requests.detail", rid=rid))
+    name = _use_my_signature_for("req_signatures")
+    if not name:
+        flash("You haven't uploaded a signature yet — upload one in My settings first.", "error")
+        return redirect(url_for("requests.detail", rid=rid))
+    if step["signature_path"]:
+        try:
+            old = os.path.join(config.UPLOAD_DIR, "req_signatures", os.path.basename(step["signature_path"]))
+            if os.path.exists(old):
+                os.remove(old)
+        except Exception:
+            pass
+    db.execute("UPDATE item_request_steps SET signature_path=?,signature_at=datetime('now','localtime') WHERE id=?", (name, step["id"]))
+    _log_history(db, rid, g.user, "edit", f"{label} signature", "", g.user["full_name"])
+    log(db, "request_step_signature", f"{req['number']} step {step['position']} {step['role']}")
+    db.commit()
+    flash(f"Your signature has been added under {label}. You can now approve or reject the request.", "ok")
+    return redirect(url_for("requests.detail", rid=rid))
+
+def _decide_request(rid):
+    """The person whose turn it is approves or rejects the request. They must have ticked "Use my signature" first. Approving moves it to the next step until the last step approves (status Approved, and the APPROVED seal appears on the PDF). Rejecting ends it at once (status Rejected, and the REJECTED stamp appears on the PDF)."""
+    db = get_db(); req = _request(db, rid)
+    if not _can_act_request(db, g.user, req):
+        abort(403)
+    step = _current_request_step(db, rid)
+    steps = _request_steps(db, rid)
+    label = REQUEST_STEP_ROLES.get(step["role"], step["role"]) if step else ""
+    is_last = bool(step) and step["position"] == len(steps)
+    new_status = (request.form.get("status") or "").strip()
+    if new_status not in ("approved", "rejected"):
+        flash("Choose a status: Approved or Rejected.", "error")
+        return redirect(url_for("requests.detail", rid=rid))
+    if not step or not step["signature_path"]:
+        flash(f"Use your signature first — you can only save the status once your signature is under {label}.", "error")
+        return redirect(url_for("requests.detail", rid=rid))
+    db.execute("UPDATE item_request_steps SET status=? WHERE id=?", (new_status, step["id"]))
+    _sync_request_from_steps(db, rid)
+    if new_status == "approved" and not is_last:
+        # An intermediate approval is logged as an edit ("Step 2
+        # (Approved By): Pending → Approved"), because the status line
+        # would read "from Pending to Pending", which says nothing happened.
+        _log_history(db, rid, g.user, "edit", f"Step {step['position']} ({label})", "Pending", "Approved")
+    else:
+        _log_history(db, rid, g.user, "status", "Status", STATUS_LABELS.get(req["status"], req["status"]),
+                     STATUS_LABELS[new_status])
+    log(db, "request_status", f"{req['number']} step {step['position']} -> {new_status}")
+    nxt = _current_request_step(db, rid)
+    nxt_name = nxt["full_name"] if nxt else ""
+    verb = "approved" if new_status == "approved" else "rejected"
+    if new_status == "approved" and not is_last:
+        notify(db, [nxt["user_id"]] if nxt else [],
+               f"{g.user['full_name']} approved Item Request {req['number']} and sent it to you to {REQUEST_STEP_VERBS[nxt['role']]}.",
+               url_for("requests.detail", rid=rid), skip=g.user["id"])
+        notify(db, [req["owner_id"]],
+               f"{g.user['full_name']} approved your Item Request {req['number']} — it is now with {nxt_name}.",
+               url_for("requests.detail", rid=rid), skip=g.user["id"])
+        for _s in steps:
+            if _s["position"] < step["position"] and _s["user_id"] and _s["user_id"] != req["owner_id"]:
+                notify(db, [_s["user_id"]],
+                       f"{g.user['full_name']} approved Item Request {req['number']} — it is now with {nxt_name}.",
+                       url_for("requests.detail", rid=rid), skip=g.user["id"])
+        _notify_request_watchers(db, req, rid,
+                                 f"{g.user['full_name']} approved Item Request {req['number']} — it is now with {nxt_name}.",
+                                 url_for("requests.detail", rid=rid))
+    else:
+        # A final approval or a rejection: the owner is told directly, and
+        # so is everyone who already decided.
+        notify(db, [req["owner_id"]],
+               f"{g.user['full_name']} {verb} your Item Request {req['number']}.",
+               url_for("requests.detail", rid=rid), skip=g.user["id"])
+        for _s in steps:
+            if _s["position"] < step["position"] and _s["user_id"] and _s["user_id"] != req["owner_id"]:
+                notify(db, [_s["user_id"]],
+                       f"{g.user['full_name']} {verb} Item Request {req['number']}.",
+                       url_for("requests.detail", rid=rid), skip=g.user["id"])
+        _notify_request_watchers(db, req, rid,
+                                 f"{g.user['full_name']} {verb} Item Request {req['number']}.",
+                                 url_for("requests.detail", rid=rid))
+    db.commit()
+    flash(f"Item Request {verb}.", "ok")
+    return redirect(url_for("requests.detail", rid=rid))
 
 def _request_history(db, rid):
     """The edit log for a request, newest first — who changed what and when."""
@@ -282,23 +538,68 @@ def list_requests():
 @bp.route("/requests/kinds")
 @login_required
 def kinds():
-    _dept_admin_required()
+    # A department admin sees their own department's kinds; the portal
+    # admin and administrative permission users see any department's
+    # (with a department switcher) so they can delete a kind from any
+    # department.
+    if not (_is_dept_admin(g.user) or is_portal_admin(g.user)):
+        abort(403)
     db = get_db()
-    rows = db.execute("SELECT * FROM item_request_kinds WHERE department_id=? ORDER BY id", (g.user["department_id"],)).fetchall()
-    return render_template("request_kinds.html", rows=rows)
+    if is_portal_admin(g.user):
+        dept_id = request.args.get("dept", type=int) or g.user["department_id"] or db.execute("SELECT id FROM departments ORDER BY id LIMIT 1").fetchone()["id"]
+        depts = db.execute("SELECT id, name FROM departments ORDER BY id").fetchall()
+    else:
+        dept_id = g.user["department_id"]
+        depts = []
+    rows = db.execute("SELECT * FROM item_request_kinds WHERE department_id=? AND status != 'deleted' ORDER BY id", (dept_id,)).fetchall()
+    # The list shows how many signature blocks the kind still carries.
+    # (The template used to render len() of the raw JSON text, which counted
+    # characters — '[]' showed as 2. Old kinds keep their stored blocks;
+    # new ones carry none.)
+    rows = [dict(r, sig_count=len(json.loads(r["signatures_json"] or "[]"))) for r in rows]
+    return render_template("request_kinds.html", rows=rows, depts=depts, dept_id=dept_id,
+                           can_manage_kinds=(_is_dept_admin(g.user) and g.user["department_id"] == dept_id))
+
+@bp.route("/requests/kinds/delete", methods=["POST"])
+@login_required
+def kinds_delete():
+    """Delete the selected Item Request kinds. A department admin deletes
+    only their own department's kinds; the portal admin and administrative
+    permission users delete any department's. A deleted kind disappears
+    from the list and the picker at once and does not go to the Recycle
+    Bin — but the requests already made from it stay exactly as they are:
+    their frozen copy keeps working, and the kind row is kept behind the
+    scenes for them."""
+    db = get_db()
+    ids = [int(x) for x in request.form.getlist("kind_ids") if str(x).isdigit()]
+    if not ids:
+        flash("Select at least one kind to delete.", "error")
+        return redirect(url_for("requests.kinds"))
+    rows = db.execute("SELECT * FROM item_request_kinds WHERE id IN (%s)" % ",".join("?" * len(ids)), tuple(ids)).fetchall()
+    if not rows:
+        flash("Those kinds were not found.", "error")
+        return redirect(url_for("requests.kinds"))
+    for k in rows:
+        if not (is_portal_admin(g.user) or (_is_dept_admin(g.user) and k["department_id"] == g.user["department_id"])):
+            abort(403)
+    db.execute("UPDATE item_request_kinds SET status='deleted' WHERE id IN (%s)" % ",".join("?" * len(ids)), tuple(ids))
+    log(db, "request_kind_deleted", f"{len(rows)} kind(s)")
+    db.commit()
+    flash(f"Deleted {len(rows)} kind{'s' if len(rows) != 1 else ''}. The requests made from them stay as they are.", "ok")
+    if is_portal_admin(g.user):
+        return redirect(url_for("requests.kinds", dept=rows[0]["department_id"]))
+    return redirect(url_for("requests.kinds"))
 
 @bp.route("/requests/kinds/starters", methods=["POST"])
 @login_required
 def kind_starters():
     _dept_admin_required()
     db = get_db()
-    if db.execute("SELECT 1 FROM item_request_kinds WHERE department_id=? AND name=?", (g.user["department_id"], "Office Supplies Request")).fetchone() is None:
+    if db.execute("SELECT 1 FROM item_request_kinds WHERE department_id=? AND name=? AND status != 'deleted'", (g.user["department_id"], "Office Supplies Request")).fetchone() is None:
         db.execute("INSERT INTO item_request_kinds(department_id,created_by,name,number_prefix,default_currency,show_amount_in_words,notes,show_company_logo,show_address,company_name,company_address,signatures_json,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                    (g.user["department_id"], g.user["id"], "Office Supplies Request", "REQ", "BDT", 1,
                     "Items are issued from the store on approval.", 1, 1, "", "",
-                    json.dumps([{"title": "Requested by", "person": "", "designation": ""},
-                                {"title": "Received by", "person": "", "designation": ""},
-                                {"title": "Approved by", "person": "", "designation": ""}]), "active"))
+                    json.dumps([]), "active"))
         log(db, "request_kind_starter", "Office Supplies Request")
     db.commit(); flash("Starter Item Request kind created for your department.", "ok")
     return redirect(url_for("requests.kinds"))
@@ -367,15 +668,18 @@ def request_new():
     if kind is not None and (kind["department_id"] != g.user["department_id"] or kind["status"] != "active"):
         flash("That Item Request kind is not available to you.", "error")
         return redirect(url_for("requests.list_requests"))
-    recipients = hr_admin_users(db)
     if request.method == "POST" and kind is not None:
-        # The recipient must be an HR & Admin Department user — never anyone else.
-        try:
-            recipient_id = int(request.form.get("recipient_id") or 0)
-        except ValueError:
-            recipient_id = 0
-        if recipient_id not in [r["id"] for r in recipients]:
-            flash("Choose a recipient from the HR & Admin Department.", "error")
+        # Who approves it: up to 3 steps, picked here, exactly like an
+        # application letter — one step and only one step being
+        # "Send/Request To", the person who receives the request. The dept
+        # admin no longer sets signatures on the kind.
+        chain, chain_err = _parse_request_chain(request.form, _request_chain_people(db, g.user["department_id"]))
+        if chain_err:
+            flash(chain_err, "error")
+            return render_template("request_form.html", kind=kind, currencies=CURRENCIES,
+                                   chain_people=_request_chain_people(db, g.user["department_id"]),
+                                   chain_depts=_request_chain_depts(db, g.user["department_id"]),
+                                   steps=_chain_from_form(request.form))
         else:
             cur = request.form.get("currency") or kind["default_currency"]
             if cur not in CURRENCIES:
@@ -386,44 +690,44 @@ def request_new():
             else:
                 sub = sum((l["amount"] for l in lines), Decimal("0.00"))
                 words = amount_in_words(sub, cur) if kind["show_amount_in_words"] else ""
-                sigs = _sigs(request.form, kind)
-                # Fill the two named signatures from the people involved, when the kind left them blank.
-                for s in sigs:
-                    t = (s.get("title") or "").lower()
-                    if not (s.get("person") or "").strip() and "request" in t:
-                        s["person"] = g.user["full_name"]
-                    elif not (s.get("person") or "").strip() and "receiv" in t:
-                        rec = db.execute("SELECT full_name FROM users WHERE id=?", (recipient_id,)).fetchone()
-                        s["person"] = rec["full_name"] if rec else ""
+                # The recipient is the Send/Request To step's user.
+                recipient_id = next(uid for role, uid in chain if role == "send_to")
                 number = f"{kind['number_prefix']}-{kind['next_number']:04d}"
                 db.execute("UPDATE item_request_kinds SET next_number=next_number+1 WHERE id=?", (kind["id"],))
                 rid = db.execute("INSERT INTO item_requests(department_id,kind_id,owner_id,recipient_id,number,currency,request_date,status,subtotal,total,amount_in_words,notes,signatures_json,kind_snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                  (g.user["department_id"], kind["id"], g.user["id"], recipient_id, number, cur,
                                   request.form.get("request_date") or date.today().isoformat(), "pending", float(sub), float(sub), words,
-                                  request.form.get("notes") or kind["notes"], json.dumps(sigs),
+                                  request.form.get("notes") or kind["notes"], "[]",
                                   json.dumps({"name": kind["name"], "number_prefix": kind["number_prefix"],
                                               "logo_left": kind["logo_left"], "logo_right": kind["logo_right"],
                                               "company_name": kind["company_name"], "company_address": kind["company_address"],
                                               "show_address": kind["show_address"], "show_company_logo": kind["show_company_logo"]}))).lastrowid
+                _save_request_chain(db, rid, chain)
                 for i, l in enumerate(lines):
                     db.execute("INSERT INTO item_request_lines(request_id,position,item_name,description,qty,rate,amount) VALUES (?,?,?,?,?,?,?)",
                                (rid, i, l.get("item_name") or "", l["description"], float(l["qty"]), float(l["rate"]), float(l["amount"])))
                 _log_history(db, rid, g.user, "created", "", "", number)
-                rec = db.execute("SELECT full_name FROM users WHERE id=?", (recipient_id,)).fetchone()
                 log(db, "request_new", number)
-                notify(db, [recipient_id],
-                       f"{g.user['full_name']} sent you an Item Request {number} ({kind['name']}).",
+                # The first person in the chain is told it is with them;
+                # the Send/Request To user is told at their turn, not now.
+                first = chain[0]
+                first_user = db.execute("SELECT full_name FROM users WHERE id=?", (first[1],)).fetchone()
+                rec = db.execute("SELECT full_name FROM users WHERE id=?", (recipient_id,)).fetchone()
+                notify(db, [first[1]],
+                       f"{g.user['full_name']} sent you an Item Request {number} ({kind['name']}) to {REQUEST_STEP_VERBS[first[0]]}.",
                        url_for("requests.detail", rid=rid), skip=g.user["id"])
                 # The creator's department admin is told a user in their
                 # department sent a request.
                 _dept = db.execute("SELECT * FROM departments WHERE id=?", (g.user["department_id"],)).fetchone()
                 notify_ddb_task(db, g.user, _dept,
                                 f"{g.user['full_name']} sent Item Request {number} ({kind['name']}) to {rec['full_name'] if rec else 'HR & Admin'}.",
-                                url_for("requests.detail", rid=rid))
+                                url_for("requests.detail", rid=rid), skip=first[1])
                 db.commit()
-                flash(f"Request {number} sent to {rec['full_name'] if rec else 'HR & Admin'}.", "ok")
+                flash(f"Request {number} sent. It is now with {first_user['full_name'] if first_user else 'the first approver'}.", "ok")
                 return redirect(url_for("requests.detail", rid=rid))
-    return render_template("request_form.html", kind=kind, recipients=recipients, sigs=json.loads(kind["signatures_json"] or "[]") if kind else [], currencies=CURRENCIES)
+    return render_template("request_form.html", kind=kind, currencies=CURRENCIES,
+                           chain_people=_request_chain_people(db, g.user["department_id"]),
+                           chain_depts=_request_chain_depts(db, g.user["department_id"]), steps=[])
 
 # ---------------------------------------------------------------- edit a request
 @bp.route("/requests/<int:rid>/edit", methods=["GET", "POST"])
@@ -513,11 +817,24 @@ def detail(rid):
                            owner_name=owner["full_name"] if owner else "",
                            recipient_name=recipient["full_name"] if recipient else "",
                            qr_svg=qr_svg, qr_url=qr_url,
+                           steps=_request_steps(db, rid), step_roles=REQUEST_STEP_ROLES,
+                           current_step=_current_request_step(db, rid),
+                           can_act=_can_act_request(db, g.user, req),
                            can_status=_can_change_status(db, g.user, req),
                            can_edit=_can_edit(db, g.user, req),
                            can_manage=_can_manage_public(db, g.user, req),
                            history=_request_history(db, rid),
                            statuses=STATUSES, labels=STATUS_LABELS)
+
+@bp.route("/requests/<int:rid>/step-signature", methods=["POST"])
+@login_required
+def request_step_signature(rid):
+    return _sign_request_step(rid)
+
+@bp.route("/requests/<int:rid>/decide", methods=["POST"])
+@login_required
+def request_decide(rid):
+    return _decide_request(rid)
 
 @bp.route("/requests/<int:rid>/status", methods=["POST"])
 @login_required
@@ -556,7 +873,9 @@ def request_pdf(rid):
     db = get_db(); req = _request(db, rid)
     if not _can_view(db, g.user, req):
         abort(403)
-    data = _build_pdf(db, req)
+    # ?watermark=0 downloads the PDF without any watermark (no seal, no
+    # stamp); the default shows it.
+    data = _build_pdf(db, req, hide_watermark=(request.args.get("watermark") == "0"))
     resp = Response(data, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = f'attachment; filename="{(req["number"] or "request")}.pdf"'
     return resp
@@ -619,7 +938,7 @@ def code_pdf(code):
     resp.headers["Content-Disposition"] = f'attachment; filename="{code}.pdf"'
     return resp
 
-def _build_pdf(db, req):
+def _build_pdf(db, req, hide_watermark=False):
     lines = _lines(db, req["id"])
     try:
         snap = json.loads(req["kind_snapshot_json"] or "{}")
@@ -631,18 +950,31 @@ def _build_pdf(db, req):
     owner = db.execute("SELECT full_name, designation FROM users WHERE id=?", (req["owner_id"],)).fetchone()
     recipient = db.execute("SELECT full_name FROM users WHERE id=?", (req["recipient_id"],)).fetchone() if req["recipient_id"] else None
     dept = db.execute("SELECT name FROM departments WHERE id=?", (req["department_id"],)).fetchone()
-    try:
-        sigs = json.loads(req["signatures_json"] or "[]")
-    except Exception:
-        sigs = []
-    sig_rows = []
-    for s in sigs:
-        # The owner's (creator's) designation comes from their user account
-        # when the kind left it blank — the same as the invoice Prepared By.
-        desig = s.get("designation") or ""
-        if not desig.strip() and "request" in (s.get("title") or "").lower():
-            desig = owner["designation"] if owner else ""
-        sig_rows.append((s.get("title") or "", s.get("person") or "", desig))
+    # Signatures: a chained request shows the owner's block (Requested By)
+    # plus one block per chain step, each with the step's saved signature
+    # image, the role label ("Rejected By" when that step rejected), the
+    # name, the designation and the department. An older request keeps
+    # exactly what it had: the kind's signatures as text.
+    steps = _request_steps(db, req["id"])
+    if steps:
+        sig_rows = [("Requested By", owner["full_name"] if owner else "", owner["designation"] if owner else "")]
+        for s in steps:
+            label = "Rejected By" if s["status"] == "rejected" else REQUEST_STEP_ROLES.get(s["role"], s["role"])
+            img = os.path.join(config.UPLOAD_DIR, "req_signatures", os.path.basename(s["signature_path"])) if s["signature_path"] else None
+            sig_rows.append((label, s["full_name"] or "", s["designation"] or "", s["dept_name"] or "", img))
+    else:
+        try:
+            sigs = json.loads(req["signatures_json"] or "[]")
+        except Exception:
+            sigs = []
+        sig_rows = []
+        for s in sigs:
+            # The owner's (creator's) designation comes from their user account
+            # when the kind left it blank — the same as the invoice Prepared By.
+            desig = s.get("designation") or ""
+            if not desig.strip() and "request" in (s.get("title") or "").lower():
+                desig = owner["designation"] if owner else ""
+            sig_rows.append((s.get("title") or "", s.get("person") or "", desig))
     # Meta: Date and Status on the right; Request No., Requested by,
     # Department and Requested to stacked on the left.
     meta_left = []
@@ -666,4 +998,5 @@ def _build_pdf(db, req):
         code=req["public_code"] if req["public_enabled"] else "",
         company=company, company_address=address, show_address=bool(show_address),
         logo_left=_logo_path(snap.get("logo_left")), logo_right=_logo_path(snap.get("logo_right")),
-        qr_url=qr_url)
+        qr_url=qr_url, is_approved=(req["status"] == "approved"), is_rejected=(req["status"] == "rejected"),
+        hide_watermark=hide_watermark)

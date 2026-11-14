@@ -5,13 +5,9 @@
 {% if not kind %}<div class="card"><h1>Choose a kind first</h1><p class="hint">Go to the Request items tab and press Create on a kind card.</p><a class="b p" href="{{ url_for('requests.list_requests') }}">Back to Request items</a></div>
 {% else %}
 <div class="tw"><div>
-<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Live totals update as you type. Sending gives the request a number ({{ kind['number_prefix'] }}-0001…) and notifies the HR &amp; Admin user you send it to. A new request starts as Pending.</p></div></div>
+<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Live totals update as you type. Sending gives the request a number ({{ kind['number_prefix'] }}-0001…) and starts it forwarding through the steps you pick. A new request starts as Pending.</p></div></div>
 <form method="post" class="card" id="reqForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
-<div class="fd"><label>Send to (HR &amp; Admin Department user)</label><select name="recipient_id" required>
-{% if not recipients %}<option value="">No HR &amp; Admin user found</option>
-{% else %}<option value="">Choose a recipient…</option>{% for r in recipients %}<option value="{{ r['id'] }}">{{ r['full_name'] }} ({{ r['username'] }})</option>{% endfor %}{% endif %}
-</select><div class="sub">Requests can only be sent to a user in the HR &amp; Admin Department.</div></div>
 <div class="fd"><label>Date</label><input type="date" name="request_date" value=""></div>
 <div class="fd"><label>Currency — beside every amount</label><select name="currency" id="curSel">{% for c in currencies %}<option {{ 'selected' if kind['default_currency']==c }}>{{ c }}</option>{% endfor %}</select><div class="sub">One currency per request. Totals and amount in words use this currency. No auto-conversion.</div></div>
 </div>
@@ -32,10 +28,23 @@
 <div class="sub" id="wordsT"></div>
 </div>
 <h2 style="margin-top:16px">Notes / terms</h2><textarea name="notes">{{ kind['notes'] }}</textarea>
-<h2 style="margin-top:16px">Signatures (set by dept admin, shown here)</h2>
-<p class="hint">Signatures from the kind are shown on the PDF. "Requested by" is filled with your name and "Received by" with the recipient's name when left blank.</p>
-{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm"><div class="fd"><label>Signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Requested by"></div><div class="fd"><label>Person</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
-<div class="acts" style="margin-top:16px"><button class="b p" type="submit" {{ 'disabled' if not recipients }}>Send request</button><a class="b" href="{{ url_for('requests.list_requests') }}">Cancel</a></div>
+<h2 style="margin-top:16px">Who approves it — 3 steps, in order</h2>
+<p class="hint">Pick who approves this request, from your department, HR &amp; Admin or Management. Exactly one step must be Send/Request To — the person who receives the request. Sending starts it forwarding through the steps in order: the second person cannot approve until the first has approved, and the third cannot start until the second has approved. Each person must tick “Use my signature” before they can approve or reject. If a person rejects, the request stops there and the REJECTED stamp appears on the PDF; the APPROVED seal appears only when the last person approves, and then the Send/Request To user can change the status to Pending, Issued, Paid or Handovered.</p>
+{% for i in (1, 2, 3) %}{% set st = steps[i-1] if steps and i <= steps|length else {} %}{% set r = st.get('role') or ('none' if steps else ('checked' if i == 1 else 'send_to' if i == 2 else 'none')) %}
+<div style="display:flex;gap:10px;margin-bottom:10px"><div style="flex:1">
+<div class="sub" style="margin-bottom:4px">Step {{ i }} — role</div><select name="step{{ i }}_role">
+<option value="none" {{ 'selected' if r == 'none' }}>None</option>
+<option value="checked" {{ 'selected' if r == 'checked' }}>Checked By</option>
+<option value="send_to" {{ 'selected' if r == 'send_to' }}>Send/Request To</option>
+<option value="approved" {{ 'selected' if r == 'approved' }}>Approved By</option>
+<option value="authorised" {{ 'selected' if r == 'authorised' }}>Authorised By</option>
+</select></div>
+<div style="flex:1.6"><div class="sub" style="margin-bottom:4px">Step {{ i }} — person (your department, HR &amp; Admin or Management)</div><select name="step{{ i }}_user">
+<option value="">Choose a person…</option>
+{% for d in chain_depts %}<optgroup label="{{ d['name'] }}">{% for p in chain_people %}{% if p['department_id'] == d['id'] %}<option value="{{ p['id'] }}" {{ 'selected' if st.get('user_id') == p['id'] }}>{{ p['full_name'] }}{% if p['designation'] %} ({{ p['designation'] }}){% endif %}{% if p['is_dept_admin'] %} — Department admin{% endif %}</option>{% endif %}{% endfor %}</optgroup>{% endfor %}
+</select></div></div>{% endfor %}
+<div class="sub">Each step has a role — None, Checked By, Send/Request To, Approved By or Authorised By — and a person from your department, HR &amp; Admin or Management. Choose None and that step is skipped: no signature block appears for it on the PDF. Use two steps and two signatures appear; use three and three appear.</div>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit" {{ 'disabled' if not chain_people }}>Send request</button><a class="b" href="{{ url_for('requests.list_requests') }}">Cancel</a></div>
 </form>
 <script>
 function fmt(n){return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -62,10 +71,10 @@ recalc();
   <div class="card"><h2>Kind: {{ kind['name'] }}</h2>
     <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currency</b>{{ kind['default_currency'] }}</div>
     <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Numbering</b>{{ kind['number_prefix'] }}-0001…</div>
-    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Send to</b>HR &amp; Admin user only</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Send to</b>One step in the chain — Send/Request To</div>
   </div>
   <div class="card"><h2>How it works</h2>
-    <p class="hint">Live totals update as you type. Sending gives the request a number and notifies the recipient. The recipient sees it in "Other's request", can print it and download its PDF, and changes the status — you are notified of the change and can see it in "My request".</p></div>
+    <p class="hint">Live totals update as you type. Sending gives the request a number and starts it forwarding through the steps you picked. The first person is notified at once; the Send/Request To user is told at their turn, sees it in "Other's request", can print it and download its PDF, and — once the last person has approved — changes the status. You are notified of the change and can see it in "My request".</p></div>
   {{ quick_card([
     ('Back to Request items', url_for('requests.list_requests'), True),
     ('Item Request kinds', url_for('requests.kinds'), False),

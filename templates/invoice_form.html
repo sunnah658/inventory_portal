@@ -13,7 +13,6 @@
 <div class="fd"><label>Reference / PO number</label><input type="text" name="reference" value="{{ inv['reference'] if inv else '' }}"></div>
 <div class="fd"><label>Date</label><input type="date" name="invoice_date" value="{{ inv['invoice_date'] if inv else '' }}"></div>
 <div class="fd"><label>Currency — beside every amount</label><select name="currency" id="curSel">{% for c in currencies %}<option {{ 'selected' if (inv and inv['currency']==c) or (not inv and tpl['default_currency']==c) }}>{{ c }}</option>{% endfor %}</select><div class="sub">One currency per invoice. Totals and amount in words use this currency. No auto-conversion.</div></div>
-{% if inv %}<div class="fd"><label>Status</label><select name="status"><option value="draft" {{ 'selected' if inv['status'] == 'draft' }}>Draft</option><option value="approved" {{ 'selected' if inv['status'] == 'approved' }}>Approved</option><option value="pending" {{ 'selected' if inv['status'] == 'pending' }}>Pending</option></select><div class="sub">Set it to Approved and the grey APPROVED seal shows on the PDF; set it to Pending and the grey PENDING stamp shows instead.</div></div>{% endif %}
 </div>
 <h2>Items</h2>
 <div id="lines">
@@ -64,9 +63,21 @@
 <div class="sub" id="wordsT"></div>
 </div>
 <h2 style="margin-top:16px">Notes / terms</h2><textarea name="notes">{{ inv['notes'] if inv else tpl['notes'] }}</textarea>
-<h2 style="margin-top:16px">Signatures (set by dept admin, shown here)</h2>
-<p class="hint">Authorized signatures from the template are shown on the PDF. Employee signature is added automatically.</p>
-{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm"><div class="fd"><label>Signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Authorized by"></div><div class="fd"><label>Person</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
+<h2 style="margin-top:16px">Who approves it — 3 steps, in order</h2>
+<p class="hint">Pick who approves this invoice, from any department. Finalise starts it forwarding through the steps in order: the second person cannot approve until the first has approved, and the third cannot start until the second has approved. Each person must tick “Use my signature” before they can approve or reject. If a person rejects, the invoice stops there and the REJECTED stamp appears on the PDF; the APPROVED seal appears only when the last person approves.</p>
+{% for i in (1, 2, 3) %}{% set st = steps[i-1] if steps and i <= steps|length else {} %}{% set r = st.get('role') or ('none' if steps else ('checked' if i == 1 else 'approved' if i == 2 else 'none')) %}
+<div style="display:flex;gap:10px;margin-bottom:10px"><div style="flex:1">
+<div class="sub" style="margin-bottom:4px">Step {{ i }} — role</div><select name="step{{ i }}_role">
+<option value="none" {{ 'selected' if r == 'none' }}>None</option>
+<option value="checked" {{ 'selected' if r == 'checked' }}>Checked By</option>
+<option value="approved" {{ 'selected' if r == 'approved' }}>Approved By</option>
+<option value="authorised" {{ 'selected' if r == 'authorised' }}>Authorised By</option>
+</select></div>
+<div style="flex:1.6"><div class="sub" style="margin-bottom:4px">Step {{ i }} — person (any department)</div><select name="step{{ i }}_user">
+<option value="">Choose a person…</option>
+{% for d in chain_depts %}<optgroup label="{{ d['name'] }}">{% for p in chain_people %}{% if p['department_id'] == d['id'] %}<option value="{{ p['id'] }}" {{ 'selected' if st.get('user_id') == p['id'] }}>{{ p['full_name'] }}{% if p['designation'] %} ({{ p['designation'] }}){% endif %}{% if p['is_dept_admin'] %} — Department admin{% endif %}</option>{% endif %}{% endfor %}</optgroup>{% endfor %}
+</select></div></div>{% endfor %}
+<div class="sub">Each step has a role — None, Checked By, Approved By or Authorised By — and a person from any department. Choose None and that step is skipped: no signature block appears for it on the PDF. Use two steps and two signatures appear; use three and three appear. The steps can be changed while the invoice is still a draft; Finalise fixes them.</div>
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save draft</button><a class="b" href="{{ url_for('invoices.list_invoices') }}">Cancel</a></div>
 </form>
 <script>
@@ -100,7 +111,7 @@ recalc();
     <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Numbering</b>{{ tpl['number_prefix'] }}-0001…</div>
   </div>
   <div class="card"><h2>How it works</h2>
-    <p class="hint">Live totals update as you type. Save draft to keep working on it. Finalize locks the invoice and gives it a number — a draft can still be changed, an issued invoice keeps the format it was made with.</p></div>
+    <p class="hint">Live totals update as you type. Save draft to keep working on it. Finalise locks the invoice, gives it a number and starts it forwarding through the steps you picked — the status becomes Pending. The APPROVED seal appears only when the last person approves; if anyone rejects, the invoice stops there and the REJECTED stamp appears. An issued invoice keeps the format it was made with.</p></div>
   {{ quick_card([
     ('Back to Invoices', url_for('invoices.list_invoices'), True),
     ('Invoice templates', url_for('invoices.templates'), False),

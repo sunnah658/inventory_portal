@@ -3,17 +3,20 @@
 {% block title %}Invoice templates{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Invoice templates</h1><p class="hint">Design every invoice format once. Dept admin creates for their own department. Employees choose from these in the Invoices tab. Templates are made by the dept admin, not the portal admin.</p></div>
-<div class="acts"><a class="b p" href="{{ url_for('invoices.template_new') }}">+ New template</a><form method="post" action="{{ url_for('invoices.starters') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Create starter templates</button></form><a class="b" href="{{ url_for('invoices.share_department') }}">Share department data</a></div></div>
+<div class="acts">{% if can_manage_templates %}<a class="b p" href="{{ url_for('invoices.template_new') }}">+ New template</a><form method="post" action="{{ url_for('invoices.starters') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Create starter templates</button></form><a class="b" href="{{ url_for('invoices.share_department') }}">Share department data</a>{% endif %}{% if depts %}<form method="get" action="{{ url_for('invoices.templates') }}"><select name="dept" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept_id }}>{{ d['name'] }}</option>{% endfor %}</select></form>{% endif %}</div></div>
 <div class="kp">
   {{ kpi('Templates', rows|length) }}
   {{ kpi('Active', rows|selectattr('status', 'equalto', 'active')|list|length) }}
   {{ kpi('Shared with you', shared|length) }}
 </div>
 <div class="tw"><div>
-<div class="tb"><table><thead><tr><th>Template</th><th>Numbering</th><th>Available to</th><th>Item columns</th><th>Signatures</th><th>Watermark</th><th>Status</th><th></th></tr></thead><tbody>
-{% for t in rows %}<tr class="r"><td><b>{{ t['name'] }}</b><div class="sub">{{ t['title'] }}</div></td><td>{{ t['number_prefix'] }}-0001</td><td>Own department</td><td>{{ t['item_columns_json'] or '' }}</td><td>{{ (t['signatures_json']|length) if t['signatures_json'] else 0 }} authorized + employee</td><td>{{ 'ON: ' ~ t['watermark_text'] if t['watermark_on'] else 'OFF (default)' }}</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell"><a class="b sm" href="{{ url_for('invoices.template_edit', tid=t['id']) }}">Edit</a><a class="b sm" href="{{ url_for('invoices.template_share', tid=t['id']) }}">Share</a></td></tr>
-{% else %}<tr><td colspan="8"><div class="empty">No templates yet. Create starter templates above.</div></td></tr>{% endfor %}
+<form method="post" action="{{ url_for('invoices.templates_delete') }}" onsubmit="return confirm('Delete the selected templates? The invoices already made from them stay as they are.')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="tb"><table><thead><tr><th><input type="checkbox" onclick="var cs=document.querySelectorAll('input[name=template_ids]');for(var i=0;i<cs.length;i++){cs[i].checked=this.checked;}"></th><th>Template</th><th>Numbering</th><th>Available to</th><th>Item columns</th><th>Signatures</th><th>Watermark</th><th>Status</th><th></th></tr></thead><tbody>
+{% for t in rows %}<tr class="r"><td><input type="checkbox" name="template_ids" value="{{ t['id'] }}"></td><td><b>{{ t['name'] }}</b><div class="sub">{{ t['title'] }}</div></td><td>{{ t['number_prefix'] }}-0001</td><td>Own department</td><td>{{ t['item_columns_json'] or '' }}</td><td>{{ t['sig_count'] }} authorized + employee</td><td>{{ 'ON: ' ~ t['watermark_text'] if t['watermark_on'] else 'OFF (default)' }}</td><td><span class="s {{ 'g' if t['status']=='active' else 'a' }}">{{ t['status']|title }}</span></td><td class="actcell">{% if can_manage_templates %}<a class="b sm" href="{{ url_for('invoices.template_edit', tid=t['id']) }}">Edit</a><a class="b sm" href="{{ url_for('invoices.template_share', tid=t['id']) }}">Share</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="9"><div class="empty">No templates yet. Create starter templates above.</div></td></tr>{% endfor %}
 </tbody></table></div>
+<div class="acts" style="margin-top:12px"><button class="b dg" type="submit">Delete selected</button><span class="hint">Deleted templates disappear at once. The invoices made from them stay as they are.</span></div>
+</form>
 <h2 class="grp">Shared with you — use it in your department</h2>
 <div class="tb"><table><thead><tr><th>Template</th><th>From department</th><th></th></tr></thead><tbody>
 {% for s in shared %}<tr class="r"><td><b>{{ s['template_name'] }}</b></td><td>{{ s['from_dept'] }}</td><td class="actcell"><form method="post" action="{{ url_for('invoices.template_share_use', sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Use in my department</button></form></td></tr>
@@ -24,8 +27,8 @@
   <div class="card"><h2>How templates work</h2>
     <p class="hint">Invoices already issued keep the format they were made with, even if you change the template later. A shared template is copied to your department; the original stays with the sharing dept admin, and the share can be revoked.</p></div>
   {{ quick_card([
-    ('+ New template', url_for('invoices.template_new'), True),
-    ('Share department data', url_for('invoices.share_department'), False),
-  ]) }}
+    ('+ New template', url_for('invoices.template_new'), True) if can_manage_templates else None,
+    ('Share department data', url_for('invoices.share_department'), False) if can_manage_templates else None,
+  ] | select) }}
 </div></div>
 {% endblock %}

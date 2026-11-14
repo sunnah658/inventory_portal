@@ -31,15 +31,10 @@
 <p class="hint">Tick to offer tax on invoices made from this template. Untick and the employee gets no tax option at all — no VAT % and no VAT line on the form, the invoice, or the PDF. The % above is kept, so ticking it again brings tax back.</p>
 <label class="ck"><input type="checkbox" name="amount_in_words" {{ 'checked' if not tpl or tpl['show_amount_in_words'] }}> Amount in words</label>
 <h2>6 · Notes and terms</h2><div class="fd"><textarea name="notes">{{ tpl['notes'] if tpl else '' }}</textarea></div>
-<h2>7 · Signatures</h2><p class="hint">How many authorized signatures, with title, person name and designation. Employee signature is added automatically.</p>
-<div id="sigs">
-{% for i in range(3) %}{% set s = sigs[i] if sigs and i < sigs|length else {} %}<div class="fm"><div class="fd"><label>Authorized signature {{ i+1 }} — Title</label><input type="text" name="sig_title" value="{{ s.get('title','') }}" placeholder="Authorized by"></div><div class="fd"><label>Person name</label><input type="text" name="sig_person" value="{{ s.get('person','') }}"></div><div class="fd"><label>Designation</label><input type="text" name="sig_designation" value="{{ s.get('designation','') }}"></div></div>{% endfor %}
-</div>
-<p class="hint">Leave a signature row blank to skip it. Existing signatures are re-entered here on edit; blank rows are ignored.</p>
-<h2>8 · Watermark — OFF by default</h2>
+<h2>7 · Watermark — OFF by default</h2>
 <label class="ck"><input type="checkbox" name="watermark_on" {{ 'checked' if tpl and tpl['watermark_on'] }}> Show watermark</label>
 <div class="fd"><label>Watermark text (when ON) — type your own, for example ISSUED, PAID, DRAFT, VOID</label><input type="text" name="watermark_text" value="{{ tpl['watermark_text'] if tpl else '' }}" placeholder="PAID"></div>
-<p class="hint">The APPROVED seal and the PENDING stamp come from the invoice's status, not from this text. This text only shows as a diagonal watermark when it is not Approved or Pending.</p>
+<p class="hint">The APPROVED seal, the PENDING stamp and the REJECTED stamp come from the invoice's status, not from this text. This text only shows as a diagonal watermark when it is not Approved or Pending.</p>
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save template</button><a class="b" href="{{ url_for('invoices.templates') }}">Cancel</a></div>
 </form>
 </div>
@@ -47,7 +42,7 @@
   <div class="card"><h2>How it works</h2>
     <p class="hint">The template is frozen into each invoice at draft creation, so changing the template later never changes an issued invoice. The invoice number is per-template and never reused. Watermark is off by default — turn it on only if you type the text to show.</p></div>
   <div class="card"><h2>Sections</h2>
-    <p class="hint">1 General · 2 Heading · 3 Top fields · 4 Items table · 5 Totals · 6 Notes and terms · 7 Signatures · 8 Watermark</p></div>
+    <p class="hint">1 General · 2 Heading · 3 Top fields · 4 Items table · 5 Totals · 6 Notes and terms · 7 Watermark</p></div>
   {{ quick_card([
     ('Back to templates', url_for('invoices.templates'), True),
   ]) }}

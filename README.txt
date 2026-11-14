@@ -3789,3 +3789,82 @@
     startup). Back up first and keep your live .env untouched,
     as before. Apply only this latest zip, not the older ones in
     order.
+
+76. INVOICE + REQUEST APPROVAL CHAINS, WATERMARK CHOICE, TEMPLATE/KIND DELETE (2026-11-14)
+    1. The department admin no longer has a signature option when
+       creating an invoice format or a request item format: the
+       Signatures section is gone from both forms. Instead, the
+       user creating the invoice or the item request picks the
+       signatures, exactly like Application Letters — up to 3 steps
+       in order, each with a role and a person, and each person
+       must tick "Use my signature" before they can approve or
+       reject. The approve/reject mechanism is the same as
+       Application Letters.
+    2. Invoices. The owner no longer has "Mark approved" or "Mark
+       pending" — both are gone. Clicking Finalise gives the
+       invoice its number and starts it forwarding through the
+       steps; after Finalise the status is Pending. The step people
+       can be chosen from any department, with the roles None,
+       Checked By, Approved By, Authorised By. If anyone rejects,
+       forwarding stops there and the grey REJECTED stamp appears
+       on the PDF. If the final person approves, the grey APPROVED
+       seal appears. The invoice PDF shows the owner's Prepared By
+       block plus one signature block per step (signature, role —
+       "Rejected By" for a step that rejected — name, designation
+       and department). A draft's steps can be changed while it is
+       a draft; at least one step is needed and no person can be
+       picked twice.
+    3. Item requests. The roles are None, Checked By, Send/Request
+       To, Approved By, Authorised By, and the step people are
+       chosen from the owner's own department, HR & Admin or
+       Management. Exactly one step must be Send/Request To — that
+       person is the one who receives the request. After the last
+       person approves, the APPROVED seal appears and the
+       Send/Request To user can change the status to Pending,
+       Issued, Paid or Handover. If anyone rejects, the process
+       stops there and the REJECTED stamp appears. The request PDF
+       shows the owner's Requested By block plus one signature
+       block per step, as for invoices.
+    4. Two PDF download options. On the invoice and the request
+       detail pages there are now two buttons: "Download PDF"
+       (with the watermark — the APPROVED seal, the REJECTED stamp
+       or the PENDING stamp, and any diagonal template watermark)
+       and "Download PDF without watermark" (no seal, stamp or
+       diagonal watermark at all; the signatures and everything
+       else stay). Both are available to the owner and to other
+       users who can view the invoice or request.
+    5. Deleting templates and kinds. On the Invoice templates page
+       and the Item Request kinds page there is now a tick box on
+       every row (and one in the header to select all) plus a
+       "Delete selected" button, with a confirmation step. A
+       department admin can delete templates and kinds from his own
+       department; the portal admin and administrative permission
+       users can delete them from any department (with a department
+       switcher on those pages). A deleted template or kind
+       disappears at once and does NOT go to the Recycle Bin — but
+       the invoices and item requests already made from it stay
+       exactly as they are, and still open and download their PDF.
+       The starter templates can be made again afterwards.
+    6. Old signatures stay exactly as they were. Templates and
+       kinds made before this build keep their stored signature
+       blocks, and invoices and requests made from them keep
+       showing them — only new invoices and requests use the
+       chain. An old draft with no chain cannot be finalised until
+       the owner picks at least one step on the edit page.
+    7. Note: a rejected invoice does not get a live public QR
+       (draft, void and rejected invoices have none; issued, paid,
+       approved and pending do). This was not spelled out in the
+       request, so it is flagged here rather than decided silently.
+    8. Also fixed while touching those two list pages: the
+       Signatures column used to show the length of the stored
+       JSON text (a template with no signatures showed "2
+       authorized + employee"). It now shows the real count of
+       stored signature blocks (0 for a new template or kind).
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). The database changes are
+    additive (two new tables, invoice_steps and
+    item_request_steps, created on startup; no column is changed
+    on any existing table). Back up first and keep your live .env
+    untouched, as before. Apply only this latest zip, not the
+    older ones in order.

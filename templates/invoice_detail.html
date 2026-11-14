@@ -6,13 +6,11 @@
 <p class="hint">{{ inv['subtitle'] or '' }} · {{ inv['customer_name'] or '' }} · {{ inv['invoice_date'] or '' }} · Owner: {{ owner_name }}</p></div>
 <div class="acts noprint">
 {% if can_edit %}<a class="b" href="{{ url_for('invoices.invoice_edit', iid=inv['id']) }}">Edit draft</a>{% endif %}
-<a class="b p" href="{{ url_for('invoices.invoice_pdf', iid=inv['id']) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>
-{% if can_manage and inv['status'] in ('draft','approved','pending') and not inv['number'] %}<form method="post" action="{{ url_for('invoices.invoice_finalize', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Finalize and number</button></form>{% endif %}
-{% if can_manage and inv['status'] in ('draft','issued','pending') %}<form method="post" action="{{ url_for('invoices.invoice_approve', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Mark approved</button></form>{% endif %}
-{% if can_manage and inv['status'] in ('draft','issued','approved') %}<form method="post" action="{{ url_for('invoices.invoice_pending', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b" type="submit">Mark pending</button></form>{% endif %}
-{% if can_delete and inv['status'] in ('draft','issued','paid','approved','pending','void') %}<button class="b dg" type="button" onclick="document.getElementById('delInv').style.display='flex'">Delete invoice</button>{% endif %}
+<a class="b p" href="{{ url_for('invoices.invoice_pdf', iid=inv['id']) }}">Download PDF</a><a class="b" href="{{ url_for('invoices.invoice_pdf', iid=inv['id'], watermark=0) }}">Download PDF without watermark</a><button class="b" type="button" onclick="window.print()">Print</button>
+{% if can_finalize %}<form method="post" action="{{ url_for('invoices.invoice_finalize', iid=inv['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Finalize and number</button></form>{% endif %}
+{% if can_delete and inv['status'] in ('draft','issued','paid','approved','pending','void','rejected') %}<button class="b dg" type="button" onclick="document.getElementById('delInv').style.display='flex'">Delete invoice</button>{% endif %}
 </div></div>
-{% if can_delete and inv['status'] in ('draft','issued','paid','approved','pending','void') %}
+{% if can_delete and inv['status'] in ('draft','issued','paid','approved','pending','void','rejected') %}
 <div id="delInv" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
   <div class="card" style="max-width:460px;width:100%;padding:22px">
     <h2 style="margin-top:0">Delete this invoice?</h2>
@@ -45,10 +43,32 @@
 {% if inv['notes'] %}<p class="hint" style="margin-top:10px">Terms: {{ inv['notes'] }}</p>{% endif %}
 </div>
 </div>
+{% if steps %}
+<div class="card"><h2>Approval</h2>
+{% for s in steps %}
+<div style="display:flex;padding:8px 0{% if not loop.first %};border-top:1px solid var(--line){% endif %}"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Step {{ s['position'] }}</b><span>{{ step_roles[s['role']] }} — {{ s['full_name'] or '—' }}{% if s['designation'] %} ({{ s['designation'] }}){% endif %}{% if s['dept_name'] %} · {{ s['dept_name'] }}{% endif %} — {% if s['status'] == 'approved' %}Approved{% elif s['status'] == 'rejected' %}Rejected{% elif current_step and s['id'] == current_step['id'] %}waiting{% elif inv['status'] in ('approved','rejected') %}not reached{% else %}waiting{% endif %}</span></div>
+{% endfor %}
+{% if can_act %}
+{% set my_step = current_step %}
+{% set my_label = step_roles[my_step['role']] %}
+<form method="post" action="{{ url_for('invoices.invoice_step_signature', iid=inv['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the invoice and its PDF, above {{ my_label }}, with your name, designation and department under it. You must use your signature before you can approve or reject the invoice.</div></div>
+{% if my_step['signature_path'] %}<p class="hint">Signature on file{% if my_step['signature_at'] %} — used on {{ my_step['signature_at'][:10] }}{% endif %}.</p>{% endif %}
+<button class="b p" type="submit">Use my signature</button></form>
+<form method="post" action="{{ url_for('invoices.invoice_decide', iid=inv['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm"><div class="fd"><label>Change status (only you, {{ my_label }}, can decide now — the next person cannot act until you have approved)</label><select name="status"><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div></div>
+<button class="b p" type="submit" {{ 'disabled' if not my_step['signature_path'] }}>Save status</button>{% if not my_step['signature_path'] %}<span class="hint"> Use your signature first.</span>{% endif %}</form>
+{% elif inv['status'] == 'pending' and current_step %}
+<p class="hint" style="margin-top:14px">Waiting for {{ current_step['full_name'] or '' }}'s approval{% if current_step['role'] %} ({{ step_roles[current_step['role']] }}){% endif %}.</p>
+{% elif inv['status'] in ('approved','rejected') %}
+<p class="hint" style="margin-top:14px">This invoice has been decided.</p>
+{% endif %}
+</div>
+{% endif %}
 <div class="stack rail">
 <div class="card"><h2>Public QR</h2>
 <p class="hint">Generate a public QR to share this invoice. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the invoice number. Quote the invoice number for payment and accounts. Searching the share code, viewing it and downloading its PDF all need a login.</p>
-{% if inv['status'] not in ('issued','paid','approved','pending') %}<div class="alert">Draft and Void invoices do not get a live QR.</div>
+{% if inv['status'] not in ('issued','paid','approved','pending') %}<div class="alert">Draft, Void and Rejected invoices do not get a live QR.</div>
 {% else %}
 {% if inv['public_code'] and inv['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ inv['public_views'] }} views · Share code: <b>{{ inv['public_code'] }}</b> (not the invoice number)</div>
 {% if qr_svg %}<div class="qrbox">{{ qr_svg|safe }}<div class="hrc">{{ inv['public_code'] }}</div></div><div class="hint">Share code (not the invoice number)</div>{% endif %}
@@ -68,11 +88,13 @@
 <div class="card"><h2>Details</h2>
   <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Template</b>{{ tpl['name'] if tpl else '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Owner</b>{{ owner_name }}</div>
+  {% if steps %}<div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currently with</b>{% if current_step %}{{ current_step['full_name'] or '—' }} (Step {{ current_step['position'] }} — {{ step_roles[current_step['role']] }}){% else %}—{% endif %}</div>{% endif %}
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Invoice date</b>{{ inv['invoice_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currency</b>{{ inv['currency'] }}</div>
 </div>
 {{ quick_card([
   ('Download PDF', url_for('invoices.invoice_pdf', iid=inv['id']), True),
+  ('Download PDF without watermark', url_for('invoices.invoice_pdf', iid=inv['id'], watermark=0), False),
   ('Edit draft', url_for('invoices.invoice_edit', iid=inv['id']), False) if can_edit else None,
   ('Share with a department', url_for('invoices.share_department'), False) if can_manage else None,
   ('Print', 'print', False),
