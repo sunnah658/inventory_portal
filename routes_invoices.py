@@ -110,7 +110,10 @@ def _template(db, tid):
 
 def _invoice(db, iid):
     row = db.execute("SELECT * FROM invoices WHERE id=?", (iid,)).fetchone()
-    if row is None:
+    # A deleted invoice is gone from everywhere except the Recycle Bin
+    # (build 60): the list, the detail page, the PDF and the QR code page
+    # all act as if it does not exist.
+    if row is None or row["deleted_at"]:
         abort(404)
     return row
 
@@ -689,10 +692,12 @@ def detail(iid):
 @bp.route("/invoices/<int:iid>/delete", methods=["POST"])
 @login_required
 def invoice_delete(iid):
-    """Delete an invoice for good. Only the owner or a portal admin may
-    do it, and only after typing their own password in the warning
-    pop-up. The invoice and its lines are removed; its number is never
-    reused. If the owner deletes it, the department admin is told."""
+    """Move an invoice to the Recycle Bin (build 60: it used to be deleted
+    for good). Only the owner or a portal admin may do it, and only after
+    typing their own password in the warning pop-up. The invoice, its lines
+    and its chain stay in the bin for 30 days and can be restored; its
+    number is never reused. If the owner deletes it, the department admin
+    is told."""
     from security import reauth_ok
     db = get_db(); inv = _invoice(db, iid)
     if not (inv["owner_id"] == g.user["id"] or is_portal_admin(g.user)):
@@ -702,18 +707,8 @@ def invoice_delete(iid):
         return redirect(url_for("invoices.detail", iid=iid))
     number = inv["number"] or "draft"
     dept_id = inv["department_id"]
-    # The chain steps' signature files are removed too (the step rows go
-    # with the invoice through the foreign key, but the files do not).
-    for _s in _invoice_steps(db, iid):
-        if _s["signature_path"]:
-            try:
-                _f = os.path.join(config.UPLOAD_DIR, "inv_signatures", os.path.basename(_s["signature_path"]))
-                if os.path.exists(_f):
-                    os.remove(_f)
-            except Exception:
-                pass
-    db.execute("DELETE FROM invoice_lines WHERE invoice_id=?", (iid,))
-    db.execute("DELETE FROM invoices WHERE id=?", (iid,))
+    db.execute("UPDATE invoices SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
+               (g.user["id"], iid))
     log(db, "invoice_deleted", number)
     # If the owner deletes it, the department admin is told. A portal
     # admin deleting it tells nobody (the watcher rule: nobody is told
@@ -723,7 +718,7 @@ def invoice_delete(iid):
                             f"{g.user['full_name']} deleted invoice {number}.",
                             url_for("ddb.index", dept=dept_id, tab="invoices"))
     db.commit()
-    flash(f"Invoice {number} deleted.", "ok")
+    flash(f"Invoice {number} moved to the Recycle Bin.", "ok")
     return redirect(url_for("ddb.index", dept=dept_id, tab="invoices"))
 
 
@@ -774,7 +769,7 @@ def invoice_qr(iid):
     return render_template("qr_label.html", items=[item], many=False)
 
 def _public_check(db, inv):
-    if inv is None or not inv["public_enabled"] or inv["status"] not in ("issued", "paid", "approved", "pending"):
+    if inv is None or inv["deleted_at"] or not inv["public_enabled"] or inv["status"] not in ("issued", "paid", "approved", "pending"):
         return False
     if inv["public_expires"] and inv["public_expires"] < date.today().isoformat():
         return False
@@ -826,7 +821,15 @@ def _build_pdf(db, inv, show_amounts=True, show_customer=True, show_lines=True, 
         meta.append(("DATE", inv["invoice_date"]))
     if inv["reference"]:
         meta.append(("REFERENCE", inv["reference"]))
-    bill_to = (inv["customer_name"] if show_customer else "—", inv["customer_address"] if show_customer else "")
+    # "Bill to" is only for an invoice that has a customer: the
+    # Conveyance form has no customer field, so its invoices must not
+    # print an empty "Bill to -" line — and the public view must not
+    # print "Bill to - —" either. A customer that exists but is hidden
+    # still shows the "—".
+    if (inv["customer_name"] or "").strip():
+        bill_to = (inv["customer_name"] if show_customer else "—", inv["customer_address"] if show_customer else "")
+    else:
+        bill_to = ("", "")
     qr_url = external_url(db, "invoices.code_page", code=inv["public_code"]) if inv["public_code"] else ""
     return exports.invoice_pdf(
         title=inv["title"] or KIND_TITLES.get(kind, "INVOICE"), subtitle=inv["subtitle"] or "",
@@ -883,13 +886,28 @@ def _pdf_sigs(inv):
     per chain step, each with the step's saved signature image, the role
     label ("Rejected By" when that step rejected), the name, the
     designation and the department — the same blocks as the application
-    letter's FOR OFFICE USE. An older invoice keeps exactly what it had:
-    the owner's block plus ALL of the template's signatures as text
-    (title, person, designation), from its own frozen copy."""
+    letter's FOR OFFICE USE. The owner's block shows the signature the
+    owner saved in My settings, above the name, exactly like the steps
+    show theirs; the PDF is built fresh on every download, so it reads
+    the signature the owner has saved now — which is also what makes an
+    invoice that was already issued show it. An older invoice keeps
+    exactly what it had: the owner's block plus ALL of the template's
+    signatures as text (title, person, designation), from its own frozen
+    copy. An owner with no saved signature keeps the old text block
+    with its line, on a chained invoice and on an older one."""
     steps = _invoice_steps(get_db(), inv["id"])
-    owner = get_db().execute("SELECT full_name, designation FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
+    owner = get_db().execute("SELECT full_name, designation, signature_path FROM users WHERE id=?", (inv["owner_id"],)).fetchone()
+    owner_sig = None
+    if owner and owner["signature_path"]:
+        _p = os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(owner["signature_path"]))
+        if os.path.exists(_p):
+            owner_sig = _p
+    if owner_sig:
+        owner_block = ("Prepared By", owner["full_name"] if owner else "", owner["designation"] if owner else "", "", owner_sig)
+    else:
+        owner_block = ("Prepared By", owner["full_name"] if owner else "", owner["designation"] if owner else "")
     if steps:
-        out = [("Prepared By", owner["full_name"] if owner else "", owner["designation"] if owner else "")]
+        out = [owner_block]
         for s in steps:
             label = "Rejected By" if s["status"] == "rejected" else INVOICE_STEP_ROLES.get(s["role"], s["role"])
             img = os.path.join(config.UPLOAD_DIR, "inv_signatures", os.path.basename(s["signature_path"])) if s["signature_path"] else None
@@ -900,7 +918,7 @@ def _pdf_sigs(inv):
     except Exception:
         sigs = []
     out = []
-    out.append(("Prepared By", owner["full_name"] if owner else "", owner["designation"] if owner else ""))
+    out.append(owner_block)
     for s in sigs:
         out.append((s.get("title") or "Authorized", s.get("person") or "", s.get("designation") or ""))
     return out

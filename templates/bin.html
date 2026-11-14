@@ -2,7 +2,7 @@
 {% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Recycle bin{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records, Department Database rows and application letters stay here for {{ days }} days, then are erased for good. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
+<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records, Department Database rows, application letters, invoices and item requests stay here for {{ days }} days, then are erased for good. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
 <div class="kp">
   {{ kpi('Deleted records', items|length) }}
   {% if portal %}{{ kpi('Deleted users', users|length) }}{% endif %}
@@ -43,12 +43,13 @@ function purgeUser(form){
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens here</h2>
-    <p class="hint">A deleted record, Department Database row or application letter can be restored any time within {{ days }} days. After that it is erased for good.</p>
+    <p class="hint">A deleted record, Department Database row, application letter, invoice or item request can be restored any time within {{ days }} days. After that it is erased for good.</p>
     <p class="hint">Deleting a user for good asks: "You want to delete this user all work from the portal too?" — <b>Yes</b> erases the work at once, <b>No</b> leaves the work until the {{ days }} days end. A purged user can never be restored.</p>
-    <p class="hint">A permission user can restore anything, but only the portal admin can erase a record, row or application that a permission user deleted.</p></div>
+    <p class="hint">A permission user can restore anything, but only the portal admin can erase a record, row, application, invoice or request that a permission user deleted.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),
     ('All records', url_for('admin.all_records'), False) if can_portal_admin else None,
+    ("Users' records", url_for('admin.users_records'), False) if can_portal_admin else None,
   ] | select) }}
 </div></div>
 {% endblock %}

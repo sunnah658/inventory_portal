@@ -1,4 +1,53 @@
 ==============================================================================
+ UPDATE: MY RECORDS COLUMNS PER USER, USERS' RECORDS PAGE, INVOICES + REQUESTS IN THE RECYCLE BIN (2026-11-14)
+==============================================================================
+ 1. The columns on your Mine tab are now your own choice. The Mine
+    tab has a "Columns" picker: tick a column to show it, untick it
+    to hide it. It changes only your own Mine tab, not anyone
+    else's, and a new column appears until you hide it. The
+    department admin still makes the department's columns; what
+    the admin no longer decides is which of them appear on your
+    Mine tab.
+ 2. Users' records: a new page for the portal admin and permission
+    users, in the top menu next to All records. It lists every
+    user's name; clicking a name opens that user's whole My
+    records page, view and delete only. Deleting a record from
+    there moves it to the Recycle Bin, and the owner is told.
+ 3. Invoice and item request deletes now go to the Recycle Bin
+    instead of deleting for good at once. The invoice or request,
+    its lines and its approval chain stay in the Bin for 30 days
+    and can be restored with the same number; after 30 days it is
+    erased for good. While it is in the Bin it is gone from the
+    list, the detail page, the PDF, the code page and Search QR.
+    A draft invoice shows in the Bin as "Draft invoice". The
+    number is never reused, and the password box and the
+    notifications are unchanged.
+ 4. The Recycle Bin clear rules are unchanged: a permission user
+    cannot erase for good a deletion he made himself, one the
+    portal admin made, or one another permission user made — only
+    the portal admin can erase those.
+
+==============================================================================
+ UPDATE: OWNER'S SIGNATURE IN PREPARED BY / REQUESTED BY, NO EMPTY "BILL TO" LINE (2026-11-14)
+==============================================================================
+ 1. The Prepared By signature is back on invoice PDFs, and the
+    Requested By signature on item request PDFs. The owner's block
+    was text only, so the signature they had uploaded in My
+    settings never appeared — the invoice showed an empty line
+    under Prepared By next to the approvers' signatures. The
+    owner's saved signature now shows above the name, exactly like
+    the steps show theirs. An invoice that was already issued
+    shows it as soon as this build is applied, without being made
+    again. An owner who has not uploaded a signature keeps the
+    old text block with its line.
+ 2. The "Bill to -" line no longer prints on an invoice that has
+    no customer. A Conveyance invoice has no customer field on its
+    form, so its PDF used to print "Bill to -" with nothing after
+    it. The line now appears only when the invoice actually has a
+    customer — a Billing invoice still shows it with the customer
+    name.
+
+==============================================================================
  UPDATE: STEP PEOPLE CAN OPEN WHAT WAS SENT TO THEM, OTHER'S SUB-TABS, REQUEST DELETE (2026-11-14)
 ==============================================================================
  1. Anyone picked as an approval step on an invoice or an item

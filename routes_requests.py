@@ -102,7 +102,10 @@ def _kind(db, kid):
 
 def _request(db, rid):
     row = db.execute("SELECT * FROM item_requests WHERE id=?", (rid,)).fetchone()
-    if row is None:
+    # A deleted request is gone from everywhere except the Recycle Bin
+    # (build 60): the list, the detail page, the PDF and the QR code page
+    # all act as if it does not exist.
+    if row is None or row["deleted_at"]:
         abort(404)
     return row
 
@@ -837,13 +840,14 @@ def detail(rid):
 @bp.route("/requests/<int:rid>/delete", methods=["POST"])
 @login_required
 def request_delete(rid):
-    """Delete an item request for good. Only the owner, a portal admin or
-    an administrative permission user may do it, and only after typing
-    their own password in the warning pop-up. The request, its lines,
-    its edit history and its chain steps are removed; its number is
-    never reused. If the owner deletes it, the department admin is told.
-    (Follows the invoice delete exactly: password, hard delete, owner
-    deletes -> dept admin told, portal admin deletes -> nobody told.)"""
+    """Move an item request to the Recycle Bin (build 60: it used to be
+    deleted for good). Only the owner, a portal admin or an administrative
+    permission user may do it, and only after typing their own password in
+    the warning pop-up. The request, its lines, its edit history and its
+    chain steps stay in the bin for 30 days and can be restored; its number
+    is never reused. If the owner deletes it, the department admin is told.
+    (Follows the invoice delete: password, soft delete, owner deletes ->
+    dept admin told, portal admin deletes -> nobody told.)"""
     from security import reauth_ok
     db = get_db(); req = _request(db, rid)
     if not (req["owner_id"] == g.user["id"] or is_portal_admin(g.user)):
@@ -853,20 +857,19 @@ def request_delete(rid):
         return redirect(url_for("requests.detail", rid=rid))
     number = req["number"] or "request"
     dept_id = req["department_id"]
-    # The chain steps' signature files are removed too (the step rows go
-    # with the request through the foreign key, but the files do not).
-    for _s in _request_steps(db, rid):
-        if _s["signature_path"]:
-            try:
-                _f = os.path.join(config.UPLOAD_DIR, "req_signatures", os.path.basename(_s["signature_path"]))
-                if os.path.exists(_f):
-                    os.remove(_f)
-            except Exception:
-                pass
-    db.execute("DELETE FROM item_request_lines WHERE request_id=?", (rid,))
-    db.execute("DELETE FROM item_request_history WHERE request_id=?", (rid,))
-    db.execute("DELETE FROM item_request_steps WHERE request_id=?", (rid,))
-    db.execute("DELETE FROM item_requests WHERE id=?", (rid,))
+    db.execute("UPDATE item_requests SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
+               (g.user["id"], rid))
+    log(db, "item_request_deleted", number)
+    # If the owner deletes it, the department admin is told. A portal
+    # admin deleting it tells nobody (the watcher rule: nobody is told
+    # about a portal admin's own actions).
+    if req["owner_id"] == g.user["id"] and not is_portal_admin(g.user):
+        notify_ddb_row_task(db, g.user, dept_id,
+                            f"{g.user['full_name']} deleted item request {number}.",
+                            url_for("ddb.index", dept=dept_id, tab="requests"))
+    db.commit()
+    flash(f"Item request {number} moved to the Recycle Bin.", "ok")
+    return redirect(url_for("ddb.index", dept=dept_id, tab="requests"))
     log(db, "item_request_deleted", number)
     # If the owner deletes it, the department admin is told. A portal
     # admin deleting it tells nobody (the watcher rule: nobody is told
@@ -962,7 +965,7 @@ def request_qr(rid):
     return render_template("qr_label.html", items=[item], many=False)
 
 def _public_check(db, req):
-    return req is not None and bool(req["public_enabled"])
+    return req is not None and not req["deleted_at"] and bool(req["public_enabled"])
 
 @bp.route("/requests/code/<code>")
 def code_page(code):
@@ -1001,17 +1004,30 @@ def _build_pdf(db, req, hide_watermark=False):
     company = snap.get("company_name") or setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME)
     address = snap.get("company_address") or config.DEFAULT_COMPANY_ADDRESS
     show_address = snap.get("show_address", 1)
-    owner = db.execute("SELECT full_name, designation FROM users WHERE id=?", (req["owner_id"],)).fetchone()
+    owner = db.execute("SELECT full_name, designation, signature_path FROM users WHERE id=?", (req["owner_id"],)).fetchone()
     recipient = db.execute("SELECT full_name FROM users WHERE id=?", (req["recipient_id"],)).fetchone() if req["recipient_id"] else None
     dept = db.execute("SELECT name FROM departments WHERE id=?", (req["department_id"],)).fetchone()
     # Signatures: a chained request shows the owner's block (Requested By)
     # plus one block per chain step, each with the step's saved signature
     # image, the role label ("Rejected By" when that step rejected), the
-    # name, the designation and the department. An older request keeps
-    # exactly what it had: the kind's signatures as text.
+    # name, the designation and the department. The owner's block shows
+    # the signature the owner saved in My settings, above the name,
+    # exactly like the steps show theirs; the PDF is built fresh on every
+    # download, so it reads the signature the owner has saved now. An
+    # owner with no saved signature keeps the old text block with its
+    # line. An older request keeps exactly what it had: the kind's
+    # signatures as text.
     steps = _request_steps(db, req["id"])
     if steps:
-        sig_rows = [("Requested By", owner["full_name"] if owner else "", owner["designation"] if owner else "")]
+        owner_sig = None
+        if owner and owner["signature_path"]:
+            _p = os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(owner["signature_path"]))
+            if os.path.exists(_p):
+                owner_sig = _p
+        if owner_sig:
+            sig_rows = [("Requested By", owner["full_name"] if owner else "", owner["designation"] if owner else "", "", owner_sig)]
+        else:
+            sig_rows = [("Requested By", owner["full_name"] if owner else "", owner["designation"] if owner else "")]
         for s in steps:
             label = "Rejected By" if s["status"] == "rejected" else REQUEST_STEP_ROLES.get(s["role"], s["role"])
             img = os.path.join(config.UPLOAD_DIR, "req_signatures", os.path.basename(s["signature_path"])) if s["signature_path"] else None

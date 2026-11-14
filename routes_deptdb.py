@@ -441,9 +441,10 @@ def _invoice_tab_view(db, dept, is_admin, args):
         invtype_id = None
     if invtype_id is not None and invtype_id not in sub:
         invtype, invtype_id = "all", None
-    # counts per sub-tab (scope only, before user/status filters)
-    counts = {"all": db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks})", scope).fetchone()[0]}
-    counts["mine"] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND owner_id=?",
+    # counts per sub-tab (scope only, before user/status filters). Deleted
+    # invoices live in the Recycle Bin (build 60) and are not counted here.
+    counts = {"all": db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND deleted_at IS NULL", scope).fetchone()[0]}
+    counts["mine"] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND deleted_at IS NULL AND owner_id=?",
                                 scope + [g.user["id"]]).fetchone()[0]
     # Other's invoices: invoices sent to this user as an approval step
     # (any step). This is NOT limited to the department being viewed: a
@@ -451,13 +452,13 @@ def _invoice_tab_view(db, dept, is_admin, args):
     # page at all, so a department-scoped list would never show them the
     # invoice sent to them.
     counts["others"] = db.execute("SELECT COUNT(*) FROM invoices i "
-                                  "WHERE EXISTS (SELECT 1 FROM invoice_steps s WHERE s.invoice_id=i.id AND s.user_id=?)",
+                                  "WHERE i.deleted_at IS NULL AND EXISTS (SELECT 1 FROM invoice_steps s WHERE s.invoice_id=i.id AND s.user_id=?)",
                                   [g.user["id"]]).fetchone()[0]
     for tid in sub:
-        counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
+        counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND deleted_at IS NULL AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
     for st in ("issued", "paid", "draft", "void", "approved", "pending", "rejected"):
-        counts[st] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND status=?",
+        counts[st] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND deleted_at IS NULL AND status=?",
                                 scope + [st]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
     show_mine = _show_mine(dept)
@@ -474,12 +475,14 @@ def _invoice_tab_view(db, dept, is_admin, args):
     q = (args.get("q") or "").strip()
     sort = args.get("sort") or "newest"
     # Other's invoices is not limited to the department being viewed (see
-    # the counts note above); every other view is scoped to it.
+    # the counts note above); every other view is scoped to it. Deleted
+    # invoices live in the Recycle Bin (build 60).
     if user_filter == "others":
-        where = ["EXISTS (SELECT 1 FROM invoice_steps s WHERE s.invoice_id=i.id AND s.user_id=?)"]
+        where = ["i.deleted_at IS NULL",
+                 "EXISTS (SELECT 1 FROM invoice_steps s WHERE s.invoice_id=i.id AND s.user_id=?)"]
         params = [g.user["id"]]
     else:
-        where = [f"i.department_id IN ({qmarks})"]
+        where = ["i.deleted_at IS NULL", f"i.department_id IN ({qmarks})"]
         params = list(scope)
     if invtype_id is not None:
         where.append("i.template_id=?"); params.append(invtype_id)
@@ -563,7 +566,7 @@ def _request_tab_view(db, dept, is_admin, args):
     # sent to them. The sub-tab only appears for a user who has at least
     # one such request; for everyone else it would always be empty.
     others_count = db.execute("SELECT COUNT(*) FROM item_requests r "
-                              "WHERE EXISTS (SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.user_id=?)",
+                              "WHERE r.deleted_at IS NULL AND EXISTS (SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.user_id=?)",
                               [g.user["id"]]).fetchone()[0]
     show_others = bool(show_mine) and others_count > 0
     reqtab = args.get("reqtab") or "all"
@@ -573,14 +576,15 @@ def _request_tab_view(db, dept, is_admin, args):
         reqtab = "all"   # a bookmarked my/others just shows All
     if not show_others and reqtab == "others":
         reqtab = "all"   # a bookmarked others just shows All
-    # counts per sub-tab (scope only, before status/search filters)
+    # counts per sub-tab (scope only, before status/search filters). Deleted
+    # requests live in the Recycle Bin (build 60) and are not counted here.
     counts = {}
-    counts["all"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks})", scope).fetchone()[0]
-    counts["mine"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND owner_id=?",
+    counts["all"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND deleted_at IS NULL", scope).fetchone()[0]
+    counts["mine"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND deleted_at IS NULL AND owner_id=?",
                                 scope + [g.user["id"]]).fetchone()[0]
     counts["others"] = others_count
     for st in ALL_STATUSES:
-        counts[st] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND status=?",
+        counts[st] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND deleted_at IS NULL AND status=?",
                                 scope + [st]).fetchone()[0]
     # filters: status, department, search, sort — on top of the sub-tab
     status = args.get("status") or ""
@@ -588,11 +592,13 @@ def _request_tab_view(db, dept, is_admin, args):
     sort = args.get("sort") or "newest"
     # Other's request is not limited to the departments in scope (see
     # the others_count note above); every other view is scoped to them.
+    # Deleted requests live in the Recycle Bin (build 60).
     if reqtab == "others":
-        where = ["EXISTS (SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.user_id=?)"]
+        where = ["r.deleted_at IS NULL",
+                 "EXISTS (SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.user_id=?)"]
         params = [g.user["id"]]
     else:
-        where = [f"r.department_id IN ({qmarks})"]
+        where = ["r.deleted_at IS NULL", f"r.department_id IN ({qmarks})"]
         params = list(scope)
     if reqtab == "my":
         where.append("r.owner_id=?"); params.append(g.user["id"])

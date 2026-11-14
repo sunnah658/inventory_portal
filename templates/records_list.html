@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 {% from "_macros.html" import groups_table, pager, listbar, bulkbar with context %}
 {% from "_design6.html" import kpi, quick_card with context %}
-{% block title %}My records{% endblock %}
+{% block title %}{% if admin_view %}{{ view_user['full_name'] }}'s records{% else %}My records{% endif %}{% endblock %}
 {% block head %}<style>@media print{@page{size:A4 landscape;margin:0}}</style>{% endblock %}
 {% block content %}
 <div class="hd">
-  <div><h1>My records</h1><p class="hint">Records you created and records shared with you. Empty fields stay blank.</p></div>
-  <div class="acts">
+  <div><h1>{% if admin_view %}{{ view_user['full_name'] }}'s records{% else %}My records{% endif %}</h1><p class="hint">{% if admin_view %}This user's My records. You can view and delete records here — the owner is told when you delete one.{% else %}Records you created and records shared with you. Empty fields stay blank.{% endif %}</p></div>
+  {% if not admin_view %}<div class="acts">
     <a class="b p" href="{{ url_for('records.new_record') }}">+ Add record</a>
     <details class="dt"><summary class="b">Export</summary><div class="pop">
       <a class="b sm wide explink" href="{{ url_for('bulk.export_list', fmt='xlsx', **keep) }}">Excel (.xlsx)</a>
       <a class="b sm wide explink" style="margin-top:8px" href="{{ url_for('bulk.export_list', fmt='pdf', **keep) }}">PDF</a>
       <a class="b sm wide explink" style="margin-top:8px" href="{{ url_for('records.download', **keep) }}">CSV</a></div></details>
     <button class="b printguard" type="button">Print</button>
-  </div>
+  </div>{% endif %}
 </div>
-<p class="msg error" id="printErr" hidden>Please select the data row first.</p>
-<p class="print-only">Selected rows · <span class="selprint-n">0</span> of {{ total }}</p>
+{% if not admin_view %}<p class="msg error" id="printErr" hidden>Please select the data row first.</p>
+<p class="print-only">Selected rows · <span class="selprint-n">0</span> of {{ total }}</p>{% endif %}
 <div class="kp">
   {% set labels = {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'} %}
   {% for t in tabs %}{{ kpi(labels[t], counts[t]) }}{% endfor %}
@@ -24,25 +24,44 @@
 <div class="tw"><div>
 <div class="subtabs">
 <div class="tabs">
-  {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for('records.list_records', tab=t) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
+  {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for(list_endpoint, tab=t, **list_args) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
 </div>
-<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>
+{% if not admin_view %}<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>{% endif %}
 </div>
-{{ listbar('records.list_records', {'tab': tab}, q, info, names) }}
+{% if tab == 'mine' and not admin_view and picker %}
+<details class="card" style="margin-bottom:12px"><summary class="b">Columns</summary>
+<form method="post" action="{{ url_for('records.save_mine_columns') }}" style="margin-top:10px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<p class="hint">Tick the columns you want on your Mine tab. An unticked column stays hidden here only — nobody else's page changes, and your department's columns themselves are unchanged.</p>
+{% for did, dname, cols in picker %}
+  {% if picker|length > 1 %}<h3>{{ dname }}</h3>{% endif %}
+  {% for c in cols %}<label style="display:block"><input type="checkbox" name="col" value="col_{{ c['id'] }}" {{ 'checked' if c['id'] not in hidden }}> {{ c['name'] }}</label>{% endfor %}
+{% endfor %}
+<button class="b p" type="submit" style="margin-top:8px">Save columns</button>
+</form></details>
+{% endif %}
+{{ listbar(list_endpoint, bar_hidden, q, info, names) }}
 {% if ctx.groups %}
-  {{ bulkbar(departments) }}
-  {{ groups_table(ctx, 'mine' if tab in ('mine', 'shared_by_me') else 'shared', True, True) }}
-  <p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>
-  {{ pager(page, pages, 'records.list_records', keep) }}
+  {% if not admin_view %}{{ bulkbar(departments) }}{% endif %}
+  {{ groups_table(ctx, 'mine' if tab in ('mine', 'shared_by_me') else 'shared', not admin_view, True, admin_view, admin_next) }}
+  {% if not admin_view %}<p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>{% endif %}
+  {{ pager(page, pages, list_endpoint, keep) }}
 {% else %}
-  <div class="tb"><div class="empty">{% if q or info.fval %}Nothing matches your search.{% elif tab == 'mine' %}You have no records yet. Click "Add record" to start.{% else %}Nothing here yet.{% endif %}</div></div>
+  <div class="tb"><div class="empty">{% if q or info.fval %}Nothing matches your search.{% elif tab == 'mine' %}{% if admin_view %}{{ view_user['full_name'] }} has no records yet.{% else %}You have no records yet. Click "Add record" to start.{% endif %}{% else %}Nothing here yet.{% endif %}</div></div>
 {% endif %}
 </div>
 <div class="stack rail">
+  {% if admin_view %}
+  {{ quick_card([
+    ("Users' records", url_for('admin.users_records'), True),
+    ('All records', url_for('admin.all_records'), False),
+  ] | select) }}
+  {% else %}
   {{ quick_card([
     ('+ Add record', url_for('records.new_record'), True),
     ('Export to Excel', url_for('bulk.export_list', fmt='xlsx', **keep), False),
     ('Print selected', 'print', False),
   ] | select) }}
+  {% endif %}
 </div></div>
 {% endblock %}

@@ -3936,3 +3936,109 @@
     and templates only. Back up first and keep your live .env
     untouched, as before. Apply only this latest zip, not the
     older ones in order.
+
+78. OWNER'S SIGNATURE IN THE PREPARED BY / REQUESTED BY BLOCK, NO EMPTY "BILL TO" LINE (2026-11-14)
+
+    1. The Prepared By signature is back on invoice PDFs, and the
+       Requested By signature on item request PDFs. The owner's
+       block was built as text only (title, a blank line, name,
+       designation), while the approval steps were built as image
+       blocks — so even though the owner had uploaded a signature
+       in My settings, it never appeared on the PDF, and the
+       invoice showed an empty line under Prepared By next to the
+       approvers' signatures. The owner's block now shows the
+       signature they saved in My settings, above the name, exactly
+       like the steps show theirs. The PDF is built fresh on every
+       download, so it reads the signature the owner has saved now
+       — an invoice that was already issued, like CON-0006, shows
+       it as soon as this build is applied, without being made
+       again. An owner who has not uploaded a signature keeps the
+       old text block with its line. Nothing else about the block
+       changes: no department line is added under Prepared By, and
+       the step blocks are untouched.
+    2. The "Bill to -" line no longer prints on an invoice that
+       has no customer. A Conveyance invoice (and an Admin Expense
+       or Purchase Request invoice) has no customer field on its
+       form, so its PDF used to print "Bill to -" with nothing
+       after it — and the public copy printed "Bill to - —". The
+       line now appears only when the invoice actually has a
+       customer. A Billing invoice still shows "Bill to" with the
+       customer name, and a billing invoice whose customer is
+       hidden from strangers still shows the "—" in its place.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There is no database change in
+    this build — no new table or column — so the upgrade is code
+    only. Back up first and keep your live .env untouched, as
+    before. Apply only this latest zip, not the older ones in
+    order.
+
+79. MY RECORDS COLUMNS PER USER, USERS' RECORDS PAGE, INVOICES + REQUESTS IN THE RECYCLE BIN (2026-11-14)
+
+    1. The columns on a user's Mine tab are now that user's own
+       choice. Until now the columns on a My records page were the
+       department's columns, set by the portal admin / permission
+       user, and every user in the same department saw the same
+       columns. The Mine tab now has a "Columns" picker: tick a
+       column to show it, untick it to hide it. The choice is
+       personal — it changes only that user's own Mine tab, not
+       anyone else's — and a new column appears for everyone until
+       they hide it. The department admin still makes the
+       department's columns themselves (adding a field, and so
+       on); what the admin no longer decides is which of them
+       appear on a user's Mine tab. The Shared by me, Shared with
+       me and My department tabs are unchanged.
+    2. Users' records: a new page for the portal admin and
+       administrative permission users, in the top menu next to
+       All records. It lists every user's name; clicking a name
+       opens that user's whole My records page (Mine, Shared by
+       me, Shared with me, My department, and Other departments
+       where it applies), with the user's own Mine-tab columns.
+       It is view and delete only — there is no Add, Edit,
+       Export or Print there. Deleting a record from it moves the
+       record to the Recycle Bin, and the owner is told ("Portal
+       Admin deleted your record ..."), with a link to the Bin
+       where they can restore it. The same rule applies anywhere
+       else a record is deleted by someone other than its owner;
+       the owner deleting their own record tells nobody.
+    3. Invoice and item request deletes now go to the Recycle
+       Bin. They used to be deleted for good at once; now the
+       invoice or request, its lines and its approval chain stay
+       in the Bin for 30 days and can be restored, with the same
+       number and status it had. While it is in the Bin it is
+       gone from the Invoices / Request items tab, from its
+       detail page, from its PDF, from its public code page and
+       from Search QR, exactly like a deleted application letter.
+       A draft invoice (no number yet) shows in the Bin as
+       "Draft invoice". After 30 days it is erased for good. The
+       number is never reused, and the password box, the delete
+       button and the notifications are unchanged (the owner
+       deleting tells the department admin; the portal admin
+       deleting tells nobody).
+    4. The Recycle Bin clear rules are UNCHANGED, because they
+       already worked the way they were asked for: a permission
+       user cannot erase for good a deletion he made himself, one
+       the portal admin made, or one another permission user
+       made — only the portal admin can erase those. A permission
+       user can still erase a deletion a regular user made, and
+       can restore anything. The same rule now covers invoices
+       and item requests in the Bin. Deleted users still appear
+       in the Bin's Users tab and everything else in its Records
+       tab.
+    5. Small things done while this was built: when a deleted
+       user's work is erased for good, their item requests are
+       now erased too (until now only their invoices were), and
+       their invoices' chain signature files are removed instead
+       of being left behind.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There IS a database change in
+    this build: a new table for each user's Mine-tab column
+    choice, and two new columns (deleted_at, deleted_by) on the
+    invoices and item_requests tables. They are added
+    automatically when the portal starts — there is nothing to
+    run by hand, and an older database upgrades cleanly (this
+    was tested by starting the new code on a build-59
+    database). Back up first and keep your live .env untouched,
+    as before. Apply only this latest zip, not the older ones in
+    order.

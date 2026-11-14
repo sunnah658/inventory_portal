@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% block title %}Users' records{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Users' records</h1><p class="hint">Every user's My records. Click a name to open that user's whole My records page — you can view and delete records there, and the owner is told when you delete one.</p></div></div>
+<div class="kp">
+  {{ kpi('Users', total) }}
+</div>
+<div class="tw"><div>
+<form class="tools" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search name, username or department" aria-label="Search">
+  <button class="b" type="submit">Search</button>{% if q %}<a href="{{ url_for('admin.users_records') }}" style="align-self:center">Clear</a>{% endif %}</form>
+<div class="tb">{% if rows %}<table><thead><tr><th>Full name</th><th>Username</th><th>Department</th><th>Role</th><th>Records</th><th></th></tr></thead><tbody>
+{% for u in rows %}<tr class="r"><td><span class="{{ user_name_class(u) }}">{{ u['full_name'] }}</span></td><td>{{ u['username'] }}</td><td><span class="dp">{{ u['department_name'] or '' }}</span></td>
+<td>{% if u['role'] == 'admin' %}<span class="pill b2">Admin</span>{% elif u['is_dept_admin'] %}<span class="pill b2">Department admin</span>{% else %}User{% endif %}{% if u['can_portal_admin'] %} <span class="pill b2">Portal administrative permission</span>{% endif %}</td>
+<td>{{ u['item_count'] }}</td>
+<td class="actcell"><a class="b sm" href="{{ url_for('admin.user_records', user=u['id']) }}">Open records</a></td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty">No users found.</div>{% endif %}
+</div>
+</div>
+<div class="stack rail">
+  {{ quick_card([
+    ('All records', url_for('admin.all_records'), True),
+    ('My records', url_for('records.list_records'), False),
+  ] | select) }}
+</div></div>
+{% endblock %}

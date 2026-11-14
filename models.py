@@ -280,6 +280,16 @@ CREATE TABLE IF NOT EXISTS signature_reminder_sent (
     PRIMARY KEY (user_id, sent_on)
 );
 
+-- Columns a user hid on their own My records Mine tab (build 60). A column
+-- a user hid never shows on their Mine tab; a column with no row here
+-- shows. The department admin still makes the department's columns — this
+-- only records each user's own show/hide choice.
+CREATE TABLE IF NOT EXISTS user_hidden_columns (
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    column_id INTEGER NOT NULL REFERENCES columns(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, column_id)
+);
+
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 
 -- ======================= Department database (tabs inside one department database) =======================
@@ -443,6 +453,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     public_show_lines INTEGER NOT NULL DEFAULT 0,
     public_expires TEXT,
     void_reason   TEXT,
+    deleted_at    TEXT,
+    deleted_by    INTEGER REFERENCES users(id),
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -525,6 +537,8 @@ CREATE TABLE IF NOT EXISTS item_requests (
     public_code   TEXT UNIQUE,
     public_enabled INTEGER NOT NULL DEFAULT 0,
     public_views  INTEGER NOT NULL DEFAULT 0,
+    deleted_at    TEXT,
+    deleted_by    INTEGER REFERENCES users(id),
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -842,6 +856,10 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "ddb_rows", "deleted_by", "INTEGER REFERENCES users(id)")  # who deleted the row, shown in the Recycle Bin (2026-11-10)
     _ensure_column(conn, "applications", "deleted_at", "TEXT")  # soft delete, shown in the Recycle Bin (2026-11-10)
     _ensure_column(conn, "applications", "deleted_by", "INTEGER REFERENCES users(id)")
+    _ensure_column(conn, "invoices", "deleted_at", "TEXT")  # soft delete, shown in the Recycle Bin (2026-11-14)
+    _ensure_column(conn, "invoices", "deleted_by", "INTEGER REFERENCES users(id)")
+    _ensure_column(conn, "item_requests", "deleted_at", "TEXT")  # soft delete, shown in the Recycle Bin (2026-11-14)
+    _ensure_column(conn, "item_requests", "deleted_by", "INTEGER REFERENCES users(id)")
     _ensure_column(conn, "applications", "checker_id", "INTEGER REFERENCES users(id)")  # own-department checker (two-stage, 2026-11-10)
     _ensure_column(conn, "applications", "checker_signature_path", "TEXT")  # checker's uploaded signature image
     _ensure_column(conn, "applications", "checker_signature_at", "TEXT")  # when the checker signed
