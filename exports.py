@@ -669,12 +669,13 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                     checker_signature_path=None, recipient_name="", from_date="", to_date="",
                     days=0, reason="", letter_body="", hr_note="", signer_name="", signer_designation="",
                     signature_path=None, signature_date="", code="", company="", company_address="",
-                    qr_url="", logo_left=None, logo_right=None):
+                    qr_url="", logo_left=None, logo_right=None, to_lines=""):
     """Application Letter PDF — a FORMAL application letter, not an invoice
     (approved in leave-application-pdf-formal.jpg). A plain centred
     letterhead (company name and address, one thin rule, no logos, no teal),
-    Ref on the left and the date on the right, then To (the checker, with
-    the applicant's department), Subject, the body, 'Thanking you. Yours
+    Ref on the left and the date on the right, then To (only the lines the
+    user wrote in the To box — nothing is filled in automatically, so by
+    default nothing appears under "To,"), Subject, the body, 'Thanking you. Yours
     faithfully,' and the applicant's signature (name, designation,
     department, company). Then a FOR OFFICE USE section with the HR note
     and two signature blocks side by side — Checked By (the checker's
@@ -741,10 +742,11 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                               ("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(Spacer(1, 16))
-    # To: the checker (the own-department person it was sent to), with the
-    # applicant's department and the company.
-    to_lines = ["To,", _times_text(checker_name or recipient_name), _times_text(dept_name), _times_text(company)]
-    story.append(Paragraph("<br/>".join([l for l in to_lines if l]), plain))
+    # To: ONLY the lines the user wrote in the To box (2026-11-14). By
+    # default there is nothing under "To," — the checker, the department
+    # and the company are no longer filled in automatically.
+    _to = ["To,"] + [_times_text(l) for l in (to_lines or "").split("\n") if l.strip()]
+    story.append(Paragraph("<br/>".join(_to), plain))
     story.append(Spacer(1, 12))
     # Subject: kind, days and dates. The kind name stands on its own
     # ("Leave Application for 2 days ...") — no "Application for" in

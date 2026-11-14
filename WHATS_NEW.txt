@@ -1,4 +1,33 @@
 ==============================================================================
+ UPDATE: THE LETTER'S "TO" SECTION IS NOW WHAT THE USER WRITES (2026-11-14)
+==============================================================================
+ 1. A new "To" box on the application creating page, right after
+    "Send to". Whatever the user writes there appears under "To," in
+    the letter — the checker's name, department and company are no
+    longer filled in automatically. Leave it blank and nothing
+    appears under "To,".
+ 2. The typed lines show on the detail page, the public code page and
+    the PDF, and can be changed later on the Edit form.
+ 3. Applications that already exist keep their letters looking as
+    they did — their "To" lines are filled in from the name,
+    department and company they show today.
+
+==============================================================================
+ UPDATE: NO DOUBLE APPLICATION NOTIFICATIONS, AND THE PORTAL ADMIN
+ TOLD ABOUT HR APPROVALS (2026-11-14)
+==============================================================================
+ 1. A department admin who is also the checker no longer gets the same
+    application news twice. When HR approves or rejects, they now get
+    only the checker notification ("... you checked to Approved."),
+    not the department-admin one as well.
+ 2. When the HR department admin approves or rejects an application,
+    the portal admin and the administrative permission users are now
+    told. Before, nobody above the department was told about it.
+ 3. The "Who gets told what" help card on the Notifications page now
+    says who is told about applications, and that nobody is told
+    twice about the same application event.
+
+==============================================================================
  UPDATE: BIGGER PDF SIGNATURES, NO PRINT ON THE APPLICATION PAGE, AND
  THE PORTAL ADMIN TOLD ABOUT DEPARTMENT ADMIN APPLICATIONS (2026-11-14)
 ==============================================================================

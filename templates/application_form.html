@@ -12,6 +12,7 @@
 {% if not recipients %}<option value="">No user found in your department</option>
 {% else %}<option value="">Choose a recipient…</option>{% for r in recipients %}<option value="{{ r['id'] }}">{{ r['full_name'] }}{% if r['designation'] %} ({{ r['designation'] }}){% endif %}{% if r['is_dept_admin'] %} — Department admin{% endif %}</option>{% endfor %}{% endif %}
 </select><div class="sub">Applications are sent to a user in your own department — a department user or the person with Department admin permission. They check it, sign it, and forward it to HR &amp; Admin.</div></div>
+<div class="fd"><label>To</label><textarea name="to_lines" rows="3"></textarea><div class="sub">Write the lines that appear under &lsquo;To,&rsquo; in the letter, one per row. Leave it blank and nothing appears under &lsquo;To,&rsquo;.</div></div>
 <div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" required></div>
 <div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" required></div>
 <div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="—"><div class="sub">Counted from the from date to the to date, both days included.</div></div>

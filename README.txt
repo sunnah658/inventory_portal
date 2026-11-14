@@ -3428,3 +3428,68 @@
     docker compose up -d --build). No database change in this
     build. Back up first and keep your live .env untouched, as
     before. Apply only this latest zip, not the older ones in order.
+
+==============================================================================
+ 67. NO DOUBLE APPLICATION NOTIFICATIONS, AND THE PORTAL ADMIN /
+     PERMISSION USERS TOLD ABOUT THE HR DEPARTMENT ADMIN'S APPROVAL
+     (2026-11-14)
+==============================================================================
+ 1. A department admin who is also the checker no longer gets the same
+    application news twice. When HR approves or rejects, the checker
+    used to get two notifications — "hr admin changed the application
+    LV-0009 to Approved." (as a department admin) and "hr admin
+    changed the application LV-0009 you checked to Approved." (as
+    the checker). Now they get only the checker one. The same fix
+    applies when an application is edited: a department admin who is
+    the recipient or the checker gets only the direct "updated ..."
+    notification, not the department-admin one as well. The helper
+    that tells the department admins now skips the owner, the checker
+    and the recipient, who were already told directly in the same
+    action.
+ 2. When a regular user forwards an application, the owner (if they
+    are a department admin) no longer gets the watcher notification
+    as well as the direct "checked your application ... and
+    forwarded it ..." one. The forward's watcher notification now
+    skips the owner, who was just told directly.
+ 3. When the HR department admin approves or rejects an application,
+    the portal admin and the administrative permission users are now
+    told ("hr admin changed the application LV-0009 to Approved.").
+    Before, nobody above the department was told about it, because
+    the approval route never sent a watcher notification. A regular
+    HR user approving still tells only the department admins, as
+    before — they are already told by the department-admin
+    notification, so they are not told twice. The "Who gets told
+    what" help card on the Notifications page now says this plainly,
+    and that nobody is told twice about the same application event.
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). No database change in this
+    build. Back up first and keep your live .env untouched, as
+    before. Apply only this latest zip, not the older ones in order.
+
+==============================================================================
+ 68. THE LETTER'S "TO" SECTION IS NOW WHAT THE USER WRITES (2026-11-14)
+==============================================================================
+ 1. There is a new "To" box on the application creating page, right
+    after "Send to". The user writes the lines that appear under
+    "To," in the letter, one per row. The letter's "To" section now
+    shows ONLY those lines — the checker's name, their department and
+    the company are no longer filled in automatically. By default,
+    if the box is left blank, nothing appears under "To," at all,
+    just "To," and then the Subject. The "Send to" dropdown is
+    unchanged: it still picks who the application is sent to for
+    checking. Only the letter's "To" block changed.
+ 2. The typed lines appear on the detail page, the public code page
+    and the PDF, all three. The user can also change them later on
+    the Edit form, which shows the same "To" box pre-filled; changing
+    them writes an edit-log entry ("To") and notifies the other party,
+    like the other editable fields.
+ 3. Applications that already exist keep their letters looking as
+    they did: on the first startup after applying this build, each
+    one is filled in from the three lines its letter used to show
+    (checker name, department, company). A new application left
+    blank stays blank — it is not filled in.
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). The database gains one new column
+    (applications.to_lines) and the one-time fill above; nothing else
+    changes. Back up first and keep your live .env untouched, as
+    before. Apply only this latest zip, not the older ones in order.

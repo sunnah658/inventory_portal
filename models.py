@@ -582,6 +582,7 @@ CREATE TABLE IF NOT EXISTS applications (
     days          INTEGER NOT NULL DEFAULT 0,
     reason        TEXT,
     letter_body   TEXT,
+    to_lines      TEXT,
     hr_note       TEXT,
     signature_path TEXT,
     signature_by  INTEGER REFERENCES users(id),
@@ -796,6 +797,7 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "applications", "checker_signature_path", "TEXT")  # checker's uploaded signature image
     _ensure_column(conn, "applications", "checker_signature_at", "TEXT")  # when the checker signed
     _ensure_column(conn, "applications", "approver_id", "INTEGER REFERENCES users(id)")  # HR & Admin user it was forwarded to
+    _ensure_column(conn, "applications", "to_lines", "TEXT")  # the lines the user wrote for the letter's To section (2026-11-14)
     # The checker/approver indexes live HERE, after the columns above —
     # not in SCHEMA. SCHEMA runs before _ensure_column, so on a database
     # made before build 43 (no checker_id/approver_id yet) the index
@@ -803,6 +805,24 @@ def _upgrade_ddb_tabs(conn):
     # checker_id" and the container kept restarting (2026-11-12).
     conn.execute("CREATE INDEX IF NOT EXISTS idx_app_checker ON applications(checker_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_app_approver ON applications(approver_id)")
+    # The To box (2026-11-14): applications made before this build have no
+    # typed To lines, so fill theirs in from the three lines the letter
+    # used to show automatically (checker name, department, company) —
+    # their letters look exactly as they did. New applications store what
+    # the user typed, or nothing. Only rows with no To lines at all are
+    # touched, so this is safe to run on every startup.
+    for _a in conn.execute("SELECT id, department_id, kind_id, checker_id, recipient_id FROM applications WHERE to_lines IS NULL").fetchall():
+        _chk = conn.execute("SELECT full_name FROM users WHERE id=?", (_a["checker_id"],)).fetchone() if _a["checker_id"] else None
+        if not _chk and _a["recipient_id"]:
+            _chk = conn.execute("SELECT full_name FROM users WHERE id=?", (_a["recipient_id"],)).fetchone()
+        _dept = conn.execute("SELECT name FROM departments WHERE id=?", (_a["department_id"],)).fetchone()
+        _k = conn.execute("SELECT company_name FROM application_kinds WHERE id=?", (_a["kind_id"],)).fetchone() if _a["kind_id"] else None
+        _co = (_k["company_name"] or "").strip() if _k else ""
+        if not _co:
+            _co = setting_get(conn, "company_name", config.DEFAULT_COMPANY_NAME)
+        _lines = [(_chk["full_name"] if _chk else ""), (_dept["name"] if _dept else ""), _co]
+        conn.execute("UPDATE applications SET to_lines=? WHERE id=?",
+                     ("\n".join([_l for _l in _lines if _l]), _a["id"]))
     _ensure_column(conn, "application_kinds", "company_name", "TEXT")  # letterhead company for this kind (2026-11-10)
     _ensure_column(conn, "application_kinds", "company_address", "TEXT")  # letterhead address for this kind
     _ensure_column(conn, "application_kinds", "logo_left", "TEXT")  # letterhead logo, top left corner (2026-11-14)

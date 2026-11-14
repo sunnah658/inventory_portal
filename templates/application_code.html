@@ -17,7 +17,7 @@
     <div style="width:90px; flex:0 0 auto; text-align:right">{% if kind and kind['logo_right'] %}<img src="{{ url_for('applications.code_kind_logo_image', code=code, side='right') }}" alt="" style="max-width:90px; max-height:52px">{% endif %}</div>
   </div>
   <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
-  <p style="margin:0 0 12px">To,<br>{{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
+  <p style="margin:0 0 12px">To,{% for line in (app['to_lines'] or '').split('\n') %}{% if line.strip() %}<br>{{ line }}{% endif %}{% endfor %}</p>
   <p style="margin:0 0 12px"><b>Subject:</b> {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
   <p style="margin:0 0 12px">Respected Sir,</p>
   {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}

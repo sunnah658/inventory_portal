@@ -54,7 +54,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin, is_true_admin
-from core import external_url, notify, notify_ddb_task, notify_dept_task, permission_user_ids, true_admin_ids
+from core import external_url, notify, notify_admin_task, notify_ddb_task, notify_dept_task, permission_user_ids, true_admin_ids
 from models import get_db, log, setting_get
 from routes_requests import can_see_all_departments, hr_admin_dept_id, hr_admin_users
 
@@ -319,12 +319,18 @@ def _delete_kind_logo(name):
         pass
 
 def _notify_dept_admins(db, app, text, link):
-    """The application's department admins are told, except the owner (the
-    owner is already told in the same action)."""
+    """The application's department admins are told, except the owner, the
+    checker and the recipient — those three were already told directly in
+    the same action (the owner gets "changed your application ...", the
+    checker gets "... you checked ...", the recipient gets "... sent to
+    you"). Without this, a department admin who is also the checker
+    would get the same news twice, once as the checker and once as a
+    department admin (2026-11-14)."""
     _admins = [r[0] for r in db.execute(
         "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
         (app["department_id"],))]
-    notify(db, [uid for uid in _admins if uid != app["owner_id"]], text, link, skip=g.user["id"])
+    _told = {app["owner_id"], app["checker_id"], app["recipient_id"]}
+    notify(db, [uid for uid in _admins if uid not in _told], text, link, skip=g.user["id"])
 
 # ---------------------------------------------------------------- the page (inside More)
 @bp.route("/applications")
@@ -493,6 +499,11 @@ def application_new():
         to_date = (request.form.get("to_date") or "").strip()
         reason = (request.form.get("reason") or "").strip()
         body = (request.form.get("letter_body") or "").strip()
+        # The To box: the lines the user wrote for the letter's To section.
+        # Nothing is filled in automatically — blank means nothing appears
+        # under "To," (2026-11-14). Each row is one line; blank rows are
+        # dropped when the letter is drawn.
+        to_lines = "\n".join([l.strip() for l in (request.form.get("to_lines") or "").splitlines() if l.strip()])
         days = _days_between(from_date, to_date)
         error = None
         if recipient_id not in [r["id"] for r in recipients]:
@@ -508,9 +519,9 @@ def application_new():
         else:
             number = f"{kind['number_prefix']}-{kind['next_number']:04d}"
             db.execute("UPDATE application_kinds SET next_number=next_number+1 WHERE id=?", (kind["id"],))
-            aid = db.execute("INSERT INTO applications(department_id,kind_id,owner_id,recipient_id,checker_id,number,status,from_date,to_date,days,reason,letter_body) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            aid = db.execute("INSERT INTO applications(department_id,kind_id,owner_id,recipient_id,checker_id,number,status,from_date,to_date,days,reason,letter_body,to_lines) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (g.user["department_id"], kind["id"], g.user["id"], recipient_id, recipient_id, number, "pending",
-                              from_date, to_date, days, reason, body)).lastrowid
+                              from_date, to_date, days, reason, body, to_lines)).lastrowid
             _log_history(db, aid, g.user, "created", "", "", number)
             rec = db.execute("SELECT full_name, is_dept_admin FROM users WHERE id=?", (recipient_id,)).fetchone()
             log(db, "application_new", number)
@@ -560,6 +571,8 @@ def application_edit(aid):
         to_date = (request.form.get("to_date") or "").strip()
         reason = (request.form.get("reason") or "").strip()
         body = (request.form.get("letter_body") or "").strip()
+        # The To box, same as on the create form (2026-11-14).
+        to_lines = "\n".join([l.strip() for l in (request.form.get("to_lines") or "").splitlines() if l.strip()])
         days = _days_between(from_date, to_date)
         error = None
         if not from_date or not to_date or days < 1:
@@ -583,8 +596,10 @@ def application_edit(aid):
             _log_history(db, aid, g.user, "edit", "Reason", app["reason"] or "", reason)
         if (app["letter_body"] or "") != body:
             _log_history(db, aid, g.user, "edit", "Letter", app["letter_body"] or "", body)
-        db.execute("UPDATE applications SET from_date=?,to_date=?,days=?,reason=?,letter_body=?,updated_at=datetime('now','localtime') WHERE id=?",
-                   (from_date, to_date, days, reason, body, aid))
+        if (app["to_lines"] or "") != to_lines:
+            _log_history(db, aid, g.user, "edit", "To", app["to_lines"] or "", to_lines)
+        db.execute("UPDATE applications SET from_date=?,to_date=?,days=?,reason=?,letter_body=?,to_lines=?,updated_at=datetime('now','localtime') WHERE id=?",
+                   (from_date, to_date, days, reason, body, to_lines, aid))
         log(db, "application_edit", app["number"])
         if g.user["id"] == app["owner_id"]:
             notify(db, [app["recipient_id"]],
@@ -742,11 +757,14 @@ def forward_to_hr(aid):
     # checks and forwards an application, the portal admin and the
     # administrative permission users are told; when a regular user does
     # it, that department's department admins are told. The router sends
-    # it to the right watchers for whoever the checker is.
+    # it to the right watchers for whoever the checker is. The owner is
+    # skipped here — they were just told directly above, and would
+    # otherwise get the same news twice if they are also a department
+    # admin (2026-11-14).
     _dept = db.execute("SELECT * FROM departments WHERE id=?", (app["department_id"],)).fetchone()
     notify_ddb_task(db, g.user, _dept,
                     f"{g.user['full_name']} checked the application {app['number']} and forwarded it to {hr['full_name'] if hr else 'HR & Admin'}.",
-                    url_for("applications.detail", aid=aid))
+                    url_for("applications.detail", aid=aid), skip=app["owner_id"])
     db.commit()
     flash(f"Application {app['number']} forwarded to {hr['full_name'] if hr else 'HR & Admin'}. It is now Checked.", "ok")
     return redirect(url_for("applications.detail", aid=aid))
@@ -779,6 +797,24 @@ def change_status(aid):
                url_for("applications.detail", aid=aid), skip=g.user["id"])
     _notify_dept_admins(db, app, f"{g.user['full_name']} changed the application {app['number']} to {STATUS_LABELS[new_status]}.",
                         url_for("applications.detail", aid=aid))
+    # The watchers above the department are told too (2026-11-14): when a
+    # department admin (the HR department admin) approves or rejects, the
+    # portal admin and the administrative permission users are told; when
+    # a permission user does it, the true portal admins are told. A
+    # regular HR user approving tells the department admins, which
+    # _notify_dept_admins above already does, so they are not told twice.
+    # (notify_ddb_task is NOT used here: it routes by whether the actor
+    # is a department admin of the application's department, and the HR
+    # department admin is a department admin of a different department,
+    # so it would wrongly treat them as a regular user.)
+    if _is_dept_admin(g.user):
+        notify_dept_task(db, g.user,
+                         f"{g.user['full_name']} changed the application {app['number']} to {STATUS_LABELS[new_status]}.",
+                         url_for("applications.detail", aid=aid))
+    elif is_portal_admin(g.user):
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} changed the application {app['number']} to {STATUS_LABELS[new_status]}.",
+                          url_for("applications.detail", aid=aid))
     db.commit()
     flash(f"Status changed to {STATUS_LABELS[new_status]}. The applicant and the checker have been notified.", "ok")
     return redirect(url_for("applications.detail", aid=aid))
@@ -1027,5 +1063,6 @@ def _build_pdf(db, app):
         signature_path=_signature_path(app["signature_path"]), signature_date=app["signature_at"][:10] if app["signature_at"] else "",
         code=app["public_code"] if app["public_enabled"] else "",
         company=company, company_address=address, qr_url=qr_url,
+        to_lines=app["to_lines"] or "",
         logo_left=_kind_logo_path(kind["logo_left"]) if kind else None,
         logo_right=_kind_logo_path(kind["logo_right"]) if kind else None)
