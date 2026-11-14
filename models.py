@@ -571,6 +571,7 @@ CREATE TABLE IF NOT EXISTS application_kinds (
     logo_right    TEXT,
     next_number   INTEGER NOT NULL DEFAULT 1,
     status        TEXT NOT NULL DEFAULT 'active',
+    is_custom     INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -591,6 +592,7 @@ CREATE TABLE IF NOT EXISTS applications (
     days          INTEGER NOT NULL DEFAULT 0,
     reason        TEXT,
     letter_body   TEXT,
+    subject       TEXT,
     to_lines      TEXT,
     hr_note       TEXT,
     signature_path TEXT,
@@ -820,6 +822,7 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "applications", "approver_id", "INTEGER REFERENCES users(id)")  # HR & Admin user it was forwarded to
     _ensure_column(conn, "applications", "to_lines", "TEXT")  # the lines the user wrote for the letter's To section (2026-11-14)
     _ensure_column(conn, "applications", "chain_legacy", "INTEGER NOT NULL DEFAULT 0")  # 1 = made the old single-recipient way (or before build 52 with no approver yet): the checker may still forward it to HR (2026-11-14)
+    _ensure_column(conn, "applications", "subject", "TEXT")  # the subject the user wrote, for a Custom Application (2026-11-14)
     # The checker/approver indexes live HERE, after the columns above —
     # not in SCHEMA. SCHEMA runs before _ensure_column, so on a database
     # made before build 43 (no checker_id/approver_id yet) the index
@@ -884,6 +887,28 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "application_kinds", "company_address", "TEXT")  # letterhead address for this kind
     _ensure_column(conn, "application_kinds", "logo_left", "TEXT")  # letterhead logo, top left corner (2026-11-14)
     _ensure_column(conn, "application_kinds", "logo_right", "TEXT")  # letterhead logo, top right corner
+    _ensure_column(conn, "application_kinds", "is_custom", "INTEGER NOT NULL DEFAULT 0")  # 1 = the default Custom Application kind (2026-11-14)
+    # The closing moves into the body (2026-11-14): the letter no longer
+    # adds "Thanking you. Yours faithfully," of its own — it is part of
+    # the body the user wrote, so they can change it. Applications made
+    # before this build have no closing in their body, so append it to
+    # theirs — their letters look exactly as they did. Only rows whose
+    # body does not already end with the closing are touched, so this is
+    # safe to run on every startup.
+    for _a in conn.execute("SELECT id, letter_body FROM applications WHERE letter_body IS NOT NULL").fetchall():
+        _b = (_a["letter_body"] or "").rstrip()
+        if _b and "yours faithfully" not in _b[-80:].lower():
+            conn.execute("UPDATE applications SET letter_body=? WHERE id=?",
+                         (_b + "\n\nThanking you.\n\nYours faithfully,", _a["id"]))
+    # The default Custom Application kind (2026-11-14): every department
+    # has one, whether it was made before this build or after — a user
+    # writes their own subject and body for it. Only departments with no
+    # custom kind yet are touched, so this is safe to run on every startup.
+    for _d in conn.execute("SELECT id FROM departments").fetchall():
+        if conn.execute("SELECT 1 FROM application_kinds WHERE department_id=? AND is_custom=1",
+                        (_d["id"],)).fetchone() is None:
+            conn.execute("INSERT INTO application_kinds(department_id,name,number_prefix,next_number,is_custom) "
+                         "VALUES (?,?,?,1,1)", (_d["id"], "Custom Application", "CA"))
     _ensure_column(conn, "item_request_lines", "item_name", "TEXT")  # item name per line (2026-11-09)
     # per-tab column unique index (old index was department-wide)
     idx = conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='ux_ddb_column_name'").fetchone()

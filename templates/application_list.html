@@ -4,7 +4,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>Application Letters</h1>
-    <p class="hint">Apply for leave using one of the letter kinds below. You pick up to three approvers — each a Checked By, Approved By or Authorised By step, from your department, HR &amp; Admin or Management — and the steps run in order. Each person must tick &ldquo;Use my signature&rdquo; before they can approve or reject.</p></div>
+    <p class="hint">Apply for leave using one of the letter kinds below, or write a custom application with your own subject and body. You pick up to three approvers — each a Checked By, Approved By or Authorised By step, from your department, HR &amp; Admin or Management — and the steps run in order. Each person must tick &ldquo;Use my signature&rdquo; before they can approve or reject.</p></div>
   <div class="acts">
     {% if g.user['is_dept_admin'] %}<a class="b" href="{{ url_for('applications.kinds') }}">Application kinds</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>
@@ -34,14 +34,14 @@
 </div>
 {% if kinds %}
 <div class="kp">
-{% for t in kinds %}<div class="k1"><span>leave</span><b style="font-size:1.1rem">{{ t['name'] }}</b><small>Apply to an HR &amp; Admin user</small><div style="margin-top:10px"><a class="b p sm" href="{{ url_for('applications.application_new', kind=t['id']) }}">Create</a></div></div>{% endfor %}
+{% for t in kinds %}<div class="k1"><span>{% if t['is_custom'] %}custom{% else %}leave{% endif %}</span><b style="font-size:1.1rem">{{ t['name'] }}</b><small>{% if t['is_custom'] %}Write your own subject and body{% else %}Apply to an HR &amp; Admin user{% endif %}</small><div style="margin-top:10px"><a class="b p sm" href="{{ url_for('applications.application_new', kind=t['id']) }}">Create</a></div></div>{% endfor %}
 </div>
 {% endif %}
 {% if rows %}
   <div class="tb"><table>
     <thead><tr><th>Application No.</th><th>Kind</th><th>Applied by</th><th>Applied to</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}
-      <tr class="r"><td><b>{{ r['number'] or '—' }}</b></td><td>{{ r['kind_name'] or '' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != g.user['department_id'] %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['recipient_name'] or '—' }}</td><td>{{ r['from_date'] or '' }}</td><td>{{ r['to_date'] or '' }}</td><td>{{ r['days'] }}</td><td><span class="s {{ 'g' if r['status'] == 'approved' else ('r' if r['status'] == 'rejected' else 'a') }}">{{ labels[r['status']] }}</span></td><td class="actcell noprint"><a class="b sm" href="{{ url_for('applications.detail', aid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('applications.application_pdf', aid=r['id']) }}">PDF</a>{% if r['public_code'] %}<a class="b sm" href="{{ url_for('applications.code_page', code=r['public_code']) }}">QR</a>{% endif %}</td></tr>
+      <tr class="r"><td><b>{{ r['number'] or '—' }}</b></td><td>{{ r['kind_name'] or '' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != g.user['department_id'] %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['recipient_name'] or '—' }}</td><td>{{ r['from_date'] or '' }}</td><td>{{ r['to_date'] or '' }}</td><td>{{ r['days'] if r['days'] else '' }}</td><td><span class="s {{ 'g' if r['status'] == 'approved' else ('r' if r['status'] == 'rejected' else 'a') }}">{{ labels[r['status']] }}</span></td><td class="actcell noprint"><a class="b sm" href="{{ url_for('applications.detail', aid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('applications.application_pdf', aid=r['id']) }}">PDF</a>{% if r['public_code'] %}<a class="b sm" href="{{ url_for('applications.code_page', code=r['public_code']) }}">QR</a>{% endif %}</td></tr>
     {% endfor %}</tbody></table></div>
 {% else %}
   <div class="tb"><div class="empty">{% if q or fstatus or fdept %}Nothing matches your filter.{% else %}No applications yet. Choose a kind above to create one.{% endif %}</div></div>

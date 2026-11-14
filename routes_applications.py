@@ -703,16 +703,30 @@ def application_new():
         to_date = (request.form.get("to_date") or "").strip()
         reason = (request.form.get("reason") or "").strip()
         body = (request.form.get("letter_body") or "").strip()
+        # A Custom Application has a subject the user writes themself
+        # (2026-11-14); any other kind builds its subject from the kind,
+        # the days and the dates.
+        subject = (request.form.get("subject") or "").strip()
+        if kind["is_custom"]:
+            subject = subject or ""
+        else:
+            subject = ""
         # The To box: the lines the user wrote for the letter's To section.
         # Nothing is filled in automatically — blank means nothing appears
         # under "To," (2026-11-14). Each row is one line; blank rows are
         # dropped when the letter is drawn.
         to_lines = "\n".join([l.strip() for l in (request.form.get("to_lines") or "").splitlines() if l.strip()])
         days = _days_between(from_date, to_date)
-        if not error and (not from_date or not to_date or days < 1):
+        # A Custom Application has no dates and no reason (2026-11-14):
+        # only the subject and the body.
+        if kind["is_custom"]:
+            from_date = ""; to_date = ""; reason = ""; days = 0
+        if not error and not kind["is_custom"] and (not from_date or not to_date or days < 1):
             error = "Choose a from date and a to date, with the to date on or after the from date."
-        elif not error and not reason:
+        elif not error and not kind["is_custom"] and not reason:
             error = "Write a reason for the leave."
+        elif not error and kind["is_custom"] and not subject:
+            error = "Write a subject for the application."
         elif not error and not body:
             error = "Write the letter."
         if error:
@@ -721,9 +735,9 @@ def application_new():
             number = f"{kind['number_prefix']}-{kind['next_number']:04d}"
             db.execute("UPDATE application_kinds SET next_number=next_number+1 WHERE id=?", (kind["id"],))
             first_uid = chain[0][1]
-            aid = db.execute("INSERT INTO applications(department_id,kind_id,owner_id,recipient_id,checker_id,number,status,from_date,to_date,days,reason,letter_body,to_lines,chain_legacy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            aid = db.execute("INSERT INTO applications(department_id,kind_id,owner_id,recipient_id,checker_id,number,status,from_date,to_date,days,reason,letter_body,subject,to_lines,chain_legacy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (g.user["department_id"], kind["id"], g.user["id"], first_uid, first_uid, number, "pending",
-                              from_date, to_date, days, reason, body, to_lines, legacy)).lastrowid
+                              from_date, to_date, days, reason, body, subject, to_lines, legacy)).lastrowid
             for pos, (role, uid) in enumerate(chain, start=1):
                 db.execute("INSERT INTO application_steps(application_id,position,role,user_id,status) VALUES (?,?,?,?,?)",
                            (aid, pos, role, uid, "pending"))
@@ -783,12 +797,19 @@ def application_edit(aid):
         body = (request.form.get("letter_body") or "").strip()
         # The To box, same as on the create form (2026-11-14).
         to_lines = "\n".join([l.strip() for l in (request.form.get("to_lines") or "").splitlines() if l.strip()])
+        # A Custom Application keeps the subject the user wrote (2026-11-14).
+        subject = (request.form.get("subject") or "").strip() if kind and kind["is_custom"] else (app["subject"] or "")
         days = _days_between(from_date, to_date)
+        # A Custom Application has no dates and no reason (2026-11-14).
+        if kind and kind["is_custom"]:
+            from_date = ""; to_date = ""; reason = ""; days = 0
         error = None
-        if not from_date or not to_date or days < 1:
+        if not (kind and kind["is_custom"]) and (not from_date or not to_date or days < 1):
             error = "Choose a from date and a to date, with the to date on or after the from date."
-        elif not reason:
+        elif not (kind and kind["is_custom"]) and not reason:
             error = "Write a reason for the leave."
+        elif kind and kind["is_custom"] and not subject:
+            error = "Write a subject for the application."
         elif not body:
             error = "Write the letter."
         if error:
@@ -806,10 +827,12 @@ def application_edit(aid):
             _log_history(db, aid, g.user, "edit", "Reason", app["reason"] or "", reason)
         if (app["letter_body"] or "") != body:
             _log_history(db, aid, g.user, "edit", "Letter", app["letter_body"] or "", body)
+        if (app["subject"] or "") != subject:
+            _log_history(db, aid, g.user, "edit", "Subject", app["subject"] or "", subject)
         if (app["to_lines"] or "") != to_lines:
             _log_history(db, aid, g.user, "edit", "To", app["to_lines"] or "", to_lines)
-        db.execute("UPDATE applications SET from_date=?,to_date=?,days=?,reason=?,letter_body=?,to_lines=?,updated_at=datetime('now','localtime') WHERE id=?",
-                   (from_date, to_date, days, reason, body, to_lines, aid))
+        db.execute("UPDATE applications SET from_date=?,to_date=?,days=?,reason=?,letter_body=?,subject=?,to_lines=?,updated_at=datetime('now','localtime') WHERE id=?",
+                   (from_date, to_date, days, reason, body, subject, to_lines, aid))
         log(db, "application_edit", app["number"])
         if g.user["id"] == app["owner_id"]:
             notify(db, [app["recipient_id"]],
@@ -1395,6 +1418,7 @@ def _build_pdf(db, app):
         recipient_name=recipient["full_name"] if recipient else "",
         from_date=app["from_date"] or "", to_date=app["to_date"] or "", days=app["days"] or 0,
         reason=app["reason"] or "", letter_body=app["letter_body"] or "", hr_note=app["hr_note"] or "",
+        subject=app["subject"] or "",
         signer_name=(signer["full_name"] if signer else "") or (approver["full_name"] if approver else ""),
         signer_designation=(signer["designation"] if signer else "") or (approver["designation"] if approver else ""),
         signature_path=_signature_path(app["signature_path"]), signature_date=app["signature_at"][:10] if app["signature_at"] else "",

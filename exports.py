@@ -672,15 +672,20 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                     checker_signature_path=None, recipient_name="", from_date="", to_date="",
                     days=0, reason="", letter_body="", hr_note="", signer_name="", signer_designation="",
                     signature_path=None, signature_date="", code="", company="", company_address="",
-                    qr_url="", logo_left=None, logo_right=None, to_lines="", sig_blocks=None):
+                    qr_url="", logo_left=None, logo_right=None, to_lines="", sig_blocks=None, subject=""):
     """Application Letter PDF — a FORMAL application letter, not an invoice
     (approved in leave-application-pdf-formal.jpg). A plain centred
     letterhead (company name and address, one thin rule, no logos, no teal),
     Ref on the left and the date on the right, then To (only the lines the
     user wrote in the To box — nothing is filled in automatically, so by
-    default nothing appears under "To,"), Subject, the body, 'Thanking you. Yours
-    faithfully,' and the applicant's signature (name, designation,
-    department, company). Then a FOR OFFICE USE section with the HR note
+    default nothing appears under "To,"), Subject, the body, and the
+    applicant's signature (name, designation, department, company). The
+    body ends with the "Thanking you. Yours faithfully," closing — the
+    user wrote it, or the leave form filled it in — so the letter adds no
+    closing of its own and the user can change it. A Custom Application
+    is different: the user writes the subject and the whole body
+    themself, so the letter adds no "Respected Sir," opening either.
+    Then a FOR OFFICE USE section with the HR note
     and one signature block per step in the approval chain — the step's
     saved signature image above their name and designation — laid out by
     count the same way as the invoice and item request signatures (1 at
@@ -754,22 +759,34 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
     # Subject: kind, days and dates. The kind name stands on its own
     # ("Leave Application for 2 days ...") — no "Application for" in
     # front of it, or a kind called "Leave Application" reads twice.
+    # A Custom Application shows the subject the user wrote instead.
     day_word = "day" if days == 1 else "days"
-    subject = (f"{kind_name} for {days} {day_word} "
-               f"({_long_date(from_date)} \u2013 {_long_date(to_date)}).")
-    story.append(Paragraph(f"<b>Subject:</b> {_times_text(subject)}", plain))
+    _subj = (subject or "").strip()
+    if _subj:
+        if _subj[-1] not in ".!?":
+            _subj += "."
+        story.append(Paragraph(f"<b>Subject:</b> {_times_text(_subj)}", plain))
+    else:
+        _subj = (f"{kind_name} for {days} {day_word} "
+                 f"({_long_date(from_date)} \u2013 {_long_date(to_date)}).")
+        story.append(Paragraph(f"<b>Subject:</b> {_times_text(_subj)}", plain))
     story.append(Spacer(1, 12))
     # Salutation, then the body paragraphs (blank line = new paragraph).
-    story.append(Paragraph("Respected Sir,", plain))
-    story.append(Spacer(1, 10))
+    # A Custom Application is written entirely by the user, so the
+    # letter does not add its own "Respected Sir," — the user writes
+    # the opening themself if they want one.
+    if not (subject or "").strip():
+        story.append(Paragraph("Respected Sir,", plain))
+        story.append(Spacer(1, 10))
     for para in (letter_body or "").split("\n"):
         para = para.strip()
         if para:
             story.append(Paragraph(_times_text(para), body_s))
             story.append(Spacer(1, 8))
-    # Closing and the applicant's signature: name, designation, department, company.
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("Thanking you.<br/>Yours faithfully,", plain))
+    # The applicant's signature: name, designation, department, company.
+    # The letter adds no closing of its own — "Thanking you. Yours
+    # faithfully," is part of the body the user wrote (or the leave form
+    # filled in), so the user can change it (2026-11-14).
     story.append(Spacer(1, 28))
     sig_rows = []
     if owner_name:

@@ -3747,3 +3747,45 @@
     build — the tables and columns from build 52 are unchanged.
     Back up first and keep your live .env untouched, as before.
     Apply only this latest zip, not the older ones in order.
+
+75. CUSTOM APPLICATION + CLOSING IN THE BODY (2026-11-14)
+    1. A new "Custom Application" kind exists by default in every
+       department — nobody has to create it. It appears as its own
+       card on the Application Letters page ("Write your own
+       subject and body"). A department made after this build gets
+       its Custom Application kind at once, and the startup backfill
+       gives one to every older department too. Its number prefix
+       is CA (CA-0001, CA-0002...). The department admin can edit
+       its company header and logos like any other kind.
+    2. The Custom Application form has only the 3 approval steps,
+       the To box, a Subject box and the application body. There is
+       no From date, no To date, no Days and no Reason — a custom
+       application stores none of them, its From/To/Days cells in
+       the list are blank, and the detail page shows no Days card
+       and no From/To/Reason rows. The letter is exactly what the
+       user wrote: the typed subject and the typed body, including
+       "Respected Sir," and "Thanking you. Yours faithfully," if
+       the user wrote them. The letter adds no opening or closing
+       of its own for a custom application. The subject can be
+       changed from the edit form (one edit-log entry, "Subject").
+    3. For EVERY application format, "Thanking you. Yours
+       faithfully," is now part of the application body, so the
+       user can change it if they want. The letter (PDF, detail
+       page and code page) no longer adds its own closing. For
+       leave kinds the body is still filled in from the dates and
+       the reason — and the filled-in body now ends with the
+       closing, so the user sees it in the letter box and can
+       change it before sending. "Respected Sir," is still added
+       by the letter for leave kinds. Applications made before
+       this build keep looking exactly as they did: on startup
+       their bodies gain the closing (only rows whose body does
+       not already end with it are touched, and running it again
+       never doubles it).
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). The database changes are
+    additive (a subject column on applications, an is_custom flag
+    on application kinds, both with backfills that run on
+    startup). Back up first and keep your live .env untouched,
+    as before. Apply only this latest zip, not the older ones in
+    order.

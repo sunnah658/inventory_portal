@@ -18,10 +18,9 @@
   </div>
   <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
   <p style="margin:0 0 12px">To,{% for line in (app['to_lines'] or '').split('\n') %}{% if line.strip() %}<br>{{ line }}{% endif %}{% endfor %}</p>
-  <p style="margin:0 0 12px"><b>Subject:</b> {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
-  <p style="margin:0 0 12px">Respected Sir,</p>
+  <p style="margin:0 0 12px"><b>Subject:</b> {% if app['subject'] %}{{ app['subject'] }}{% else %}{{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).{% endif %}</p>
+  {% if not app['subject'] %}<p style="margin:0 0 12px">Respected Sir,</p>{% endif %}
   {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}
-  <p style="margin:12px 0 0">Thanking you.<br>Yours faithfully,</p>
   <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
   {% if app['hr_note'] or steps %}
   <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">

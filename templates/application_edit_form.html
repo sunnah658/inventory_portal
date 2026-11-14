@@ -3,16 +3,17 @@
 {% block title %}Edit application {{ app['number'] }}{% endblock %}
 {% block content %}
 <div class="tw"><div>
-<div class="hd"><div><h1>Edit application · {{ app['number'] }}</h1><p class="hint">Only the from/to dates, the reason, the To lines and the letter can be changed. The application number, the kind and the approval chain stay the same. Saving writes an edit log entry for every change, and notifies the other party.</p></div></div>
+<div class="hd"><div><h1>Edit application · {{ app['number'] }}</h1><p class="hint">{% if kind and kind['is_custom'] %}Only the subject, the To lines and the letter can be changed.{% else %}Only the from/to dates, the reason, the To lines and the letter can be changed.{% endif %} The application number, the kind and the approval chain stay the same. Saving writes an edit log entry for every change, and notifies the other party.</p></div></div>
 <form method="post" class="card" id="appForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
 <div class="fd"><label>Kind</label><input type="text" value="{{ kind['name'] if kind else '—' }}" readonly></div>
 <div class="fd"><label>Currently with (the person whose turn it is)</label><input type="text" value="{{ recipient_name }}" readonly></div>
 <div class="fd"><label>To</label><textarea name="to_lines" rows="3">{{ app['to_lines'] or '' }}</textarea><div class="sub">The lines under &lsquo;To,&rsquo; in the letter, one per row. Leave it blank and nothing appears under &lsquo;To,&rsquo;.</div></div>
-<div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" value="{{ app['from_date'] or '' }}" required></div>
+{% if not (kind and kind['is_custom']) %}<div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" value="{{ app['from_date'] or '' }}" required></div>
 <div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" value="{{ app['to_date'] or '' }}" required></div>
 <div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="{{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }}"></div>
-<div class="fd"><label>Reason</label><input type="text" name="reason" value="{{ app['reason'] or '' }}" required></div>
+<div class="fd"><label>Reason</label><input type="text" name="reason" value="{{ app['reason'] or '' }}" required></div>{% endif %}
+{% if kind and kind['is_custom'] %}<div class="fd" style="grid-column:1 / 3"><label>Subject</label><input type="text" name="subject" value="{{ app['subject'] or '' }}" required></div>{% endif %}
 </div>
 <h2 style="margin-top:16px">The letter</h2>
 <div class="fd"><textarea name="letter_body" rows="7" required>{{ app['letter_body'] or '' }}</textarea></div>

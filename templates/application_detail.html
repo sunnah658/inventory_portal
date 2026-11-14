@@ -4,7 +4,7 @@
 {% block title %}{{ app['number'] or 'Application' }}{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Application {% if app['number'] %}· {{ app['number'] }}{% endif %}</h1>
-<p class="hint">{{ kind['name'] if kind else '' }} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }} · Applied by: {{ owner['full_name'] if owner else '' }} · {% for s in steps %}Step {{ s['position'] }} — {{ step_roles[s['role']] }}: {{ s['full_name'] or '—' }}{% if not loop.last %} · {% endif %}{% endfor %}</p></div>
+<p class="hint">{{ kind['name'] if kind else '' }}{% if app['from_date'] %} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }}{% endif %} · Applied by: {{ owner['full_name'] if owner else '' }} · {% for s in steps %}Step {{ s['position'] }} — {{ step_roles[s['role']] }}: {{ s['full_name'] or '—' }}{% if not loop.last %} · {% endif %}{% endfor %}</p></div>
 <div class="acts noprint">
 {% if can_edit %}<a class="b" href="{{ url_for('applications.application_edit', aid=app['id']) }}">Edit</a>{% endif %}
 <a class="b p" href="{{ url_for('applications.application_pdf', aid=app['id']) }}">Download PDF</a>
@@ -19,7 +19,7 @@
 <div class="acts"><button class="b dg" type="submit">Delete</button><button class="b" type="button" onclick="document.getElementById('delApp').style.display='none'">Cancel</button></div>
 </form></div></div>{% endif %}
 <div class="kp">
-  {{ kpi('Days', app['days']) }}
+  {% if not app['subject'] %}{{ kpi('Days', app['days']) }}{% endif %}
   {{ kpi('Status', labels[app['status']]) }}
   {{ kpi('Public QR views', app['public_views'] or 0) }}
   {{ kpi('Kind', kind['name'] if kind else '—') }}
@@ -70,10 +70,9 @@
     </div>
     <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
     <p style="margin:0 0 12px">To,{% for line in (app['to_lines'] or '').split('\n') %}{% if line.strip() %}<br>{{ line }}{% endif %}{% endfor %}</p>
-    <p style="margin:0 0 12px"><b>Subject:</b> {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
-    <p style="margin:0 0 12px">Respected Sir,</p>
+    <p style="margin:0 0 12px"><b>Subject:</b> {% if app['subject'] %}{{ app['subject'] }}{% else %}{{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).{% endif %}</p>
+    {% if not app['subject'] %}<p style="margin:0 0 12px">Respected Sir,</p>{% endif %}
     {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}
-    <p style="margin:12px 0 0">Thanking you.<br>Yours faithfully,</p>
     <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
     {% if app['hr_note'] or steps %}
     <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">
@@ -112,9 +111,9 @@
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied by</b>{{ owner['full_name'] if owner else '' }}{% if owner and owner['designation'] %} ({{ owner['designation'] }}){% endif %}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currently with</b>{% if current_step %}{{ recipient['full_name'] if recipient else '—' }} (Step {{ current_step['position'] }} — {{ step_roles[current_step['role']] }}){% else %}—{% endif %}</div>
   {% for s in steps %}<div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Step {{ s['position'] }}</b>{{ step_roles[s['role']] }} — {{ s['full_name'] or '—' }}{% if s['designation'] %} ({{ s['designation'] }}){% endif %}{% if s['status'] != 'pending' %} · {{ labels[s['status']] }}{% if s['signature_at'] %} · {{ s['signature_at'][:10] }}{% endif %}{% elif app['status'] in ('approved', 'rejected') %} · not reached{% endif %}</div>{% endfor %}
-  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">From</b>{{ app['from_date'] or '—' }}</div>
+  {% if not app['subject'] %}<div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">From</b>{{ app['from_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">To</b>{{ app['to_date'] or '—' }}</div>
-  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Reason</b>{{ app['reason'] or '—' }}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Reason</b>{{ app['reason'] or '—' }}</div>{% endif %}
 </div>
 {{ quick_card([
   ('Download PDF', url_for('applications.application_pdf', aid=app['id']), True),

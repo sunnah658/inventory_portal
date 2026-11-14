@@ -71,6 +71,9 @@ def create_department(db, name, template_key=None, selected=None):
     dept_id = db.execute("INSERT INTO departments(name,repairs_enabled) VALUES (?,?)",
                          (name, 1 if template_key == "IT" else 0)).lastrowid   # only the IT starter has a repair log
     create_department_columns(db, dept_id, template_key, selected)
+    # Every department has a Custom Application kind by default (2026-11-14).
+    db.execute("INSERT INTO application_kinds(department_id,name,number_prefix,next_number,is_custom) "
+               "VALUES (?,?,?,1,1)", (dept_id, "Custom Application", "CA"))
     return dept_id
 
 

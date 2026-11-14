@@ -1,4 +1,15 @@
 ==============================================================================
+ UPDATE: CUSTOM APPLICATION + CLOSING IN THE BODY (2026-11-14)
+==============================================================================
+ 1. A new "Custom Application" kind exists by default in every
+    department — write your own subject and body, with no From/To
+    dates, Days or Reason. Numbered CA-0001, CA-0002...
+ 2. "Thanking you. Yours faithfully," is now part of the
+    application body for every kind, so you can change it. The
+    letter no longer adds its own closing. Old applications keep
+    looking exactly as they did.
+
+==============================================================================
  UPDATE: DEPARTMENT UNDER EVERY SIGNATURE (2026-11-14)
 ==============================================================================
  1. Every signature block in Application Letters now shows the

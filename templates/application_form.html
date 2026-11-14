@@ -22,18 +22,23 @@
 </select></div></div>{% endfor %}
 <div class="sub">Each step has a role — None, Checked By, Approved By or Authorised By — and a person from your department, HR &amp; Admin or Management. Choose None and that step is skipped: no signature block appears for it at the bottom of the letter. Use two steps and two signatures appear; use three and three appear. The steps run in order: Step 2 cannot start until Step 1 has approved, and Step 3 cannot start until Step 2 has approved. Each person must tick &ldquo;Use my signature&rdquo; before they can approve or reject.</div></div>
 <div class="fd"><label>To</label><textarea name="to_lines" rows="3"></textarea><div class="sub">Write the lines that appear under &lsquo;To,&rsquo; in the letter, one per row. Leave it blank and nothing appears under &lsquo;To,&rsquo;.</div></div>
-<div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" required></div>
+{% if not kind['is_custom'] %}<div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" required></div>
 <div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" required></div>
 <div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="—"><div class="sub">Counted from the from date to the to date, both days included.</div></div>
-<div class="fd"><label>Reason</label><input type="text" name="reason" id="reasonT" required placeholder="Family visit outside Dhaka"></div>
+<div class="fd"><label>Reason</label><input type="text" name="reason" id="reasonT" required placeholder="Family visit outside Dhaka"></div>{% endif %}
+{% if kind['is_custom'] %}<div class="fd" style="grid-column:1 / 3"><label>Subject</label><input type="text" name="subject" required placeholder="Request for a change of duty roster"></div>{% endif %}
 </div>
 <h2 style="margin-top:16px">The letter</h2>
-<p class="hint">The letter is filled in for you from the dates and the reason above, once you pick them. You can change any word of it before you send it.</p>
+{% if kind['is_custom'] %}<p class="hint">Write the application in your own words. Nothing is filled in for you.</p>
+<div class="fd"><textarea name="letter_body" id="bodyT" rows="7" required placeholder="Write your application here."></textarea></div>
+{% else %}<p class="hint">The letter is filled in for you from the dates and the reason above, once you pick them. You can change any word of it — including the &lsquo;Thanking you. Yours faithfully,&rsquo; closing, which is part of the letter now — before you send it.</p>
 <div class="fd"><textarea name="letter_body" id="bodyT" rows="7" required placeholder="The letter appears here once you pick the dates and write a reason."></textarea></div>
+{% endif %}
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit" {{ 'disabled' if not chain_people }}>Send application</button><a class="b" href="{{ url_for('applications.list_applications') }}">Cancel</a></div>
 </form>
 <script>
 var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+var isCustom={{ 'true' if kind['is_custom'] else 'false' }};
 function longDate(iso){var p=iso.split("-"); if(p.length!==3) return iso; return (parseInt(p[2],10))+" "+MONTHS[parseInt(p[1],10)-1]+" "+p[0];}
 function daysBetween(a,b){var fa=new Date(a+"T00:00:00"), fb=new Date(b+"T00:00:00"); if(isNaN(fa)||isNaN(fb)) return 0; return Math.round((fb-fa)/86400000)+1;}
 var bodyTouched=false;
@@ -42,16 +47,19 @@ function fillBody(){
   var f=document.getElementById('fromD').value, t=document.getElementById('toD').value, r=document.getElementById('reasonT').value.trim();
   var d=daysBetween(f,t);
   document.getElementById('daysT').value = (d>0 ? d + (d===1 ? " day" : " days") : "—");
-  if(bodyTouched || !f || !t || d<1 || !r) return;
+  if(isCustom || bodyTouched || !f || !t || d<1 || !r) return;
   var noun="{{ kind['name'] }}".toLowerCase();
   var dayWord = d===1 ? "day" : "days";
   document.getElementById('bodyT').value =
     "I am writing to request "+noun+" for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", for "+r+". I have handed over my pending work to my colleague, and I will be reachable on my phone during the leave."+
-    "\n\nI would be grateful if you would kindly approve my leave.";
+    "\n\nI would be grateful if you would kindly approve my leave."+
+    "\n\nThanking you.\n\nYours faithfully,";
 }
+if (!isCustom) {
 document.getElementById('fromD').addEventListener('change', fillBody);
 document.getElementById('toD').addEventListener('change', fillBody);
 document.getElementById('reasonT').addEventListener('input', fillBody);
+}
 </script>
 </div>
 <div class="stack rail">
