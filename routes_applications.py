@@ -54,7 +54,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin, is_true_admin
-from core import external_url, notify, notify_ddb_task
+from core import external_url, notify, notify_ddb_task, notify_dept_task, permission_user_ids, true_admin_ids
 from models import get_db, log, setting_get
 from routes_requests import can_see_all_departments, hr_admin_dept_id, hr_admin_users
 
@@ -512,7 +512,7 @@ def application_new():
                              (g.user["department_id"], kind["id"], g.user["id"], recipient_id, recipient_id, number, "pending",
                               from_date, to_date, days, reason, body)).lastrowid
             _log_history(db, aid, g.user, "created", "", "", number)
-            rec = db.execute("SELECT full_name FROM users WHERE id=?", (recipient_id,)).fetchone()
+            rec = db.execute("SELECT full_name, is_dept_admin FROM users WHERE id=?", (recipient_id,)).fetchone()
             log(db, "application_new", number)
             notify(db, [recipient_id],
                    f"{g.user['full_name']} sent you a {kind['name']} {number} to check.",
@@ -524,6 +524,17 @@ def application_new():
             notify_ddb_task(db, g.user, _dept,
                             f"{g.user['full_name']} sent a {kind['name']} {number} to {rec['full_name'] if rec else 'their department'} to check.",
                             url_for("applications.detail", aid=aid), skip=recipient_id)
+            # When a regular user sends an application to a department admin,
+            # the portal admin and the administrative permission users are
+            # told too (2026-11-14): they are told about every request a
+            # department admin receives, not only about the tasks a
+            # department admin sends. A department admin or permission user
+            # sending it already told them through notify_ddb_task above,
+            # so they are not told twice.
+            if rec and rec["is_dept_admin"] and not _is_dept_admin(g.user) and not is_portal_admin(g.user):
+                notify(db, true_admin_ids(db) + permission_user_ids(db),
+                       f"{g.user['full_name']} sent a {kind['name']} {number} to {rec['full_name']} to check.",
+                       url_for("applications.detail", aid=aid), skip=g.user["id"])
             db.commit()
             flash(f"Application {number} sent to {rec['full_name'] if rec else 'your department'} to check.", "ok")
             return redirect(url_for("applications.detail", aid=aid))
@@ -585,6 +596,15 @@ def application_edit(aid):
                    url_for("applications.detail", aid=aid), skip=g.user["id"])
         _notify_dept_admins(db, app, f"{g.user['full_name']} updated the application {app['number']}.",
                             url_for("applications.detail", aid=aid))
+        # When a department admin edits an application, the portal admin
+        # and the administrative permission users are told too (2026-11-14):
+        # they are told about every task a department admin does. This
+        # tells a different set from _notify_dept_admins above (which tells
+        # the department admins), so nobody is told twice.
+        if _is_dept_admin(g.user):
+            notify_dept_task(db, g.user,
+                             f"{g.user['full_name']} updated the application {app['number']}.",
+                             url_for("applications.detail", aid=aid))
         db.commit()
         flash(f"Application {app['number']} updated. The other party has been notified.", "ok")
         return redirect(url_for("applications.detail", aid=aid))
@@ -718,6 +738,15 @@ def forward_to_hr(aid):
     notify(db, [app["owner_id"]],
            f"{g.user['full_name']} checked your application {app['number']} and forwarded it to {hr['full_name'] if hr else 'HR & Admin'}.",
            url_for("applications.detail", aid=aid), skip=g.user["id"])
+    # The watchers are told too (2026-11-14): when a department admin
+    # checks and forwards an application, the portal admin and the
+    # administrative permission users are told; when a regular user does
+    # it, that department's department admins are told. The router sends
+    # it to the right watchers for whoever the checker is.
+    _dept = db.execute("SELECT * FROM departments WHERE id=?", (app["department_id"],)).fetchone()
+    notify_ddb_task(db, g.user, _dept,
+                    f"{g.user['full_name']} checked the application {app['number']} and forwarded it to {hr['full_name'] if hr else 'HR & Admin'}.",
+                    url_for("applications.detail", aid=aid))
     db.commit()
     flash(f"Application {app['number']} forwarded to {hr['full_name'] if hr else 'HR & Admin'}. It is now Checked.", "ok")
     return redirect(url_for("applications.detail", aid=aid))

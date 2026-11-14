@@ -1,4 +1,18 @@
 ==============================================================================
+ UPDATE: BIGGER PDF SIGNATURES, NO PRINT ON THE APPLICATION PAGE, AND
+ THE PORTAL ADMIN TOLD ABOUT DEPARTMENT ADMIN APPLICATIONS (2026-11-14)
+==============================================================================
+ 1. The checker and approver signatures on the application letter PDF
+    are bigger (1.4 cm instead of 0.9 cm), so they are easy to read.
+ 2. The Print button is gone from the application detail page. Only
+    Edit and Download PDF are left there (and Delete, for those who
+    can delete an application).
+ 3. The portal admin and the administrative permission users are now
+    told when a department admin receives an application, when a
+    department admin checks and forwards one, and when a department
+    admin edits one.
+
+==============================================================================
  UPDATE: APPLICATION LETTERS FOR THE PORTAL ADMIN, CLICK-TO-READ,
  BIGGER SIGNATURES AND TWO KIND LOGOS (2026-11-14)
 ==============================================================================

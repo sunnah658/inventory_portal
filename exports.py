@@ -144,7 +144,7 @@ def _application_sig_table(blocks, usable):
                         textColor=colors.HexColor("#444444"))
 
     def _block(image_path, title, name, designation):
-        _rows = [[_sig_image_fixed_height(image_path, 0.9 * cm)],
+        _rows = [[_sig_image_fixed_height(image_path, 1.4 * cm)],
                  [Paragraph(_times_text(title), _t)],
                  [Paragraph(_times_text(name), _n)]]
         if designation:

@@ -3370,3 +3370,61 @@
     added to an existing database on the first startup, so no data
     is lost. Back up first and keep your live .env untouched, as
     before. Apply only this latest zip, not the older ones in order.
+
+==============================================================================
+ 66. BIGGER PDF SIGNATURES, NO PRINT BUTTON ON THE APPLICATION DETAIL PAGE,
+     AND THE PORTAL ADMIN / PERMISSION USERS TOLD ABOUT DEPARTMENT ADMIN
+     APPLICATION ACTIVITY (2026-11-14)
+==============================================================================
+ 1. The checker and approver signatures on the application letter PDF
+    are bigger — 1.4 cm tall instead of 0.9 cm — so they are easy to
+    read on the printed letter. Both are still drawn at the same
+    fixed height, so the line under each signature still lines up
+    across the two blocks, and the ink and the line stay centred
+    above the title, name and designation. The signature size on the
+    detail and code pages (68px, from build 46) is unchanged.
+ 2. The Print button is gone from the application detail page. There
+    is no Print button in the top action row any more, and no Print
+    button in the Quick actions card on the right either. Only Edit
+    and Download PDF are left there (and Delete, for the owner, the
+    portal admin and the administrative permission users, who can
+    still delete an application). The page can still be printed from
+    the browser itself (Ctrl+P), and the "Print this QR" link in the
+    Public QR panel is unchanged. The Print button on the public
+    code page is unchanged.
+ 3. The portal admin and the administrative permission users are now
+    told about department admin activity on applications, which they
+    were not told about before:
+    (a) When a regular user sends an application to a department
+    admin, the portal admin and the permission users are told
+    ("X sent a Leave Application LV-0004 to Sales Admin to
+    check."). Before, only the checker and that department's
+    department admins were told. A department admin or permission
+    user sending it already told them through the watcher chain,
+    so they are not told twice.
+    (b) When a department admin (as checker) checks and forwards
+    an application to HR, the portal admin and the permission
+    users are told ("X checked the application LV-0004 and
+    forwarded it to HR User."). The watcher notification is
+    routed by whoever the checker is: a department admin
+    checker tells the portal admin and the permission users, a
+    regular-user checker tells that department's department
+    admins, a permission-user checker tells the true portal
+    admins.
+    (c) When a department admin edits an application, the portal
+    admin and the permission users are told ("X updated the
+    application LV-0004."). This tells a different set from the
+    department-admin notification that was already sent on an
+    edit, so nobody is told twice.
+    The notification chain itself is unchanged: a department
+    user's task tells that department's department admins, a
+    department admin's task tells the portal admin and the
+    permission users, a permission user's task tells the true
+    portal admins, and nobody is told about a true portal
+    admin's task. The delete rule from build 46 is unchanged:
+    when the portal admin or a permission user deletes an
+    application, only the owner is told.
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). No database change in this
+    build. Back up first and keep your live .env untouched, as
+    before. Apply only this latest zip, not the older ones in order.

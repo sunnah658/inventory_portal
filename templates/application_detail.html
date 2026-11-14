@@ -7,7 +7,7 @@
 <p class="hint">{{ kind['name'] if kind else '' }} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }} · Applied by: {{ owner['full_name'] if owner else '' }} · Sent to: {{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }} to check</p></div>
 <div class="acts noprint">
 {% if can_edit %}<a class="b" href="{{ url_for('applications.application_edit', aid=app['id']) }}">Edit</a>{% endif %}
-<a class="b p" href="{{ url_for('applications.application_pdf', aid=app['id']) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>
+<a class="b p" href="{{ url_for('applications.application_pdf', aid=app['id']) }}">Download PDF</a>
 {% if can_delete %}<button class="b dg" type="button" onclick="document.getElementById('delApp').style.display='flex'">Delete</button>{% endif %}
 </div></div>
 {% if can_delete %}<div id="delApp" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center">
@@ -118,7 +118,6 @@
 </div>
 {{ quick_card([
   ('Download PDF', url_for('applications.application_pdf', aid=app['id']), True),
-  ('Print', 'print', False),
   ('Back to Application Letters', url_for('applications.list_applications'), False),
 ] | select) }}
 </div></div>
