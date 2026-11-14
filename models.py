@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_by           INTEGER REFERENCES users(id), -- who created the account (for approval notifications)
     theme                TEXT NOT NULL DEFAULT 'auto', -- light, dark or auto
     warn_days            INTEGER NOT NULL DEFAULT 3,   -- reminder warning: 1, 3 or 7 days ahead
+    signature_path       TEXT,                         -- the user's own signature (PNG, from My settings), used by "Use my signature" in application letters
     created_at           TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
@@ -269,6 +270,14 @@ CREATE TABLE IF NOT EXISTS reminder_sent (
     offset_days INTEGER NOT NULL,
     sent_on     TEXT NOT NULL DEFAULT (date('now','localtime')),
     PRIMARY KEY (record_id, column_id, value, offset_days)
+);
+
+-- Which daily "upload your signature" morning reminders were already sent
+-- (so each user gets it once a day, not on every 5-minute check).
+CREATE TABLE IF NOT EXISTS signature_reminder_sent (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sent_on TEXT NOT NULL,
+    PRIMARY KEY (user_id, sent_on)
 );
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
@@ -914,6 +923,7 @@ def init_db():
         _ensure_column(conn, "users", "approval_status", "TEXT NOT NULL DEFAULT 'approved'")
         _ensure_column(conn, "users", "theme", "TEXT NOT NULL DEFAULT 'auto'")
         _ensure_column(conn, "users", "warn_days", "INTEGER NOT NULL DEFAULT 3")
+        _ensure_column(conn, "users", "signature_path", "TEXT")  # the user's own signature (PNG, from My settings) for "Use my signature" (2026-11-14)
         _ensure_column(conn, "columns", "has_time", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "record_shares", "permission", "TEXT NOT NULL DEFAULT 'edit'")   # old shares stay 'edit'
         _upgrade_repairs_switch(conn)

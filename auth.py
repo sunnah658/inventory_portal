@@ -10,6 +10,7 @@ Protection: a username is locked after 5 wrong passwords, a computer (IP address
 20; every attempt is saved with its IP address; each login is a server-side session that
 ends after 30 minutes without activity and can be ended by the admin.
 """
+import os
 import secrets
 from functools import wraps
 
@@ -191,6 +192,128 @@ def my_settings_password():
     return redirect(url_for("auth.my_settings"))
 
 
+USER_SIG_EXTENSIONS = {"png", "jpg", "jpeg"}
+
+
+def _trim_to_ink(rgba):
+    """Crop an RGBA signature picture to the ink, with the same small
+    margin on every side, so the ink sits centred in the picture. A
+    signature photo or scan often has more blank space on one side than
+    the other; without this, the picture is centred in its block but the
+    writing (and any line under it) sits left of the title below it.
+    Handles transparent PNGs and white-background pictures alike."""
+    from PIL import ImageChops
+    opaque = rgba.split()[3].point(lambda v: 255 if v > 30 else 0)
+    dark = rgba.convert("L").point(lambda v: 255 if v < 235 else 0)
+    ink = ImageChops.multiply(opaque, dark)
+    box = ink.getbbox()
+    if not box:
+        return rgba
+    m = 8
+    crop = (max(0, box[0] - m), max(0, box[1] - m),
+            min(rgba.size[0], box[2] + m), min(rgba.size[1], box[3] + m))
+    if crop == (0, 0, rgba.size[0], rgba.size[1]):
+        return rgba
+    return rgba.crop(crop)
+
+
+def _save_user_signature(file_storage):
+    """Save a signature uploaded in My settings. The picture is always
+    converted to PNG (whether the user uploads a png or a jpg) and trimmed
+    to the ink, then stored in uploads/user_signatures/ under a random
+    name, so it is there for future use — the "Use my signature" tick box
+    in application letters uses this stored PNG. Returns the stored file
+    name, or None when nothing was uploaded or the file type is not png
+    or jpg."""
+    if not file_storage or not file_storage.filename:
+        return None
+    ext = file_storage.filename.rsplit(".", 1)[-1].lower()
+    if ext not in USER_SIG_EXTENSIONS:
+        return None
+    try:
+        from PIL import Image
+    except Exception:
+        return None
+    try:
+        im = Image.open(file_storage.stream)
+        rgba = _trim_to_ink(im.convert("RGBA"))
+    except Exception:
+        return None
+    try:
+        folder = os.path.join(config.UPLOAD_DIR, "user_signatures")
+        os.makedirs(folder, exist_ok=True)
+        name = secrets.token_hex(10) + ".png"
+        rgba.save(os.path.join(folder, name), "PNG")
+        return name
+    except Exception:
+        return None
+
+
+def _user_signature_path(name):
+    """Path of a saved user signature (My settings), or None."""
+    if not name:
+        return None
+    p = os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(name))
+    return p if os.path.exists(p) else None
+
+
+def _delete_user_signature(name):
+    if not name:
+        return
+    try:
+        p = os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(name))
+        if os.path.exists(p):
+            os.remove(p)
+    except Exception:
+        pass
+
+
+@bp.route("/my-settings/signature", methods=["POST"])
+@login_required
+def my_settings_signature():
+    """Save or remove the user's own signature (My settings). Uploading a
+    new one replaces the old one; ticking "Remove my signature" deletes
+    it. The picture is always converted to PNG and trimmed to the ink
+    before it is stored, so the signature kept for future use is always a
+    PNG."""
+    db = get_db()
+    user = db.execute("SELECT signature_path FROM users WHERE id=?", (g.user["id"],)).fetchone()
+    old = user["signature_path"] if user else None
+    if request.form.get("remove_signature"):
+        if old:
+            _delete_user_signature(old)
+        db.execute("UPDATE users SET signature_path=NULL WHERE id=?", (g.user["id"],))
+        log(db, "my_signature_removed")
+        db.commit()
+        flash("Your signature has been removed.", "ok")
+        return redirect(url_for("auth.my_settings"))
+    name = _save_user_signature(request.files.get("signature"))
+    if not name:
+        flash("Upload a signature image (png or jpg).", "error")
+        return redirect(url_for("auth.my_settings"))
+    if old:
+        _delete_user_signature(old)
+    db.execute("UPDATE users SET signature_path=? WHERE id=?", (name, g.user["id"]))
+    log(db, "my_signature")
+    db.commit()
+    flash("Your signature has been saved.", "ok")
+    return redirect(url_for("auth.my_settings"))
+
+
+@bp.route("/my-settings/signature/image")
+@login_required
+def my_signature_image():
+    """Serve the logged-in user's own saved signature (PNG) inline, for
+    the preview in My settings. Only the user themself can see it."""
+    from flask import send_file
+    db = get_db()
+    user = db.execute("SELECT signature_path FROM users WHERE id=?", (g.user["id"],)).fetchone()
+    path = _user_signature_path(user["signature_path"] if user else None)
+    if not path:
+        abort(404)
+    return send_file(path)
+
+
 @bp.route("/my-settings", methods=["GET", "POST"])
 @login_required
 def my_settings():
@@ -200,7 +323,9 @@ def my_settings():
     the owner signature on their invoices, item requests and applications.
     Changing the username takes effect at once; the user signs in with the
     new username next time. The password is changed from the Change password
-    box on this same page (POST /my-settings/password)."""
+    box on this same page (POST /my-settings/password). The user's own
+    signature is uploaded from the My signature box on this same page
+    (POST /my-settings/signature)."""
     db = get_db()
     if request.method == "POST":
         full_name = (request.form.get("full_name") or "").strip()

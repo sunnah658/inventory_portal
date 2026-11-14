@@ -3493,3 +3493,72 @@
     (applications.to_lines) and the one-time fill above; nothing else
     changes. Back up first and keep your live .env untouched, as
     before. Apply only this latest zip, not the older ones in order.
+
+==============================================================================
+ 69. SIGNATURE UPLOADED ONCE IN MY SETTINGS, USED WITH A TICK BOX (2026-11-14)
+==============================================================================
+ 1. Every user now uploads their signature once, in My settings. A new
+    "My signature" box sits under the name, username and designation,
+    and says: "Upload your signature once. Please scan your signature
+    and upload as png or jpg here." The saved signature is shown there,
+    with an upload to replace it and a tick box to remove it.
+ 2. Whatever the user uploads — a png or a jpg — is always converted
+    to PNG and trimmed to the ink before it is stored, so the signature
+    kept for future use is always a PNG. A webp is refused. The stored
+    PNG is what the "Use my signature" tick box uses.
+ 3. There is no longer a signature upload box in application letters.
+    In its place, both the checker (under Checked By) and the HR
+    approver (under Approved By) get a tick box "Use my signature".
+    Ticking it copies the saved signature onto the application, so it
+    stays as it was even if the user later changes their signature in
+    My settings. Applications that already have a signature uploaded
+    keep showing it, unchanged.
+ 4. A user who has not uploaded a signature in My settings yet sees a
+    message with a link to My settings instead of a working tick box,
+    and cannot sign until they have one. The checker still cannot
+    forward until their signature is on file.
+ 5. NEW: the HR approver cannot save the status (Approve or Reject)
+    until their signature is on file for that application. The "Save
+    status" button stays disabled, and the page refuses the change,
+    until the approver has ticked "Use my signature". The HR note can
+    still be saved without a signature. This is the same rule the
+    checker already has for forwarding.
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). The database gains one new column
+    (users.signature_path); nothing else changes. Back up first and
+    keep your live .env untouched, as before. Apply only this latest
+    zip, not the older ones in order.
+
+==============================================================================
+ 70. MORNING REMINDER TO UPLOAD YOUR SIGNATURE (2026-11-14)
+==============================================================================
+ 1. Every morning, from 07:00 (REMINDER_HOUR, the same morning hour as
+    the other reminders), every user who has not uploaded a signature
+    in My settings yet gets one notification in their Notifications
+    page: "Please upload your signature from my settings". Clicking
+    it opens My settings, where the "My signature" box is.
+ 2. The portal admin and the administrative permission users never
+    get this reminder, even if they have no signature uploaded. Every
+    other user does — department admins, HR users and regular users.
+    Inactive, deleted and not-yet-approved accounts never get it.
+ 3. It comes once a day, and again the next morning, until the user
+    uploads a signature — then it stops. If they later remove their
+    signature, it starts again the next morning. Yesterday's
+    notification does not stop today's: each morning brings a new one
+    while the signature is still missing.
+ 4. It is sent by the same morning check that sends the other
+    reminders: the background check every 5 minutes, and again when
+    somebody opens a page. So the bell shows it even before the user
+    has opened a page that morning, as long as the portal is running.
+    The "Who gets told what" card on the Notifications page now says
+    this too.
+ 5. A small fix that this needed: the background check used to stop
+    after the first reminder sender that sent something, so a later
+    sender could be skipped on that check. It now calls every sender,
+    every time.
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). The database gains one new table
+    (signature_reminder_sent, one row per user per day, so nobody is
+    told twice on the same day); nothing else changes. Back up first
+    and keep your live .env untouched, as before. Apply only this
+    latest zip, not the older ones in order.

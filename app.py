@@ -23,7 +23,7 @@ import config
 import models
 from auth import bp as auth_bp
 from branding import bp as brand_bp, logo_version
-from core import design_rail, options_of, purge_expired, send_ddb_meeting_notifications, send_reminder_notifications, show_when
+from core import design_rail, options_of, purge_expired, send_ddb_meeting_notifications, send_reminder_notifications, send_signature_reminder_notifications, show_when
 from models import get_db, setting_get
 from utils import is_portal_admin, user_name_class
 from routes_admin import bp as admin_bp
@@ -49,7 +49,14 @@ def _reminder_loop():
         try:
             conn = models.connect()
             try:
-                if send_reminder_notifications(conn) or send_ddb_meeting_notifications(conn):
+                # Call each sender on its own line (no `or` chain): with
+                # `or`, a sender that sent something would skip the ones
+                # after it on that check, so the signature reminder could
+                # be missed on a morning another reminder went out.
+                sent = send_reminder_notifications(conn)
+                sent += send_ddb_meeting_notifications(conn)
+                sent += send_signature_reminder_notifications(conn)
+                if sent:
                     conn.commit()
             finally:
                 conn.close()
@@ -127,6 +134,7 @@ def create_app():
                 _last_reminders[0] = time.time()
                 send_reminder_notifications(db)
                 send_ddb_meeting_notifications(db)
+                send_signature_reminder_notifications(db)
                 db.commit()
             if (g.user["must_change_password"]
                     and request.endpoint not in ("auth.change_password", "auth.logout", "brand.logo",

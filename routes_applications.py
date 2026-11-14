@@ -7,8 +7,9 @@ template / Item Request kind). A user picks a kind, fills in the leave
 (from date, to date, reason, letter body) and sends the application to a
 SPECIFIC user in their OWN department — a department user or the person with
 Department admin permission of that department. That person (the checker)
-checks it, uploads their signature, then forwards it to an HR & Admin user.
-HR approves or rejects it and uploads their signature. So the flow is:
+checks it, uses their saved signature (the PNG from My settings), then
+forwards it to an HR & Admin user. HR approves or rejects it and uses their
+saved signature the same way. So the flow is:
 Pending (with the checker) -> Checked (checker signed and forwarded, with
 HR) -> Approved / Rejected. A new application starts as Pending and gets a
 number like LV-0001 (sequential per kind). The owner can edit their own
@@ -18,8 +19,8 @@ The document is a formal application letter (not an invoice): a letterhead,
 Ref + date, To (the checker, with the applicant's department), Subject, the
 body, the applicant's signature (name, designation, department, company),
 and a FOR OFFICE USE section with the HR note and two signature blocks side
-by side — Checked By (the checker's uploaded signature image above their
-name and designation) and Approved By (the HR approver's uploaded signature
+by side — Checked By (the checker's saved signature image above their
+name and designation) and Approved By (the HR approver's saved signature
 image above their name and designation). The owner's designation comes
 from their user account and is filled in automatically. The kind carries
 its own company name and address for the letterhead (blank = portal
@@ -152,7 +153,7 @@ def _can_edit(db, user, app):
 
 def _can_check(db, user, app):
     """The checker (the own-department person the application was sent to)
-    while it is still Pending. They upload their signature under Checked By
+    while it is still Pending. They use their saved signature under Checked By
     and forward it to an HR & Admin user."""
     return app["checker_id"] == user["id"] and app["status"] == "pending"
 
@@ -224,66 +225,34 @@ def _default_body(kind_name, from_iso, to_iso, days, reason):
 def _qr_svg(url):
     return segno.make(url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
 
-def _trim_signature_image(path):
-    """Crop an uploaded signature picture to the ink, with the same small
-    margin on every side, so the ink sits centred in the picture. A
-    signature photo or scan often has more blank space on one side than
-    the other; without this, the picture is centred in its block but the
-    writing (and any line under it) sits left of the title below it.
-    Handles transparent PNGs and white-background pictures alike. Only
-    rewrites the file when the crop actually removes blank space, and
-    leaves the file alone when the picture cannot be read (Pillow is
-    only an indirect dependency, via reportlab)."""
-    try:
-        from PIL import Image, ImageChops
-    except Exception:
-        return
-    try:
-        im = Image.open(path)
-    except Exception:
-        return
-    try:
-        rgba = im.convert("RGBA")
-        opaque = rgba.split()[3].point(lambda v: 255 if v > 30 else 0)
-        dark = rgba.convert("L").point(lambda v: 255 if v < 235 else 0)
-        ink = ImageChops.multiply(opaque, dark)
-        box = ink.getbbox()
-        if not box:
-            return
-        m = 8
-        crop = (max(0, box[0] - m), max(0, box[1] - m),
-                min(rgba.size[0], box[2] + m), min(rgba.size[1], box[3] + m))
-        if crop == (0, 0, rgba.size[0], rgba.size[1]):
-            return
-        cropped = rgba.crop(crop)
-        fmt = {"png": "PNG", "jpg": "JPEG", "jpeg": "JPEG", "webp": "WEBP"}.get(
-            path.rsplit(".", 1)[-1].lower(), "PNG")
-        if fmt == "JPEG":
-            cropped.convert("RGB").save(path, fmt, quality=92)
-        else:
-            cropped.save(path, fmt)
-    except Exception:
-        return
-
-def _save_signature(file_storage):
-    if not file_storage or not file_storage.filename:
-        return None
-    ext = file_storage.filename.rsplit(".", 1)[-1].lower()
-    if ext not in SIG_EXTENSIONS:
-        return None
-    folder = os.path.join(config.UPLOAD_DIR, "app_signatures")
-    os.makedirs(folder, exist_ok=True)
-    name = secrets.token_hex(10) + "." + ext
-    path = os.path.join(folder, name)
-    file_storage.save(path)
-    _trim_signature_image(path)
-    return name
-
 def _signature_path(name):
     if not name:
         return None
     p = os.path.join(config.UPLOAD_DIR, "app_signatures", name)
     return p if os.path.exists(p) else None
+
+
+def _use_my_signature():
+    """Copy the logged-in user's saved signature (the PNG from My
+    settings) into the application signatures folder, under a new random
+    name, so the application keeps its own copy even if the user later
+    changes their signature in My settings. Returns the new file name,
+    or None when the user has no saved signature."""
+    saved = g.user["signature_path"] if g.user is not None and "signature_path" in g.user.keys() else None
+    if not saved:
+        return None
+    src = os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(saved))
+    if not os.path.exists(src):
+        return None
+    folder = os.path.join(config.UPLOAD_DIR, "app_signatures")
+    os.makedirs(folder, exist_ok=True)
+    name = secrets.token_hex(10) + ".png"
+    try:
+        import shutil
+        shutil.copyfile(src, os.path.join(folder, name))
+    except Exception:
+        return None
+    return name
 
 def _save_kind_logo(file_storage):
     """Save an uploaded kind logo (top left or top right corner of the
@@ -649,6 +618,7 @@ def detail(aid):
                            owner=owner, recipient=recipient, checker=checker, approver=approver,
                            dept=dept, signer=signer,
                            qr_svg=qr_svg, qr_url=qr_url,
+                           my_signature=g.user["signature_path"] if g.user is not None and "signature_path" in g.user.keys() else None,
                            can_manage=_can_manage(db, g.user, app),
                            can_edit=_can_edit(db, g.user, app),
                            can_delete=_can_delete(db, g.user, app),
@@ -695,16 +665,20 @@ def application_delete(aid):
 @bp.route("/applications/<int:aid>/check-signature", methods=["POST"])
 @login_required
 def check_signature(aid):
-    """The checker uploads their signature image (it appears above
-    'Checked By', with their name and designation under it). The checker
-    must have uploaded a signature before they can forward the application
-    to HR."""
+    """The checker uses their saved signature (the PNG from My settings)
+    under Checked By — tick "Use my signature". The signature is copied
+    onto the application, so it stays as it was even if the checker later
+    changes their signature in My settings. The checker must have used
+    their signature before they can forward the application to HR."""
     db = get_db(); app = _app(db, aid)
     if not _can_check(db, g.user, app):
         abort(403)
-    name = _save_signature(request.files.get("signature"))
+    if not request.form.get("use_my_signature"):
+        flash("Tick 'Use my signature' to use the signature you saved in My settings.", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    name = _use_my_signature()
     if not name:
-        flash("Upload a signature image (png, jpg, jpeg or webp).", "error")
+        flash("You haven't uploaded a signature yet — upload one in My settings first.", "error")
         return redirect(url_for("applications.detail", aid=aid))
     if app["checker_signature_path"]:
         try:
@@ -725,14 +699,14 @@ def check_signature(aid):
 @login_required
 def forward_to_hr(aid):
     """The checker forwards the application to ONE specific HR & Admin user.
-    The checker must have uploaded their signature first. Forwarding sets
+    The checker must have used their signature first. Forwarding sets
     the status to Checked, makes the HR user the person it is currently
     with (recipient and approver), and notifies the HR user and the owner."""
     db = get_db(); app = _app(db, aid)
     if not _can_check(db, g.user, app):
         abort(403)
     if not app["checker_signature_path"]:
-        flash("Upload your signature first — you can only forward the application once your signature is under Checked By.", "error")
+        flash("Use your signature first — you can only forward the application once your signature is under Checked By.", "error")
         return redirect(url_for("applications.detail", aid=aid))
     try:
         hr_id = int(request.form.get("hr_user_id") or 0)
@@ -774,7 +748,9 @@ def forward_to_hr(aid):
 def change_status(aid):
     """The HR approver (or the HR & Admin dept admin) approves or rejects
     the application, once the checker has forwarded it (status Checked).
-    The checker and the owner are both told."""
+    The status cannot be saved until the approver's signature is on file
+    for this application — the approver must tick "Use my signature"
+    first. The checker and the owner are both told."""
     db = get_db(); app = _app(db, aid)
     if not _can_manage(db, g.user, app):
         abort(403)
@@ -784,6 +760,9 @@ def change_status(aid):
         return redirect(url_for("applications.detail", aid=aid))
     if new_status == app["status"]:
         flash("Status is already " + STATUS_LABELS[new_status] + ".", "ok")
+        return redirect(url_for("applications.detail", aid=aid))
+    if not app["signature_path"]:
+        flash("Use your signature first — you can only save the status once your signature is under Approved By.", "error")
         return redirect(url_for("applications.detail", aid=aid))
     db.execute("UPDATE applications SET status=?,updated_at=datetime('now','localtime') WHERE id=?", (new_status, aid))
     _log_history(db, aid, g.user, "status", "Status", STATUS_LABELS.get(app["status"], app["status"]), STATUS_LABELS[new_status])
@@ -837,12 +816,20 @@ def set_note(aid):
 @bp.route("/applications/<int:aid>/signature", methods=["POST"])
 @login_required
 def upload_signature(aid):
+    """The HR approver uses their saved signature (the PNG from My
+    settings) under Approved By — tick "Use my signature". The signature
+    is copied onto the application, so it stays as it was even if the
+    approver later changes their signature in My settings. The status
+    cannot be saved until this signature is on file."""
     db = get_db(); app = _app(db, aid)
     if not _can_manage(db, g.user, app):
         abort(403)
-    name = _save_signature(request.files.get("signature"))
+    if not request.form.get("use_my_signature"):
+        flash("Tick 'Use my signature' to use the signature you saved in My settings.", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    name = _use_my_signature()
     if not name:
-        flash("Upload a signature image (png, jpg, jpeg or webp).", "error")
+        flash("You haven't uploaded a signature yet — upload one in My settings first.", "error")
         return redirect(url_for("applications.detail", aid=aid))
     # The old signature image is replaced, so remove it.
     if app["signature_path"]:

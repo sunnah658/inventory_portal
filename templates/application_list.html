@@ -55,7 +55,7 @@
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Rejected</b>{{ counts.rejected }}</div>
   </div>
   <div class="card"><h2>How approval works</h2>
-    <p class="hint">When the checker forwards an application, they add their signature — an uploaded signature image — which appears on the application and its PDF, under Checked By. When HR &amp; Admin approve it, they add their signature, which appears under Approved By. Only the HR approver and the HR &amp; Admin department admin can change its status. Other HR &amp; Admin users can open and see it, but not change it.</p></div>
+    <p class="hint">When the checker forwards an application, they add their signature — the signature they saved in My settings — which appears on the application and its PDF, under Checked By. When HR &amp; Admin approve it, they add their signature the same way, which appears under Approved By. The HR approver cannot save the status until their signature is on file. Only the HR approver and the HR &amp; Admin department admin can change its status. Other HR &amp; Admin users can open and see it, but not change it.</p></div>
   {{ quick_card([
     ('+ New application', url_for('applications.application_new', kind=kinds[0]['id']), True) if kinds else None,
     ('Application kinds', url_for('applications.kinds'), False) if g.user['is_dept_admin'] else None,

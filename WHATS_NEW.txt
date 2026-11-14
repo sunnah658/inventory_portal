@@ -1,4 +1,28 @@
 ==============================================================================
+ UPDATE: A MORNING REMINDER TO UPLOAD YOUR SIGNATURE (2026-11-14)
+==============================================================================
+ 1. Every morning, every user who has not uploaded a signature in My
+    settings yet gets one notification: "Please upload your signature
+    from my settings". Clicking it opens My settings.
+ 2. The portal admin and the administrative permission users never
+    get it. Everyone else does, once a day, until they upload a
+    signature — then it stops. If they remove their signature later,
+    it starts again the next morning.
+
+==============================================================================
+ UPDATE: SIGNATURE UPLOADED ONCE IN MY SETTINGS, USED WITH A TICK BOX (2026-11-14)
+==============================================================================
+ 1. Every user uploads their signature once, in My settings — scan it
+    and upload as png or jpg. It is always converted to PNG and kept
+    for future use.
+ 2. There is no signature upload box in application letters any more.
+    The checker and the HR approver tick "Use my signature" instead,
+    and their saved signature appears under Checked By / Approved By.
+ 3. The HR approver cannot save the status (Approve or Reject) until
+    their signature is on file — the "Save status" button stays
+    disabled until they tick "Use my signature".
+
+==============================================================================
  UPDATE: THE LETTER'S "TO" SECTION IS NOW WHAT THE USER WRITES (2026-11-14)
 ==============================================================================
  1. A new "To" box on the application creating page, right after

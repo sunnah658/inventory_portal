@@ -28,27 +28,35 @@
 <div class="card"><div><span class="s {{ 'g' if app['status'] == 'approved' else ('r' if app['status'] == 'rejected' else 'a') }}">{{ labels[app['status']] }}</span>
 <span class="hint"> Applied by {{ owner['full_name'] if owner else '' }} · Checked by {{ checker['full_name'] if checker else '—' }}{% if checker %} ({{ dept['name'] if dept else '' }}){% endif %}{% if approver %} · Approved by {{ approver['full_name'] }} (HR &amp; Admin){% elif app['status'] == 'checked' %} · Waiting on HR &amp; Admin{% endif %}</span></div>
 {% if can_check %}
-<form method="post" action="{{ url_for('applications.check_signature', aid=app['id']) }}" enctype="multipart/form-data" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fd"><label>Your signature (image) — Checked By</label><input type="file" name="signature" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Upload your signature image. It appears on the application and its PDF, above Checked By, with your name and designation under it. You must upload it before you can forward the application.</div></div>
-{% if app['checker_signature_path'] %}<p class="hint">Signature on file{% if app['checker_signature_at'] %} — uploaded on {{ app['checker_signature_at'][:10] }}{% endif %}.</p>{% endif %}
-<button class="b p" type="submit">Upload my signature</button></form>
+{% if my_signature %}
+<form method="post" action="{{ url_for('applications.check_signature', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the application and its PDF, above Checked By, with your name and designation under it. You must use your signature before you can forward the application.</div></div>
+{% if app['checker_signature_path'] %}<p class="hint">Signature on file{% if app['checker_signature_at'] %} — used on {{ app['checker_signature_at'][:10] }}{% endif %}.</p>{% endif %}
+<button class="b p" type="submit">Use my signature</button></form>
+{% else %}
+<p class="hint" style="margin-top:14px">You haven't uploaded a signature yet — <a href="{{ url_for('auth.my_settings') }}">upload one in My settings</a> first. You must use your signature before you can forward the application.</p>
+{% endif %}
 <form method="post" action="{{ url_for('applications.forward_to_hr', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fd"><label>Forward to (HR &amp; Admin user)</label><select name="hr_user_id" required><option value="">Choose an HR &amp; Admin user…</option>{% for u in hr_users %}<option value="{{ u['id'] }}">{{ u['full_name'] }}</option>{% endfor %}</select><div class="sub">The application goes to this HR &amp; Admin user, who approves or rejects it. Its status becomes Checked.</div></div>
-<button class="b p" type="submit" {{ 'disabled' if not app['checker_signature_path'] }}>Forward to HR &amp; Admin</button>{% if not app['checker_signature_path'] %} <span class="hint">Upload your signature first.</span>{% endif %}</form>
+<button class="b p" type="submit" {{ 'disabled' if not app['checker_signature_path'] }}>Forward to HR &amp; Admin</button>{% if not app['checker_signature_path'] %} <span class="hint">Use your signature first.</span>{% endif %}</form>
 {% endif %}
 {% if can_manage %}
 <form method="post" action="{{ url_for('applications.change_status', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm"><div class="fd"><label>Change status (only the HR approver and the HR &amp; Admin department admin can change it, once the checker has forwarded it)</label><select name="status"><option value="approved" {{ 'selected' if app['status']=='approved' }}>Approved</option><option value="rejected" {{ 'selected' if app['status']=='rejected' }}>Rejected</option></select></div></div>
-<button class="b p" type="submit">Save status</button> <span class="hint">The applicant and the checker are notified of the change.</span></form>
+<button class="b p" type="submit" {{ 'disabled' if not app['signature_path'] }}>Save status</button>{% if not app['signature_path'] %} <span class="hint">Use your signature first.</span>{% endif %} <span class="hint">The applicant and the checker are notified of the change.</span></form>
 <form method="post" action="{{ url_for('applications.set_note', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fd"><label>HR note</label><textarea name="hr_note" rows="3">{{ app['hr_note'] or '' }}</textarea><div class="sub">Shown on the application and its PDF, under "FOR OFFICE USE".</div></div>
 <button class="b" type="submit">Save note</button></form>
-<form method="post" action="{{ url_for('applications.upload_signature', aid=app['id']) }}" enctype="multipart/form-data" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fd"><label>Your signature (image) — Approved By</label><input type="file" name="signature" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Upload your signature image. It appears on the application and its PDF, above Approved By, with your name and designation under it. Uploading a new one replaces the old one.</div></div>
-{% if app['signature_path'] %}<p class="hint">Signature on file — uploaded by {{ signer['full_name'] if signer else '' }}{% if app['signature_at'] %} on {{ app['signature_at'][:10] }}{% endif %}.</p>{% endif %}
-<button class="b" type="submit">Upload signature</button></form>
+{% if my_signature %}
+<form method="post" action="{{ url_for('applications.upload_signature', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the application and its PDF, above Approved By, with your name and designation under it. Using a new one replaces the old one.</div></div>
+{% if app['signature_path'] %}<p class="hint">Signature on file — used by {{ signer['full_name'] if signer else '' }}{% if app['signature_at'] %} on {{ app['signature_at'][:10] }}{% endif %}.</p>{% endif %}
+<button class="b" type="submit">Use my signature</button></form>
+{% else %}
+<p class="hint" style="margin-top:14px">You haven't uploaded a signature yet — <a href="{{ url_for('auth.my_settings') }}">upload one in My settings</a> first. You must use your signature before you can save the status.</p>
+{% endif %}
 {% elif not can_check %}
-<p class="hint" style="margin-top:14px">{% if app['status'] == 'pending' %}Only the checker ({{ checker['full_name'] if checker else '' }}) can check it and forward it to HR &amp; Admin.{% elif app['status'] == 'checked' %}Only the HR approver ({{ approver['full_name'] if approver else '' }}) and the HR &amp; Admin department admin can change the status, set a note or upload a signature.{% else %}This application has been decided.{% endif %}{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
+<p class="hint" style="margin-top:14px">{% if app['status'] == 'pending' %}Only the checker ({{ checker['full_name'] if checker else '' }}) can check it and forward it to HR &amp; Admin.{% elif app['status'] == 'checked' %}Only the HR approver ({{ approver['full_name'] if approver else '' }}) and the HR &amp; Admin department admin can change the status, set a note or use a signature.{% else %}This application has been decided.{% endif %}{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
 {% endif %}
 </div>
 <div class="card" style="margin-top:16px">

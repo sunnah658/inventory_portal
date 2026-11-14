@@ -433,6 +433,13 @@ def purge_user_account(db, uid, delete_work):
     db.execute("DELETE FROM requests WHERE requester_id=?", (uid,))
     db.execute("UPDATE requests SET decided_by=NULL WHERE decided_by=?", (uid,))
     db.execute("DELETE FROM comments WHERE user_id=?", (uid,))
+    # The user's own signature (My settings) goes with the account.
+    _sig = db.execute("SELECT signature_path FROM users WHERE id=?", (uid,)).fetchone()
+    if _sig and _sig["signature_path"]:
+        try:
+            os.remove(os.path.join(config.UPLOAD_DIR, "user_signatures", os.path.basename(_sig["signature_path"])))
+        except Exception:
+            pass
     db.execute("DELETE FROM users WHERE id=?", (uid,))
 
 
@@ -446,6 +453,7 @@ def purge_expired(db):
     db.execute("DELETE FROM activity_log WHERE created_at < datetime('now','localtime',?)",
                (f"-{config.ACTIVITY_KEEP_DAYS} days",))
     db.execute("DELETE FROM reminder_sent WHERE sent_on < date('now','localtime','-90 days')")
+    db.execute("DELETE FROM signature_reminder_sent WHERE sent_on < date('now','localtime','-90 days')")
     for _rid in [r[0] for r in db.execute(
             "SELECT id FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
             (f"-{config.BIN_DAYS} days",))]:
@@ -671,6 +679,36 @@ def send_ddb_meeting_notifications(db, now=None):
                     else f"{r['owner_name']} has a meeting at {when_text}")
             notify(db, [uid], text, ddb_row_link(db, r["rid"]))
             sent += 1
+    return sent
+
+
+def send_signature_reminder_notifications(db, now=None):
+    """Daily morning reminder to upload a signature (2026-11-14): every
+    morning, from config.REMINDER_HOUR like the other morning reminders,
+    every active, approved user who has NOT uploaded a signature in My
+    settings gets one bell message: "Please upload your signature from
+    my settings", linked to /my-settings. The true portal admin
+    (role 'admin') and the administrative permission users
+    (can_portal_admin=1) never get it. Safe to call again and again: the
+    signature_reminder_sent table makes sure each user gets it only once
+    a day, so it comes again the next morning until they upload one —
+    and stops the morning after they do (or starts again if they remove
+    their signature). Returns how many were sent."""
+    now = now or datetime.now()
+    if now.hour < config.REMINDER_HOUR:
+        return 0
+    today = now.date().isoformat()
+    rows = db.execute(
+        "SELECT id FROM users WHERE is_active=1 AND is_deleted=0 AND approval_status='approved' "
+        "AND role != 'admin' AND can_portal_admin=0 "
+        "AND (signature_path IS NULL OR signature_path='')").fetchall()
+    sent = 0
+    for r in rows:
+        if db.execute("INSERT OR IGNORE INTO signature_reminder_sent(user_id, sent_on) "
+                      "VALUES (?,?)", (r["id"], today)).rowcount == 0:
+            continue                                    # this user was already told today
+        notify(db, [r["id"]], "Please upload your signature from my settings", "/my-settings")
+        sent += 1
     return sent
 
 
