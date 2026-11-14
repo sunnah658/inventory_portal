@@ -48,7 +48,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import external_url, notify, notify_admin_task, notify_ddb_task, notify_dept_task
+from core import external_url, notify, notify_admin_task, notify_ddb_row_task, notify_ddb_task, notify_dept_task
 from models import get_db, log, setting_get
 
 bp = Blueprint("requests", __name__)
@@ -152,6 +152,13 @@ def _can_view(db, user, req):
     # in the All request section), whatever department it came from.
     # Only the recipient can edit it — _can_edit is unchanged.
     if user["department_id"] == hr_admin_dept_id(db):
+        return True
+    # Anyone picked as a step on this request can open it and its PDF —
+    # whatever department they are in — so an approver from another
+    # department is never met with a 403. They can only approve or
+    # reject when their turn comes; _can_act_request is unchanged.
+    if db.execute("SELECT 1 FROM item_request_steps WHERE request_id=? AND user_id=?",
+                  (req["id"], user["id"])).fetchone():
         return True
     return False
 
@@ -822,9 +829,56 @@ def detail(rid):
                            can_act=_can_act_request(db, g.user, req),
                            can_status=_can_change_status(db, g.user, req),
                            can_edit=_can_edit(db, g.user, req),
+                           can_delete=(is_portal_admin(g.user) or req["owner_id"] == g.user["id"]),
                            can_manage=_can_manage_public(db, g.user, req),
                            history=_request_history(db, rid),
                            statuses=STATUSES, labels=STATUS_LABELS)
+
+@bp.route("/requests/<int:rid>/delete", methods=["POST"])
+@login_required
+def request_delete(rid):
+    """Delete an item request for good. Only the owner, a portal admin or
+    an administrative permission user may do it, and only after typing
+    their own password in the warning pop-up. The request, its lines,
+    its edit history and its chain steps are removed; its number is
+    never reused. If the owner deletes it, the department admin is told.
+    (Follows the invoice delete exactly: password, hard delete, owner
+    deletes -> dept admin told, portal admin deletes -> nobody told.)"""
+    from security import reauth_ok
+    db = get_db(); req = _request(db, rid)
+    if not (req["owner_id"] == g.user["id"] or is_portal_admin(g.user)):
+        abort(403)
+    if not reauth_ok(g.user, request.form):
+        flash("Wrong password. The request was not deleted.", "err")
+        return redirect(url_for("requests.detail", rid=rid))
+    number = req["number"] or "request"
+    dept_id = req["department_id"]
+    # The chain steps' signature files are removed too (the step rows go
+    # with the request through the foreign key, but the files do not).
+    for _s in _request_steps(db, rid):
+        if _s["signature_path"]:
+            try:
+                _f = os.path.join(config.UPLOAD_DIR, "req_signatures", os.path.basename(_s["signature_path"]))
+                if os.path.exists(_f):
+                    os.remove(_f)
+            except Exception:
+                pass
+    db.execute("DELETE FROM item_request_lines WHERE request_id=?", (rid,))
+    db.execute("DELETE FROM item_request_history WHERE request_id=?", (rid,))
+    db.execute("DELETE FROM item_request_steps WHERE request_id=?", (rid,))
+    db.execute("DELETE FROM item_requests WHERE id=?", (rid,))
+    log(db, "item_request_deleted", number)
+    # If the owner deletes it, the department admin is told. A portal
+    # admin deleting it tells nobody (the watcher rule: nobody is told
+    # about a portal admin's own actions).
+    if req["owner_id"] == g.user["id"] and not is_portal_admin(g.user):
+        notify_ddb_row_task(db, g.user, dept_id,
+                            f"{g.user['full_name']} deleted item request {number}.",
+                            url_for("ddb.index", dept=dept_id, tab="requests"))
+    db.commit()
+    flash(f"Item request {number} deleted.", "ok")
+    return redirect(url_for("ddb.index", dept=dept_id, tab="requests"))
+
 
 @bp.route("/requests/<int:rid>/step-signature", methods=["POST"])
 @login_required

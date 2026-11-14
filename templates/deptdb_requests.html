@@ -5,7 +5,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ dept['name'] }} database · Request items</h1>
-    <p class="hint">Send an Item Request to a user in the HR &amp; Admin Department. The recipient is notified, sees it in "Other's request", and changes its status — Pending, Issued, Paid or Handovered — and you are notified of the change.</p></div>
+    <p class="hint">Send an Item Request and pick the people who approve it in steps — one of them must be the Send/Request To person. The step people are notified and see it in "Other's request"; once the chain has finished, the Send/Request To person changes its status — Pending, Issued, Paid or Handover — and you are notified of the change.</p></div>
   <div class="acts">
     {% if is_admin %}<a class="b" href="{{ url_for('requests.kinds') }}">Item Request kinds</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>

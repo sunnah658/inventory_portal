@@ -56,7 +56,7 @@
 {% if my_step['signature_path'] %}<p class="hint">Signature on file{% if my_step['signature_at'] %} — used on {{ my_step['signature_at'][:10] }}{% endif %}.</p>{% endif %}
 <button class="b p" type="submit">Use my signature</button></form>
 <form method="post" action="{{ url_for('invoices.invoice_decide', iid=inv['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fm"><div class="fd"><label>Change status (only you, {{ my_label }}, can decide now — the next person cannot act until you have approved)</label><select name="status"><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div></div>
+<div class="fm"><div class="fd"><label>Status</label><select name="status"><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div></div>
 <button class="b p" type="submit" {{ 'disabled' if not my_step['signature_path'] }}>Save status</button>{% if not my_step['signature_path'] %}<span class="hint"> Use your signature first.</span>{% endif %}</form>
 {% elif inv['status'] == 'pending' and current_step %}
 <p class="hint" style="margin-top:14px">Waiting for {{ current_step['full_name'] or '' }}'s approval{% if current_step['role'] %} ({{ step_roles[current_step['role']] }}){% endif %}.</p>

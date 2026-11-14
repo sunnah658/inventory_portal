@@ -1,4 +1,28 @@
 ==============================================================================
+ UPDATE: STEP PEOPLE CAN OPEN WHAT WAS SENT TO THEM, OTHER'S SUB-TABS, REQUEST DELETE (2026-11-14)
+==============================================================================
+ 1. Anyone picked as an approval step on an invoice or an item
+    request can now open it and download its PDF, whatever
+    department they are in. Before this, an approver from another
+    department got "You do not have permission to open this page"
+    (403) — for example an HR & Admin user picked as Approved By
+    on a Sales invoice. They can still only approve or reject
+    when their turn comes.
+ 2. The label above the approve/reject dropdown now just says
+    "Status", on the invoice and the request detail pages.
+ 3. The Invoices tab has a new "Other's invoices" sub-tab, and
+    the Request items tab's "Other's request" now shows every
+    step person — not only HR users and not only the Send/Request
+    To recipient. An approval sent to you appears there as soon
+    as it is sent, even before your turn, and stays after you
+    have decided. The tab only appears for a user who has
+    something sent to them.
+ 4. Item requests can now be deleted: a "Delete request" button
+    on the detail page, for the owner, the portal admin and
+    administrative permission users. Password box, hard delete,
+    number never reused — exactly like deleting an invoice.
+
+==============================================================================
  UPDATE: INVOICE + REQUEST APPROVAL CHAINS, WATERMARK CHOICE, TEMPLATE/KIND DELETE (2026-11-14)
 ==============================================================================
  1. The department admin no longer has a signature option on the

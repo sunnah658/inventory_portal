@@ -8,7 +8,24 @@
 <div class="acts noprint">
 {% if can_edit %}<a class="b" href="{{ url_for('requests.request_edit', rid=req['id']) }}">Edit</a>{% endif %}
 <a class="b p" href="{{ url_for('requests.request_pdf', rid=req['id']) }}">Download PDF</a><a class="b" href="{{ url_for('requests.request_pdf', rid=req['id'], watermark=0) }}">Download PDF without watermark</a><button class="b" type="button" onclick="window.print()">Print</button>
+{% if can_delete and req['status'] in ('pending','issued','paid','handovered','approved','rejected') %}<button class="b dg" type="button" onclick="document.getElementById('delReq').style.display='flex'">Delete request</button>{% endif %}
 </div></div>
+{% if can_delete and req['status'] in ('pending','issued','paid','handovered','approved','rejected') %}
+<div id="delReq" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:460px;width:100%;padding:22px">
+    <h2 style="margin-top:0">Delete this request?</h2>
+    <p>This will permanently delete item request <b>{{ req['number'] or 'Request' }}</b>. This cannot be undone. Its number will never be reused.</p>
+    <form method="post" action="{{ url_for('requests.request_delete', rid=req['id']) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fd"><label>Your password to confirm</label><input type="password" name="admin_password" required autocomplete="current-password" placeholder="Type your password"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="b" type="button" onclick="document.getElementById('delReq').style.display='none'">Cancel</button>
+        <button class="b dg" type="submit">Delete request</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 <div class="kp">
   {{ kpi('Grand total', '%.2f'|format(req['total']) ~ ' ' ~ req['currency']) }}
   {{ kpi('Status', req['status']|title) }}
@@ -26,7 +43,7 @@
 {% if my_step['signature_path'] %}<p class="hint">Signature on file{% if my_step['signature_at'] %} — used on {{ my_step['signature_at'][:10] }}{% endif %}.</p>{% endif %}
 <button class="b p" type="submit">Use my signature</button></form>
 <form method="post" action="{{ url_for('requests.request_decide', rid=req['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fm"><div class="fd"><label>Change status (only you, {{ my_label }}, can decide now — the next person cannot act until you have approved)</label><select name="status"><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div></div>
+<div class="fm"><div class="fd"><label>Status</label><select name="status"><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div></div>
 <button class="b p" type="submit" {{ 'disabled' if not my_step['signature_path'] }}>Save status</button>{% if not my_step['signature_path'] %}<span class="hint"> Use your signature first.</span>{% endif %}</form>
 {% elif steps and req['status'] == 'pending' and current_step %}
 <p class="hint" style="margin-top:14px">Waiting for {{ current_step['full_name'] or '' }}'s approval{% if current_step['role'] %} ({{ step_roles[current_step['role']] }}){% endif %}.</p>

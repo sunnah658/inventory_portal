@@ -3868,3 +3868,71 @@
     on any existing table). Back up first and keep your live .env
     untouched, as before. Apply only this latest zip, not the
     older ones in order.
+
+77. STEP PEOPLE CAN OPEN WHAT WAS SENT TO THEM, OTHER'S SUB-TABS, REQUEST DELETE (2026-11-14)
+
+    1. A step person can now open an invoice or an item request that
+       was sent to them — and download its PDF — whatever department
+       they are in. Before this build, the detail page and the PDF
+       only let in the portal admin, the owner, people from the
+       invoice or request's own department, and departments it was
+       shared with, so an approver from another department (for
+       example an HR & Admin user picked as Approved By on a Sales
+       invoice, or a Management user picked as a step on a request)
+       got "You do not have permission to open this page" (403).
+       That is fixed: anyone picked as a step can open it, view
+       only. They can still only approve or reject when their turn
+       comes (strict order is unchanged), and they cannot edit it,
+       change its status or manage its public QR. Application
+       Letters already worked this way and are unchanged.
+    2. The label above the approve/reject dropdown is now just
+       "Status", on the invoice detail page and on the request
+       detail page. The other dropdown on the request page — the
+       one the Send/Request To user uses to change the status to
+       Pending, Issued, Paid or Handover — keeps its own label.
+    3. The Invoices tab has a new "Other's invoices" sub-tab. It
+       shows every invoice sent to you as an approval step, and it
+       only appears for a user who has at least one. The Request
+       items tab's "Other's request" sub-tab is widened the same
+       way: it used to show only HR & Admin users the requests
+       where they were the single recipient; it now shows every
+       step person (Checked By, Send/Request To, Approved By,
+       Authorised By) the requests sent to them, whatever
+       department they are in. Both sub-tabs show an approval as
+       soon as it is sent to you — even before your turn — and it
+       stays there after you have decided. A bookmarked Other's
+       tab for a user with nothing sent to them just shows All.
+       The Other's lists are NOT limited to the department being
+       viewed: a department admin can only open his own
+       department's page, so a department-scoped list would never
+       have shown him an approval sent from another department.
+       The hint on the Request items tab is updated to match the
+       new flow.
+    4. Item requests can now be deleted. On the request detail
+       page there is a "Delete request" button, next to Print,
+       for the owner, the portal admin and administrative
+       permission users (a department admin who is not the owner
+       cannot delete, and sees no button). It follows the invoice
+       delete exactly: a password box, hard delete (the request,
+       its lines, its edit history and its chain steps are
+       removed, and any step signature files with them), and its
+       number is never reused. If the owner deletes it, the
+       department admin is told; if the portal admin or a
+       permission user deletes it, nobody is told. A deleted
+       request does not go to the Recycle Bin, like a deleted
+       invoice.
+    5. Three details of the request delete were not answered when
+       this build was confirmed, so they follow the invoice delete
+       as the model and are flagged here rather than decided
+       silently: (a) it asks for the password, like the invoice
+       delete; (b) it is a hard delete, not into the Recycle Bin;
+       (c) only the department admin is told when the owner
+       deletes (the other party is not told separately). Say the
+       word if any of the three should work differently.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There is no database change in
+    this build — no new table or column — so the upgrade is code
+    and templates only. Back up first and keep your live .env
+    untouched, as before. Apply only this latest zip, not the
+    older ones in order.

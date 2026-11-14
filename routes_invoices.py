@@ -138,6 +138,13 @@ def _can_view(db, user, inv):
         return True
     if _is_dept_admin(user) and inv["department_id"] in _shared_dept_ids(db, user):
         return True
+    # Anyone picked as a step on this invoice can open it and its PDF —
+    # whatever department they are in — so an approver from another
+    # department is never met with a 403. They can only approve or
+    # reject when their turn comes; _can_act_invoice is unchanged.
+    if db.execute("SELECT 1 FROM invoice_steps WHERE invoice_id=? AND user_id=?",
+                  (inv["id"], user["id"])).fetchone():
+        return True
     return False
 
 def _can_manage_public(db, user, inv):

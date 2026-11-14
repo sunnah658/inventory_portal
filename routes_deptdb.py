@@ -445,6 +445,14 @@ def _invoice_tab_view(db, dept, is_admin, args):
     counts = {"all": db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks})", scope).fetchone()[0]}
     counts["mine"] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND owner_id=?",
                                 scope + [g.user["id"]]).fetchone()[0]
+    # Other's invoices: invoices sent to this user as an approval step
+    # (any step). This is NOT limited to the department being viewed: a
+    # step person from another department cannot open that department's
+    # page at all, so a department-scoped list would never show them the
+    # invoice sent to them.
+    counts["others"] = db.execute("SELECT COUNT(*) FROM invoices i "
+                                  "WHERE EXISTS (SELECT 1 FROM invoice_steps s WHERE s.invoice_id=i.id AND s.user_id=?)",
+                                  [g.user["id"]]).fetchone()[0]
     for tid in sub:
         counts[tid] = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id IN (%s) AND template_id=?" % qmarks,
                                  scope + [tid]).fetchone()[0]
@@ -453,14 +461,26 @@ def _invoice_tab_view(db, dept, is_admin, args):
                                 scope + [st]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
     show_mine = _show_mine(dept)
+    # The Other's invoices sub-tab only appears for a user who has at
+    # least one invoice sent to them as a step; anyone can be picked as
+    # a step, so there is no role that owns this tab.
+    show_others = counts["others"] > 0
     user_filter = args.get("user") or ""
     if not show_mine and user_filter == "mine":
         user_filter = ""   # a bookmarked user=mine just shows All
+    if not show_others and user_filter == "others":
+        user_filter = ""   # a bookmarked user=others just shows All
     status = args.get("status") or ""
     q = (args.get("q") or "").strip()
     sort = args.get("sort") or "newest"
-    where = [f"i.department_id IN ({qmarks})"]
-    params = list(scope)
+    # Other's invoices is not limited to the department being viewed (see
+    # the counts note above); every other view is scoped to it.
+    if user_filter == "others":
+        where = ["EXISTS (SELECT 1 FROM invoice_steps s WHERE s.invoice_id=i.id AND s.user_id=?)"]
+        params = [g.user["id"]]
+    else:
+        where = [f"i.department_id IN ({qmarks})"]
+        params = list(scope)
     if invtype_id is not None:
         where.append("i.template_id=?"); params.append(invtype_id)
     if user_filter == "mine":
@@ -483,7 +503,8 @@ def _invoice_tab_view(db, dept, is_admin, args):
                       "FROM invoices i LEFT JOIN invoice_templates t ON t.id=i.template_id "
                       "LEFT JOIN users u ON u.id=i.owner_id LEFT JOIN departments d ON d.id=i.department_id "
                       + sql_where + f" ORDER BY {order} LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
-    keep = {k: v for k, v in args.items() if k not in ("page",) and not (k == "user" and v == "mine" and not show_mine)}
+    keep = {k: v for k, v in args.items() if k not in ("page",) and not (k == "user" and v == "mine" and not show_mine)
+            and not (k == "user" and v == "others" and not show_others)}
     if is_portal_admin(g.user):
         keep["dept"] = dept["id"]
     keep["tab"] = "invoices"
@@ -496,7 +517,7 @@ def _invoice_tab_view(db, dept, is_admin, args):
                            invtype=invtype, invtype_id=invtype_id, counts=counts, rows=rows,
                            users=users, user_filter=user_filter, status=status, q=q, sort=sort,
                            total=total, page=page, pages=pages, keep=keep, create_templates=create_templates,
-                           show_mine=show_mine,
+                           show_mine=show_mine, show_others=show_others,
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                            if is_portal_admin(g.user) else [],
                            can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] in ("draft", "approved", "pending") and not r["number"])
@@ -506,28 +527,20 @@ def _invoice_tab_view(db, dept, is_admin, args):
 def _request_tab_view(db, dept, is_admin, args):
     """The Request items page, as a default tab inside Department Database
     (like Invoices). Sub-tabs: My request (only the current user's
-    requests), All request, Other's request (only for HR & Admin users —
-    only they can receive a request, so only they ever see one sent TO
-    them). In All request, the portal admin, administrative
-    permission users and HR & Admin users see ALL departments' requests;
-    users of other departments see only their own department's requests.
-    The filter is BOTH department and status, with a search bar (search
-    by name or Department). A request is sent to one specific HR & Admin
-    user; the recipient can print it, download its PDF and change its
-    status (Pending / Issued / Paid / Handovered)."""
-    from routes_requests import ALL_STATUSES, STATUSES, can_see_all_departments, hr_admin_dept_id
+    requests), All request, Other's request (only for a user who has a
+    request sent to them as an approval step — any step, not only the
+    Send/Request To recipient). In All request, the portal admin,
+    administrative permission users and HR & Admin users see ALL
+    departments' requests; users of other departments see only their
+    own department's requests. The filter is BOTH department and
+    status, with a search bar (search by name or Department). A request
+    is sent to the people picked as its approval steps; every step
+    person can open it and download its PDF, and the Send/Request To
+    person changes its status (Pending / Issued / Paid / Handovered)
+    once the chain has finished."""
+    from routes_requests import ALL_STATUSES, STATUSES, can_see_all_departments
     can_all = can_see_all_departments(db, g.user)
     show_mine = _show_mine(dept)
-    # Other's request is only for HR & Admin users: only they can receive a
-    # request, so for everyone else the sub-tab would always be empty.
-    show_others = bool(show_mine) and g.user["department_id"] == hr_admin_dept_id(db)
-    reqtab = args.get("reqtab") or "all"
-    if reqtab not in ("my", "all", "others"):
-        reqtab = "all"
-    if not show_mine and reqtab in ("my", "others"):
-        reqtab = "all"   # a bookmarked my/others just shows All
-    if not show_others and reqtab == "others":
-        reqtab = "all"   # a bookmarked others just shows All
     # Departments this viewer may see in All request.
     if can_all:
         all_depts = [r["id"] for r in db.execute("SELECT id FROM departments ORDER BY id").fetchall()]
@@ -541,13 +554,31 @@ def _request_tab_view(db, dept, is_admin, args):
     else:
         scope = list(all_depts)
     qmarks = ",".join("?" * len(scope))
+    # Other's request: any request sent to this user as an approval step
+    # (any step — Checked By, Send/Request To, Approved By, Authorised
+    # By — not only the Send/Request To recipient, and not only HR &
+    # Admin users). This is NOT limited to the departments in scope: a
+    # step person from another department cannot open that department's
+    # page at all, so a scoped list would never show them the request
+    # sent to them. The sub-tab only appears for a user who has at least
+    # one such request; for everyone else it would always be empty.
+    others_count = db.execute("SELECT COUNT(*) FROM item_requests r "
+                              "WHERE EXISTS (SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.user_id=?)",
+                              [g.user["id"]]).fetchone()[0]
+    show_others = bool(show_mine) and others_count > 0
+    reqtab = args.get("reqtab") or "all"
+    if reqtab not in ("my", "all", "others"):
+        reqtab = "all"
+    if not show_mine and reqtab in ("my", "others"):
+        reqtab = "all"   # a bookmarked my/others just shows All
+    if not show_others and reqtab == "others":
+        reqtab = "all"   # a bookmarked others just shows All
     # counts per sub-tab (scope only, before status/search filters)
     counts = {}
     counts["all"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks})", scope).fetchone()[0]
     counts["mine"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND owner_id=?",
                                 scope + [g.user["id"]]).fetchone()[0]
-    counts["others"] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND recipient_id=?",
-                                  scope + [g.user["id"]]).fetchone()[0]
+    counts["others"] = others_count
     for st in ALL_STATUSES:
         counts[st] = db.execute(f"SELECT COUNT(*) FROM item_requests WHERE department_id IN ({qmarks}) AND status=?",
                                 scope + [st]).fetchone()[0]
@@ -555,12 +586,16 @@ def _request_tab_view(db, dept, is_admin, args):
     status = args.get("status") or ""
     q = (args.get("q") or "").strip()
     sort = args.get("sort") or "newest"
-    where = [f"r.department_id IN ({qmarks})"]
-    params = list(scope)
+    # Other's request is not limited to the departments in scope (see
+    # the others_count note above); every other view is scoped to them.
+    if reqtab == "others":
+        where = ["EXISTS (SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.user_id=?)"]
+        params = [g.user["id"]]
+    else:
+        where = [f"r.department_id IN ({qmarks})"]
+        params = list(scope)
     if reqtab == "my":
         where.append("r.owner_id=?"); params.append(g.user["id"])
-    elif reqtab == "others":
-        where.append("r.recipient_id=?"); params.append(g.user["id"])
     if status in ALL_STATUSES:
         where.append("r.status=?"); params.append(status)
     if q:
