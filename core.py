@@ -371,16 +371,19 @@ def purge_ddb_row(db, rid):
 
 
 def purge_application(db, aid):
-    """Erase an application letter for good, including its uploaded signature files (the checker's and the approver's)."""
+    """Erase an application letter for good, including its uploaded signature files (every step's signature, not only the checker's and the approver's)."""
     row = db.execute("SELECT signature_path, checker_signature_path FROM applications WHERE id=?", (aid,)).fetchone()
+    _names = []
     if row:
-        for _name in (row["signature_path"], row["checker_signature_path"]):
-            if _name:
-                try:
-                    os.remove(os.path.join(config.UPLOAD_DIR, "app_signatures", os.path.basename(_name)))
-                except Exception:
-                    pass
-    db.execute("DELETE FROM applications WHERE id=?", (aid,))  # history is deleted by CASCADE
+        _names += [row["signature_path"], row["checker_signature_path"]]
+    _names += [r[0] for r in db.execute("SELECT signature_path FROM application_steps WHERE application_id=?", (aid,))]
+    for _name in _names:
+        if _name:
+            try:
+                os.remove(os.path.join(config.UPLOAD_DIR, "app_signatures", os.path.basename(_name)))
+            except Exception:
+                pass
+    db.execute("DELETE FROM applications WHERE id=?", (aid,))  # history and steps are deleted by CASCADE
 
 
 def purge_user_work(db, uid):
@@ -414,6 +417,7 @@ def purge_user_account(db, uid, delete_work):
     db.execute("UPDATE applications SET recipient_id=NULL WHERE recipient_id=?", (uid,))
     db.execute("UPDATE applications SET checker_id=NULL WHERE checker_id=?", (uid,))
     db.execute("UPDATE applications SET approver_id=NULL WHERE approver_id=?", (uid,))
+    db.execute("UPDATE application_steps SET user_id=NULL WHERE user_id=?", (uid,))
     db.execute("UPDATE applications SET signature_by=NULL WHERE signature_by=?", (uid,))
     db.execute("UPDATE application_history SET user_id=NULL WHERE user_id=?", (uid,))
     db.execute("UPDATE record_shares SET shared_by=NULL WHERE shared_by=?", (uid,))

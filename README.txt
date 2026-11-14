@@ -3562,3 +3562,67 @@
     told twice on the same day); nothing else changes. Back up first
     and keep your live .env untouched, as before. Apply only this
     latest zip, not the older ones in order.
+
+
+==============================================================================
+ 71. THREE-STEP APPROVAL FOR APPLICATION LETTERS (2026-11-14)
+==============================================================================
+ 1. The application creating page no longer has one "Send to" box.
+    It has three steps — "Who approves it — 3 steps, in order". Every
+    step has a role and a person:
+      - role: None, Checked By, Approved By or Authorised By
+      - person: a user from the applicant's own department, HR & Admin
+        or Management
+    A step set to None is skipped: use two steps and two signature
+    blocks appear at the bottom of the letter; use three and three
+    appear; use one and one appears.
+ 2. The steps run strictly in order. The second person cannot approve
+    until the first has approved, and the third cannot approve until
+    the second has. While they are waiting, the person sees
+    "Waiting for (name)'s approval" on the application page, and the
+    application appears in their Received tab only when their turn
+    comes. The first person is told when the application is sent; the
+    next person is told when the person before them has approved.
+ 3. Every person in the chain must tick "Use my signature" (the
+    signature they saved in My settings) before they can approve or
+    reject. The "Save status" button stays disabled until they have
+    ticked it. Each decision is only Approved or Rejected.
+ 4. The grey APPROVED seal or the grey REJECTED stamp appears on the
+    letter's PDF only after the LAST used step has approved or
+    rejected. An approval or rejection by an earlier step shows no
+    seal and no stamp, and a rejection by an earlier step ends the
+    application at once, with no stamp.
+ 5. Old applications keep working: an application sent before this
+    update keeps its old two-step flow — the checker checks it, signs
+    under Checked By and forwards it to one HR & Admin user, who
+    approves or rejects it under Approved By. Its detail page shows
+    the same chain as its steps.
+ 6. The detail page shows the whole chain in the "Currently with"
+    row and one row per step, each with its state (waiting / approved
+    / rejected) and date. The edit history names the step that
+    decided: "Step 2 (Approved By) from Pending to Approved". The
+    "Who gets told what" card on the Notifications page now says
+    this too.
+
+    THREE QUESTIONS STILL OPEN (the defaults built for now — please
+    say if you want them changed):
+      a. All three steps set to None: the application is refused —
+         "Choose at least one step — who approves this application?".
+      b. The same person in two steps: refused — "Choose a different
+         person for each step."
+      c. Step 1 or Step 2 rejects: the application is Rejected at
+         once, the chain ends, and NO watermark appears on the PDF
+         (the last person never decided, and the watermark only comes
+         from the last person's decision). A rejection BY the last
+         step does show the REJECTED stamp.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). The database gains one new table
+    (application_steps — one row per step of each application) and one
+    new column on applications (chain_legacy). Existing applications
+    are moved into the new table on first start: a pending one gets
+    its checker as step 1 (and still keeps the old forward), a
+    checked one gets checker + approver, an approved or rejected one
+    gets both steps marked decided. Nothing else changes. Back up
+    first and keep your live .env untouched, as before. Apply only
+    this latest zip, not the older ones in order.

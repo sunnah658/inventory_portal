@@ -5,13 +5,22 @@
 {% if not kind %}<div class="card"><h1>Choose a kind first</h1><p class="hint">Go to the Application Letters page and press Create on a kind card.</p><a class="b p" href="{{ url_for('applications.list_applications') }}">Back to Application Letters</a></div>
 {% else %}
 <div class="tw"><div>
-<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Sending gives the application a number ({{ kind['number_prefix'] }}-0001…) and notifies the department user you send it to. A new application starts as Pending.</p></div></div>
+<div class="hd"><div><h1>{{ kind['name'] }}</h1><p class="hint">Sending gives the application a number ({{ kind['number_prefix'] }}-0001…) and notifies the first person in the approval chain. A new application starts as Pending.</p></div></div>
 <form method="post" class="card" id="appForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
-<div class="fd"><label>Send to (your Department user or Department admin)</label><select name="recipient_id" required>
-{% if not recipients %}<option value="">No user found in your department</option>
-{% else %}<option value="">Choose a recipient…</option>{% for r in recipients %}<option value="{{ r['id'] }}">{{ r['full_name'] }}{% if r['designation'] %} ({{ r['designation'] }}){% endif %}{% if r['is_dept_admin'] %} — Department admin{% endif %}</option>{% endfor %}{% endif %}
-</select><div class="sub">Applications are sent to a user in your own department — a department user or the person with Department admin permission. They check it, sign it, and forward it to HR &amp; Admin.</div></div>
+<div class="fd" style="grid-column:1 / 3"><label>Who approves it — 3 steps, in order</label>
+{% for i in (1, 2, 3) %}<div style="display:flex;gap:10px;margin-bottom:10px"><div style="flex:1">
+<div class="sub" style="margin-bottom:4px">Step {{ i }} — role</div><select name="step{{ i }}_role">
+<option value="none" {{ 'selected' if i == 3 }}>None</option>
+<option value="checked" {{ 'selected' if i == 1 }}>Checked By</option>
+<option value="approved" {{ 'selected' if i == 2 }}>Approved By</option>
+<option value="authorised">Authorised By</option>
+</select></div>
+<div style="flex:1.6"><div class="sub" style="margin-bottom:4px">Step {{ i }} — person (your department, HR &amp; Admin or Management)</div><select name="step{{ i }}_user">
+<option value="">Choose a person…</option>
+{% for d in chain_depts %}<optgroup label="{{ d['name'] }}">{% for p in chain_people %}{% if p['department_id'] == d['id'] %}<option value="{{ p['id'] }}">{{ p['full_name'] }}{% if p['designation'] %} ({{ p['designation'] }}){% endif %}{% if p['is_dept_admin'] %} — Department admin{% endif %}</option>{% endif %}{% endfor %}</optgroup>{% endfor %}
+</select></div></div>{% endfor %}
+<div class="sub">Each step has a role — None, Checked By, Approved By or Authorised By — and a person from your department, HR &amp; Admin or Management. Choose None and that step is skipped: no signature block appears for it at the bottom of the letter. Use two steps and two signatures appear; use three and three appear. The steps run in order: Step 2 cannot start until Step 1 has approved, and Step 3 cannot start until Step 2 has approved. Each person must tick &ldquo;Use my signature&rdquo; before they can approve or reject.</div></div>
 <div class="fd"><label>To</label><textarea name="to_lines" rows="3"></textarea><div class="sub">Write the lines that appear under &lsquo;To,&rsquo; in the letter, one per row. Leave it blank and nothing appears under &lsquo;To,&rsquo;.</div></div>
 <div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" required></div>
 <div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" required></div>
@@ -21,7 +30,7 @@
 <h2 style="margin-top:16px">The letter</h2>
 <p class="hint">The letter is filled in for you from the dates and the reason above, once you pick them. You can change any word of it before you send it.</p>
 <div class="fd"><textarea name="letter_body" id="bodyT" rows="7" required placeholder="The letter appears here once you pick the dates and write a reason."></textarea></div>
-<div class="acts" style="margin-top:16px"><button class="b p" type="submit" {{ 'disabled' if not recipients }}>Send application</button><a class="b" href="{{ url_for('applications.list_applications') }}">Cancel</a></div>
+<div class="acts" style="margin-top:16px"><button class="b p" type="submit" {{ 'disabled' if not chain_people }}>Send application</button><a class="b" href="{{ url_for('applications.list_applications') }}">Cancel</a></div>
 </form>
 <script>
 var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -48,11 +57,11 @@ document.getElementById('reasonT').addEventListener('input', fillBody);
 <div class="stack rail">
   <div class="card"><h2>Kind: {{ kind['name'] }}</h2>
     <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Numbering</b>{{ kind['number_prefix'] }}-0001…</div>
-    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Send to</b>Your department user / admin</div>
+    <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Approval</b>Up to 3 steps, in order</div>
     <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Document</b>Formal application letter</div>
   </div>
   <div class="card"><h2>How it works</h2>
-    <p class="hint">Sending gives the application a number and notifies the department user you send it to. They check it, use their saved signature under Checked By, and forward it to an HR &amp; Admin user, who approves or rejects it and signs under Approved By. You are notified at each step and can see it in "My applications". The PDF is a formal letter, not an invoice.</p></div>
+    <p class="hint">Sending gives the application a number and notifies the first person in the approval chain. The steps run in order: the second person cannot approve until the first has approved, and the third cannot approve until the second has approved. Each person ticks &ldquo;Use my signature&rdquo; — the signature they saved in My settings — before they can approve or reject, and their signature appears on the application and its PDF, under their step's role. The APPROVED seal or REJECTED stamp only appears once the last person in the chain has approved or rejected it. A step set to None is skipped, and no signature block appears for it. You are notified at each step and can see it in "My applications". The PDF is a formal letter, not an invoice.</p></div>
   {{ quick_card([
     ('Back to Application Letters', url_for('applications.list_applications'), True),
     ('Application kinds', url_for('applications.kinds'), False),

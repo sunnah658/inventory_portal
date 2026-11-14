@@ -4,7 +4,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>Application Letters</h1>
-    <p class="hint">Apply for leave using one of the letter kinds below. You send it to a user in your own department to check; they sign it and forward it to HR &amp; Admin, who approve or reject it.</p></div>
+    <p class="hint">Apply for leave using one of the letter kinds below. You pick up to three approvers — each a Checked By, Approved By or Authorised By step, from your department, HR &amp; Admin or Management — and the steps run in order. Each person must tick &ldquo;Use my signature&rdquo; before they can approve or reject.</p></div>
   <div class="acts">
     {% if g.user['is_dept_admin'] %}<a class="b" href="{{ url_for('applications.kinds') }}">Application kinds</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>
@@ -46,7 +46,7 @@
 {% else %}
   <div class="tb"><div class="empty">{% if q or fstatus or fdept %}Nothing matches your filter.{% else %}No applications yet. Choose a kind above to create one.{% endif %}</div></div>
 {% endif %}
-<p class="hint" style="margin-top:10px">A new application starts as Pending, with the department user you sent it to. Once they check it and forward it to HR &amp; Admin, it is Checked. Only the HR approver and the HR &amp; Admin department admin can approve or reject it — the applicant and the checker are notified of every change. The application number (LV-0001) is the official number to quote. The share code (HRC-#####) is only for scanning and searching — it is not the application number.</p>
+<p class="hint" style="margin-top:10px">A new application starts as Pending, with the first person in its approval chain. Once they approve it, it is Checked and goes to the next person; the last person's approval or rejection decides it. The APPROVED seal or REJECTED stamp only appears on the PDF once the last person has decided. The application number (LV-0001) is the official number to quote. The share code (HRC-#####) is only for scanning and searching — it is not the application number.</p>
 </div>
 <div class="stack rail">
   <div class="card"><h2>Applications by status</h2>
@@ -55,7 +55,7 @@
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Rejected</b>{{ counts.rejected }}</div>
   </div>
   <div class="card"><h2>How approval works</h2>
-    <p class="hint">When the checker forwards an application, they add their signature — the signature they saved in My settings — which appears on the application and its PDF, under Checked By. When HR &amp; Admin approve it, they add their signature the same way, which appears under Approved By. The HR approver cannot save the status until their signature is on file. Only the HR approver and the HR &amp; Admin department admin can change its status. Other HR &amp; Admin users can open and see it, but not change it.</p></div>
+    <p class="hint">Each person in the approval chain adds their signature — the signature they saved in My settings — which appears on the application and its PDF, under their step's role. Nobody can save a decision until their signature is on file, and nobody can act until the person before them has approved. Other users can open and see an application, but not change it.</p></div>
   {{ quick_card([
     ('+ New application', url_for('applications.application_new', kind=kinds[0]['id']), True) if kinds else None,
     ('Application kinds', url_for('applications.kinds'), False) if g.user['is_dept_admin'] else None,

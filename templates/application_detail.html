@@ -4,7 +4,7 @@
 {% block title %}{{ app['number'] or 'Application' }}{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Application {% if app['number'] %}· {{ app['number'] }}{% endif %}</h1>
-<p class="hint">{{ kind['name'] if kind else '' }} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }} · Applied by: {{ owner['full_name'] if owner else '' }} · Sent to: {{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }} to check</p></div>
+<p class="hint">{{ kind['name'] if kind else '' }} · {{ app['from_date'] or '' }} to {{ app['to_date'] or '' }} · Applied by: {{ owner['full_name'] if owner else '' }} · {% for s in steps %}Step {{ s['position'] }} — {{ step_roles[s['role']] }}: {{ s['full_name'] or '—' }}{% if not loop.last %} · {% endif %}{% endfor %}</p></div>
 <div class="acts noprint">
 {% if can_edit %}<a class="b" href="{{ url_for('applications.application_edit', aid=app['id']) }}">Edit</a>{% endif %}
 <a class="b p" href="{{ url_for('applications.application_pdf', aid=app['id']) }}">Download PDF</a>
@@ -26,37 +26,35 @@
 </div>
 <div class="tw"><div>
 <div class="card"><div><span class="s {{ 'g' if app['status'] == 'approved' else ('r' if app['status'] == 'rejected' else 'a') }}">{{ labels[app['status']] }}</span>
-<span class="hint"> Applied by {{ owner['full_name'] if owner else '' }} · Checked by {{ checker['full_name'] if checker else '—' }}{% if checker %} ({{ dept['name'] if dept else '' }}){% endif %}{% if approver %} · Approved by {{ approver['full_name'] }} (HR &amp; Admin){% elif app['status'] == 'checked' %} · Waiting on HR &amp; Admin{% endif %}</span></div>
-{% if can_check %}
+<span class="hint"> Applied by {{ owner['full_name'] if owner else '' }}{% for s in steps %} · Step {{ s['position'] }} {{ step_roles[s['role']] }}: {{ s['full_name'] or '—' }}{% if s['status'] == 'approved' %} (approved){% elif s['status'] == 'rejected' %} (rejected){% elif current_step and s['id'] == current_step['id'] %} — waiting{% endif %}{% endfor %}</span></div>
+{% if can_act %}
+{% set my_step = current_step %}
+{% set my_label = step_roles[my_step['role']] %}
+{% set my_sig = my_step['signature_path'] %}
 {% if my_signature %}
-<form method="post" action="{{ url_for('applications.check_signature', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the application and its PDF, above Checked By, with your name and designation under it. You must use your signature before you can forward the application.</div></div>
-{% if app['checker_signature_path'] %}<p class="hint">Signature on file{% if app['checker_signature_at'] %} — used on {{ app['checker_signature_at'][:10] }}{% endif %}.</p>{% endif %}
+<form method="post" action="{{ url_for('applications.step_signature', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the application and its PDF, above {{ my_label }}, with your name and designation under it. You must use your signature before you can approve or reject the application.</div></div>
+{% if my_sig %}<p class="hint">Signature on file{% if my_step['signature_at'] %} — used on {{ my_step['signature_at'][:10] }}{% endif %}.</p>{% endif %}
 <button class="b p" type="submit">Use my signature</button></form>
 {% else %}
-<p class="hint" style="margin-top:14px">You haven't uploaded a signature yet — <a href="{{ url_for('auth.my_settings') }}">upload one in My settings</a> first. You must use your signature before you can forward the application.</p>
+<p class="hint" style="margin-top:14px">You haven't uploaded a signature yet — <a href="{{ url_for('auth.my_settings') }}">upload one in My settings</a> first. You must use your signature before you can approve or reject the application.</p>
 {% endif %}
+<form method="post" action="{{ url_for('applications.decide', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm"><div class="fd"><label>Change status (only you, {{ my_label }}, can decide now — the next person cannot act until you have approved)</label><select name="status"><option value="approved" {{ 'selected' if app['status']=='approved' }}>Approved</option><option value="rejected" {{ 'selected' if app['status']=='rejected' }}>Rejected</option></select></div></div>
+<button class="b p" type="submit" {{ 'disabled' if not my_sig }}>Save status</button>{% if not my_sig %} <span class="hint">Use your signature first.</span>{% endif %} <span class="hint">The applicant and the earlier approvers are notified of the change{% if my_step['position'] < steps|length %}; the next person is told it is now with them{% endif %}.</span></form>
+{% endif %}
+{% if can_forward %}
 <form method="post" action="{{ url_for('applications.forward_to_hr', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fd"><label>Forward to (HR &amp; Admin user)</label><select name="hr_user_id" required><option value="">Choose an HR &amp; Admin user…</option>{% for u in hr_users %}<option value="{{ u['id'] }}">{{ u['full_name'] }}</option>{% endfor %}</select><div class="sub">The application goes to this HR &amp; Admin user, who approves or rejects it. Its status becomes Checked.</div></div>
-<button class="b p" type="submit" {{ 'disabled' if not app['checker_signature_path'] }}>Forward to HR &amp; Admin</button>{% if not app['checker_signature_path'] %} <span class="hint">Use your signature first.</span>{% endif %}</form>
+<button class="b p" type="submit">Forward to HR &amp; Admin</button></form>
 {% endif %}
-{% if can_manage %}
-<form method="post" action="{{ url_for('applications.change_status', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fm"><div class="fd"><label>Change status (only the HR approver and the HR &amp; Admin department admin can change it, once the checker has forwarded it)</label><select name="status"><option value="approved" {{ 'selected' if app['status']=='approved' }}>Approved</option><option value="rejected" {{ 'selected' if app['status']=='rejected' }}>Rejected</option></select></div></div>
-<button class="b p" type="submit" {{ 'disabled' if not app['signature_path'] }}>Save status</button>{% if not app['signature_path'] %} <span class="hint">Use your signature first.</span>{% endif %} <span class="hint">The applicant and the checker are notified of the change.</span></form>
+{% if can_note %}
 <form method="post" action="{{ url_for('applications.set_note', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fd"><label>HR note</label><textarea name="hr_note" rows="3">{{ app['hr_note'] or '' }}</textarea><div class="sub">Shown on the application and its PDF, under "FOR OFFICE USE".</div></div>
 <button class="b" type="submit">Save note</button></form>
-{% if my_signature %}
-<form method="post" action="{{ url_for('applications.upload_signature', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the application and its PDF, above Approved By, with your name and designation under it. Using a new one replaces the old one.</div></div>
-{% if app['signature_path'] %}<p class="hint">Signature on file — used by {{ signer['full_name'] if signer else '' }}{% if app['signature_at'] %} on {{ app['signature_at'][:10] }}{% endif %}.</p>{% endif %}
-<button class="b" type="submit">Use my signature</button></form>
-{% else %}
-<p class="hint" style="margin-top:14px">You haven't uploaded a signature yet — <a href="{{ url_for('auth.my_settings') }}">upload one in My settings</a> first. You must use your signature before you can save the status.</p>
 {% endif %}
-{% elif not can_check %}
-<p class="hint" style="margin-top:14px">{% if app['status'] == 'pending' %}Only the checker ({{ checker['full_name'] if checker else '' }}) can check it and forward it to HR &amp; Admin.{% elif app['status'] == 'checked' %}Only the HR approver ({{ approver['full_name'] if approver else '' }}) and the HR &amp; Admin department admin can change the status, set a note or use a signature.{% else %}This application has been decided.{% endif %}{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
+{% if not can_act and not can_forward %}
+<p class="hint" style="margin-top:14px">{% if app['status'] in ('pending', 'checked') and current_step %}Waiting for {{ current_step['full_name'] or '' }}'s approval{% if current_step['role'] %} ({{ step_roles[current_step['role']] }}){% endif %}.{% if viewer_step %} You are Step {{ viewer_step['position'] }} — {{ step_roles[viewer_step['role']] }} — you cannot act until {{ current_step['full_name'] or '' }} has approved.{% endif %}{% elif app['status'] in ('approved', 'rejected') %}This application has been decided.{% endif %}{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
 {% endif %}
 </div>
 <div class="card" style="margin-top:16px">
@@ -77,23 +75,17 @@
     {% for para in (app['letter_body'] or '').split('\n') %}{% if para.strip() %}<p style="margin:0 0 12px; text-align:justify">{{ para }}</p>{% endif %}{% endfor %}
     <p style="margin:12px 0 0">Thanking you.<br>Yours faithfully,</p>
     <p style="margin:22px 0 0"><b>{{ owner['full_name'] if owner else '' }}</b>{% if owner and owner['designation'] %}<br>{{ owner['designation'] }}{% endif %}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
-    {% if app['hr_note'] or app['signature_path'] or app['checker_signature_path'] or signer or checker %}
+    {% if app['hr_note'] or steps %}
     <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">
       <p style="margin:0 0 8px; font-size:.85rem; letter-spacing:1px; color:var(--soft)"><b>FOR OFFICE USE</b></p>
       {% if app['hr_note'] %}<p style="margin:0 0 10px"><b>HR note — {{ signer['full_name'] if signer else (recipient['full_name'] if recipient else '') }}:</b> {{ app['hr_note'] }}</p>{% endif %}
       <div style="display:flex; gap:24px; line-height:1.35">
-        <div style="width:48%; text-align:center">
-          {% if app['checker_signature_path'] %}<img src="{{ url_for('applications.signature_image', aid=app['id'], kind='checker') }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
-          <p style="margin:4px 0 0"><b>Checked By</b></p>
-          <p style="margin:2px 0 0"><b>{{ checker['full_name'] if checker else '' }}</b></p>
-          {% if checker and checker['designation'] %}<p style="margin:0">{{ checker['designation'] }}</p>{% endif %}
-        </div>
-        <div style="width:48%; text-align:center">
-          {% if app['signature_path'] %}<img src="{{ url_for('applications.signature_image', aid=app['id'], kind='approver') }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
-          <p style="margin:4px 0 0"><b>Approved By</b></p>
-          <p style="margin:2px 0 0"><b>{{ signer['full_name'] if signer else '' }}</b></p>
-          {% if signer and signer['designation'] %}<p style="margin:0">{{ signer['designation'] }}</p>{% endif %}
-        </div>
+        {% for s in steps %}<div style="width:{% if steps|length == 1 %}100%{% elif steps|length == 2 %}48%{% else %}32%{% endif %}; text-align:center">
+          {% if s['signature_path'] %}<img src="{{ url_for('applications.signature_image', aid=app['id'], kind='step-' ~ s['position']) }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
+          <p style="margin:4px 0 0"><b>{{ step_roles[s['role']] }}</b></p>
+          <p style="margin:2px 0 0"><b>{{ s['full_name'] or '' }}</b></p>
+          {% if s['designation'] %}<p style="margin:0">{{ s['designation'] }}</p>{% endif %}
+        </div>{% endfor %}
       </div>
     </div>
     {% endif %}
@@ -117,9 +109,8 @@
 <div class="card"><h2>Details</h2>
   <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied by</b>{{ owner['full_name'] if owner else '' }}{% if owner and owner['designation'] %} ({{ owner['designation'] }}){% endif %}</div>
-  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Sent to</b>{{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }}{% if checker and checker['designation'] %} ({{ checker['designation'] }}){% endif %} — to check</div>
-  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Checked by</b>{{ checker['full_name'] if checker else '—' }}{% if app['checker_signature_at'] %} · {{ app['checker_signature_at'][:10] }}{% endif %}</div>
-  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Approved by</b>{{ approver['full_name'] if approver else (signer['full_name'] if signer else '—') }}{% if approver and approver['designation'] %} ({{ approver['designation'] }}){% elif signer and signer['designation'] %} ({{ signer['designation'] }}){% endif %}</div>
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currently with</b>{{ recipient['full_name'] if recipient else '—' }}{% if current_step %} (Step {{ current_step['position'] }} — {{ step_roles[current_step['role']] }}){% endif %}</div>
+  {% for s in steps %}<div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Step {{ s['position'] }}</b>{{ step_roles[s['role']] }} — {{ s['full_name'] or '—' }}{% if s['designation'] %} ({{ s['designation'] }}){% endif %}{% if s['status'] != 'pending' %} · {{ labels[s['status']] }}{% if s['signature_at'] %} · {{ s['signature_at'][:10] }}{% endif %}{% endif %}</div>{% endfor %}
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">From</b>{{ app['from_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">To</b>{{ app['to_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Reason</b>{{ app['reason'] or '—' }}</div>

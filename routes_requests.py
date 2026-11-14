@@ -106,6 +106,14 @@ def hr_admin_dept_id(db):
     row = db.execute("SELECT id FROM departments WHERE LOWER(name) LIKE '%hr%' AND LOWER(name) LIKE '%admin%' ORDER BY id LIMIT 1").fetchone()
     return row["id"] if row else None
 
+def management_dept_id(db):
+    """The Management department id, by name — the third department an
+    application step can be sent to (2026-11-14). None when there is no
+    department called Management yet; then no Management users appear in
+    the person list."""
+    row = db.execute("SELECT id FROM departments WHERE LOWER(name)='management'").fetchone()
+    return row["id"] if row else None
+
 def hr_admin_users(db):
     """Active, approved users in the HR & Admin department — the only people a request can be sent to."""
     did = hr_admin_dept_id(db)

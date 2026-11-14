@@ -669,7 +669,7 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                     checker_signature_path=None, recipient_name="", from_date="", to_date="",
                     days=0, reason="", letter_body="", hr_note="", signer_name="", signer_designation="",
                     signature_path=None, signature_date="", code="", company="", company_address="",
-                    qr_url="", logo_left=None, logo_right=None, to_lines=""):
+                    qr_url="", logo_left=None, logo_right=None, to_lines="", sig_blocks=None):
     """Application Letter PDF — a FORMAL application letter, not an invoice
     (approved in leave-application-pdf-formal.jpg). A plain centred
     letterhead (company name and address, one thin rule, no logos, no teal),
@@ -678,15 +678,15 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
     default nothing appears under "To,"), Subject, the body, 'Thanking you. Yours
     faithfully,' and the applicant's signature (name, designation,
     department, company). Then a FOR OFFICE USE section with the HR note
-    and two signature blocks side by side — Checked By (the checker's
-    uploaded signature image above their name and designation) and
-    Approved By (the HR approver's uploaded signature image above their
-    name and designation) — laid out by count the same way as the invoice
-    and item request signatures (2 left and right, 3 left/centre/right,
-    4 across). There is no separate Status or Date line at the bottom:
-    the status is shown by the watermark — the grey APPROVED seal when
-    the application is approved, the grey REJECTED stamp when it is
-    rejected. The body is set in Times (serif), like a typed formal
+    and one signature block per step in the approval chain — the step's
+    saved signature image above their name and designation — laid out by
+    count the same way as the invoice and item request signatures (1 at
+    the left, 2 left and right, 3 left/centre/right, 4 across). There is
+    no separate Status or Date line at the bottom: the status is shown by
+    the watermark — the grey APPROVED seal when the last step approved,
+    the grey REJECTED stamp when the last step rejected, and no watermark
+    when the application was rejected by an earlier step or is still
+    waiting. The body is set in Times (serif), like a typed formal
     letter. The QR (1.9 cm) and share code stay at the bottom left of
     every page, with the page number at the bottom right, the same as the
     other portal documents."""
@@ -794,11 +794,16 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
     if hr_note:
         who = signer_name or recipient_name
         office.append([Paragraph(f"<b>HR note \u2014 {_times_text(who)}:</b> {_times_text(hr_note)}", note_s)])
-    _sig_blocks = []
-    _sig_blocks.append((checker_signature_path, "Checked By",
-                        checker_name or "", checker_designation or ""))
-    _sig_blocks.append((signature_path, "Approved By",
-                        signer_name or "", signer_designation or ""))
+    # One block per step in the chain (sig_blocks, when given); without
+    # them, the old two blocks — Checked By and Approved By.
+    if sig_blocks is not None:
+        _sig_blocks = list(sig_blocks)
+    else:
+        _sig_blocks = []
+        _sig_blocks.append((checker_signature_path, "Checked By",
+                            checker_name or "", checker_designation or ""))
+        _sig_blocks.append((signature_path, "Approved By",
+                            signer_name or "", signer_designation or ""))
     _sig_table = _application_sig_table(_sig_blocks, A4[0] - 3.6 * cm)
     if _sig_table is not None:
         office.append([_sig_table])
@@ -808,9 +813,10 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                                 ("LINEABOVE", (0, 0), (-1, 0), 1.2, colors.HexColor("#1A1A1A"))])
     story.append(office_table)
     # Footer: QR + share code bottom left, Page N bottom right (same as the
-    # other portal documents). The watermark comes from the status only:
-    # the grey APPROVED seal when approved, the grey REJECTED stamp when
-    # rejected. A pending or checked application shows no watermark.
+    # other portal documents). The watermark comes from the status the
+    # caller passes: the grey APPROVED seal when the last step approved,
+    # the grey REJECTED stamp when the last step rejected. A pending,
+    # checked or earlier-rejected application shows no watermark.
     # The seal and the stamp are drawn at the same size (5.5 cm) and the
     # same place (right side, 10 cm up from the bottom), in the blank
     # space beside the applicant's signature and above FOR OFFICE USE,

@@ -1,4 +1,30 @@
 ==============================================================================
+ UPDATE: THREE-STEP APPROVAL FOR APPLICATION LETTERS (2026-11-14)
+==============================================================================
+ 1. The application creating page now has three approval steps
+    instead of one "Send to" box. Every step has a role — None,
+    Checked By, Approved By or Authorised By — and a person from
+    your own department, HR & Admin or Management. A step set to
+    None is skipped: two steps give two signature blocks at the
+    bottom of the letter, three give three.
+ 2. The steps run strictly in order: the second person cannot
+    approve until the first has, and the third cannot until the
+    second has. While waiting they see "Waiting for (name)'s
+    approval", and the application reaches their Received tab only
+    when their turn comes.
+ 3. Every person in the chain must tick "Use my signature" before
+    they can approve or reject — the Save status button stays
+    disabled until they have.
+ 4. The APPROVED seal or REJECTED stamp appears on the PDF only
+    after the LAST person in the chain has approved or rejected.
+ 5. Old applications keep their old two-step flow (checker checks,
+    signs and forwards to HR, who approves or rejects).
+ 6. Three questions are still open — the defaults built for now:
+    all three steps None is refused; the same person twice is
+    refused; an early rejection ends the application with no
+    watermark. See README section 71 for the exact wording.
+
+==============================================================================
  UPDATE: A MORNING REMINDER TO UPLOAD YOUR SIGNATURE (2026-11-14)
 ==============================================================================
  1. Every morning, every user who has not uploaded a signature in My

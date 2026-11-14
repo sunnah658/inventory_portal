@@ -616,7 +616,19 @@ CREATE TABLE IF NOT EXISTS application_history (
     new_value      TEXT,
     at             TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-CREATE INDEX IF NOT EXISTS idx_app_kind ON applications(kind_id);
+CREATE TABLE IF NOT EXISTS application_steps (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    position       INTEGER NOT NULL,
+    role           TEXT NOT NULL CHECK (role IN ('checked','approved','authorised')),
+    user_id        INTEGER REFERENCES users(id),
+    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    signature_path TEXT,
+    signature_at   TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE (application_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_app_steps ON application_steps(application_id, position);
 CREATE INDEX IF NOT EXISTS idx_app_owner ON applications(owner_id);
 CREATE INDEX IF NOT EXISTS idx_app_recip ON applications(recipient_id);
 CREATE INDEX IF NOT EXISTS idx_app_hist ON application_history(application_id);
@@ -807,6 +819,7 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "applications", "checker_signature_at", "TEXT")  # when the checker signed
     _ensure_column(conn, "applications", "approver_id", "INTEGER REFERENCES users(id)")  # HR & Admin user it was forwarded to
     _ensure_column(conn, "applications", "to_lines", "TEXT")  # the lines the user wrote for the letter's To section (2026-11-14)
+    _ensure_column(conn, "applications", "chain_legacy", "INTEGER NOT NULL DEFAULT 0")  # 1 = made the old single-recipient way (or before build 52 with no approver yet): the checker may still forward it to HR (2026-11-14)
     # The checker/approver indexes live HERE, after the columns above —
     # not in SCHEMA. SCHEMA runs before _ensure_column, so on a database
     # made before build 43 (no checker_id/approver_id yet) the index
@@ -832,6 +845,41 @@ def _upgrade_ddb_tabs(conn):
         _lines = [(_chk["full_name"] if _chk else ""), (_dept["name"] if _dept else ""), _co]
         conn.execute("UPDATE applications SET to_lines=? WHERE id=?",
                      ("\n".join([_l for _l in _lines if _l]), _a["id"]))
+    # The three-step approval chain (2026-11-14): applications made before
+    # this build have no step rows, so build their chain from the columns
+    # they already have — the checker is step 1 (Checked By), the HR
+    # approver (when there is one) is step 2 (Approved By), and an
+    # application made before the two-stage flow (no checker at all) has
+    # one step, Approved By, for the HR user it was sent to. A step that
+    # already happened is marked approved (or rejected, for the last one);
+    # a step that has not happened yet stays pending. Only applications
+    # with no step rows at all are touched, so this is safe to run on
+    # every startup. An application that is still Pending with no
+    # approver keeps the old forward: its checker may still forward it
+    # to an HR & Admin user (chain_legacy = 1), so no live application
+    # is stranded by the new chain.
+    for _a in conn.execute(
+            "SELECT id, status, checker_id, checker_signature_path, checker_signature_at, "
+            "approver_id, recipient_id, signature_path, signature_at "
+            "FROM applications WHERE id NOT IN (SELECT application_id FROM application_steps)").fetchall():
+        _steps = []
+        if _a["checker_id"]:
+            _s1 = "approved" if _a["status"] in ("checked", "approved", "rejected") else "pending"
+            _steps.append(("checked", _a["checker_id"], _s1,
+                           _a["checker_signature_path"], _a["checker_signature_at"]))
+        if _a["approver_id"]:
+            _s2 = _a["status"] if _a["status"] in ("approved", "rejected") else "pending"
+            _steps.append(("approved", _a["approver_id"], _s2,
+                           _a["signature_path"], _a["signature_at"]))
+        if not _steps and _a["recipient_id"]:
+            _s1 = _a["status"] if _a["status"] in ("approved", "rejected") else "pending"
+            _steps.append(("approved", _a["recipient_id"], _s1,
+                           _a["signature_path"], _a["signature_at"]))
+        for _i, (_role, _uid, _st, _sig, _sig_at) in enumerate(_steps, start=1):
+            conn.execute("INSERT INTO application_steps(application_id,position,role,user_id,status,signature_path,signature_at) "
+                         "VALUES (?,?,?,?,?,?,?)", (_a["id"], _i, _role, _uid, _st, _sig, _sig_at))
+        if _a["status"] == "pending" and not _a["approver_id"]:
+            conn.execute("UPDATE applications SET chain_legacy=1 WHERE id=?", (_a["id"],))
     _ensure_column(conn, "application_kinds", "company_name", "TEXT")  # letterhead company for this kind (2026-11-10)
     _ensure_column(conn, "application_kinds", "company_address", "TEXT")  # letterhead address for this kind
     _ensure_column(conn, "application_kinds", "logo_left", "TEXT")  # letterhead logo, top left corner (2026-11-14)
