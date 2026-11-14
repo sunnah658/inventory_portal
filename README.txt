@@ -3297,3 +3297,76 @@
     the first startup and the portal comes up. Back up first and
     keep your live .env untouched, as before. Apply only this
     latest zip, not the older ones in order.
+
+==============================================================================
+ 65. APPLICATION LETTERS FOR THE PORTAL ADMIN, CLICK-TO-READ NOTIFICATIONS,
+     DELETE NOTIFICATIONS, BIGGER SIGNATURES, USER MENU, NOTIFICATION
+     WORDING AND TWO KIND LOGOS (2026-11-14)
+==============================================================================
+ 1. The portal admin now has the Application Letters page. "Application
+    Letters" is in the More menu for the portal admin too, and the list
+    opens for them (it used to give a 403). The portal admin and the
+    administrative permission users can see every application in the
+    All tab, whatever department it came from, and can delete any of
+    them. They still cannot create an application, check one, forward
+    one, approve one or manage the kinds — those stay with the
+    department users, the checker and HR.
+ 2. Clicking a notification now marks just that one read. The
+    notification opens the page it points at, and its "New" badge and
+    the bell count go away — nobody has to press "Mark all as read"
+    separately any more. "Mark all as read", "Select" and "Clear all"
+    are unchanged, and opening the notifications list itself still
+    marks nothing read.
+ 3. When the portal admin or an administrative permission user deletes
+    an application, only the owner is told ("Portal Admin deleted the
+    application LV-0001. It is in the Recycle Bin for 30 days.").
+    Nobody else is told — not the checker, not the HR approver, not
+    the department admins. When the owner deletes their own
+    application, the checker / approver is told, as before.
+ 4. The checker and approver signatures on the application detail
+    page and on the public code page are a bit larger — 68px instead
+    of 52px. The signature size on the PDF letter is unchanged.
+ 5. The user menu (top right) now has only "My settings" and
+    "Log out". The "Password" button is gone; changing the password
+    is inside My settings, where it has been since build 43. The
+    standalone /change-password page itself is unchanged.
+ 6. An application being sent no longer produces two near-identical
+    notifications for the same person. The checker gets one ("X sent
+    you a Leave Application LV-0004 to check.") and the department
+    admins get the watcher one ("X sent a Leave Application LV-0004
+    to [checker] to check."). If the checker is also a department
+    admin, they get only the checker one — the watcher one skips
+    them, but the other department admins still get it. The wording
+    also no longer repeats "application": it reads "Leave Application
+    LV-0004", not "Leave Application application LV-0004". The same
+    wording fix applies to the "updated the ..." notifications when
+    an application is edited. The notification chain itself is
+    unchanged: the portal admin and the permission users are told
+    about every task a department admin does, the portal admin is
+    told about every task a permission user or department admin does,
+    and a department admin is told about every task done by a user
+    in their department in the Department Database and on the
+    Application Letters page.
+ 7. The application delete box now has an eye button on the password
+    field, the same as the login page, so the user can see the
+    password they typed.
+ 8. An application kind can now carry two logos: one for the top left
+    corner of the letter and one for the top right corner. The
+    department admin sets them on the New kind and Edit kind forms
+    ("Logo — top left corner" and "Logo — top right corner"). The
+    logos print at the top corners of the letter on the detail page,
+    the public code page and the PDF, with the company name and
+    address staying centred between them. If a kind has no logo for
+    a corner, that corner is left blank — no placeholder and no
+    default logo. The logos belong to the kind, like its company
+    name and address, so they appear on every letter made from that
+    kind, including ones already sent. Uploading a new logo replaces
+    the old one; ticking "Remove it" on the edit form clears that
+    corner again. The logos are stored per kind (application_kinds
+    logo_left / logo_right); kinds made before this build have no
+    logos until the department admin adds them.
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). The two new kind columns are
+    added to an existing database on the first startup, so no data
+    is lost. Back up first and keep your live .env untouched, as
+    before. Apply only this latest zip, not the older ones in order.

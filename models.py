@@ -558,6 +558,8 @@ CREATE TABLE IF NOT EXISTS application_kinds (
     number_prefix TEXT NOT NULL DEFAULT 'LV',
     company_name  TEXT,
     company_address TEXT,
+    logo_left     TEXT,
+    logo_right    TEXT,
     next_number   INTEGER NOT NULL DEFAULT 1,
     status        TEXT NOT NULL DEFAULT 'active',
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
@@ -803,6 +805,8 @@ def _upgrade_ddb_tabs(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_app_approver ON applications(approver_id)")
     _ensure_column(conn, "application_kinds", "company_name", "TEXT")  # letterhead company for this kind (2026-11-10)
     _ensure_column(conn, "application_kinds", "company_address", "TEXT")  # letterhead address for this kind
+    _ensure_column(conn, "application_kinds", "logo_left", "TEXT")  # letterhead logo, top left corner (2026-11-14)
+    _ensure_column(conn, "application_kinds", "logo_right", "TEXT")  # letterhead logo, top right corner
     _ensure_column(conn, "item_request_lines", "item_name", "TEXT")  # item name per line (2026-11-09)
     # per-tab column unique index (old index was department-wide)
     idx = conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='ux_ddb_column_name'").fetchone()

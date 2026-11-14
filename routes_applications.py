@@ -75,16 +75,17 @@ def _dept_admin_required():
 
 @bp.before_request
 def _letters_allowed():
-    """Application Letters are for all users EXCEPT the portal admin. The
-    public code pages (no login) are not affected. The true portal admin
-    may still open an application, delete it and download its PDF (they
-    can delete it, so they must be able to reach it) — but not the list,
-    the kinds, or any other application route."""
+    """Application Letters are for every user, including the portal admin
+    (2026-11-14): the portal admin sees the list in the More menu and can
+    see and delete every application. The public code pages (no login) are
+    not affected. The portal admin may open the list, an application, delete
+    it and download its PDF — but not create, check, forward, approve or
+    manage kinds, which stay for the department users, the checker and HR."""
     if request.endpoint in ("applications.code_page", "applications.code_pdf"):
         return None
     if g.user is not None and is_true_admin(g.user):
-        if request.endpoint in ("applications.detail", "applications.application_delete",
-                                "applications.application_pdf"):
+        if request.endpoint in ("applications.list_applications", "applications.detail",
+                                "applications.application_delete", "applications.application_pdf"):
             return None
         abort(403)
     return None
@@ -284,6 +285,39 @@ def _signature_path(name):
     p = os.path.join(config.UPLOAD_DIR, "app_signatures", name)
     return p if os.path.exists(p) else None
 
+def _save_kind_logo(file_storage):
+    """Save an uploaded kind logo (top left or top right corner of the
+    letter). The file is stored as-is — a logo is branding, so it is not
+    trimmed the way a signature is. Returns the stored file name, or None
+    when nothing was uploaded or the file type is not allowed."""
+    if not file_storage or not file_storage.filename:
+        return None
+    ext = file_storage.filename.rsplit(".", 1)[-1].lower()
+    if ext not in SIG_EXTENSIONS:
+        return None
+    folder = os.path.join(config.UPLOAD_DIR, "app_kind_logos")
+    os.makedirs(folder, exist_ok=True)
+    name = secrets.token_hex(10) + "." + ext
+    path = os.path.join(folder, name)
+    file_storage.save(path)
+    return name
+
+def _kind_logo_path(name):
+    if not name:
+        return None
+    p = os.path.join(config.UPLOAD_DIR, "app_kind_logos", name)
+    return p if os.path.exists(p) else None
+
+def _delete_kind_logo(name):
+    if not name:
+        return
+    try:
+        p = os.path.join(config.UPLOAD_DIR, "app_kind_logos", os.path.basename(name))
+        if os.path.exists(p):
+            os.remove(p)
+    except Exception:
+        pass
+
 def _notify_dept_admins(db, app, text, link):
     """The application's department admins are told, except the owner (the
     owner is already told in the same action)."""
@@ -388,8 +422,10 @@ def kind_new():
         if not name:
             flash("Write a kind name.", "error")
             return render_template("application_kind_form.html", kind=None)
-        db.execute("INSERT INTO application_kinds(department_id,created_by,name,number_prefix,company_name,company_address,status) VALUES (?,?,?,?,?,?,?)",
-                   (g.user["department_id"], g.user["id"], name, prefix, company_name, company_address, "active"))
+        logo_left = _save_kind_logo(request.files.get("logo_left"))
+        logo_right = _save_kind_logo(request.files.get("logo_right"))
+        db.execute("INSERT INTO application_kinds(department_id,created_by,name,number_prefix,company_name,company_address,logo_left,logo_right,status) VALUES (?,?,?,?,?,?,?,?,?)",
+                   (g.user["department_id"], g.user["id"], name, prefix, company_name, company_address, logo_left, logo_right, "active"))
         log(db, "application_kind_new", name)
         db.commit(); flash("Application kind saved.", "ok")
         return redirect(url_for("applications.kinds"))
@@ -408,8 +444,27 @@ def kind_edit(kid):
         company_name = (request.form.get("company_name") or "").strip()
         company_address = (request.form.get("company_address") or "").strip()
         status = "active" if request.form.get("status") != "draft" else "draft"
-        db.execute("UPDATE application_kinds SET name=?,number_prefix=?,company_name=?,company_address=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
-                   (name, prefix, company_name, company_address, status, kid))
+        # Logos: uploading a new one replaces the old file; ticking Remove
+        # clears that corner (it stays blank on the letter); uploading
+        # nothing leaves the current logo in place.
+        logo_left = kind["logo_left"]
+        logo_right = kind["logo_right"]
+        new_left = _save_kind_logo(request.files.get("logo_left"))
+        if new_left:
+            _delete_kind_logo(logo_left)
+            logo_left = new_left
+        elif request.form.get("remove_logo_left"):
+            _delete_kind_logo(logo_left)
+            logo_left = None
+        new_right = _save_kind_logo(request.files.get("logo_right"))
+        if new_right:
+            _delete_kind_logo(logo_right)
+            logo_right = new_right
+        elif request.form.get("remove_logo_right"):
+            _delete_kind_logo(logo_right)
+            logo_right = None
+        db.execute("UPDATE application_kinds SET name=?,number_prefix=?,company_name=?,company_address=?,logo_left=?,logo_right=?,status=?,updated_at=datetime('now','localtime') WHERE id=?",
+                   (name, prefix, company_name, company_address, logo_left, logo_right, status, kid))
         log(db, "application_kind_edit", name)
         db.commit(); flash("Application kind saved. Changes apply to new applications only.", "ok")
         return redirect(url_for("applications.kinds"))
@@ -460,12 +515,15 @@ def application_new():
             rec = db.execute("SELECT full_name FROM users WHERE id=?", (recipient_id,)).fetchone()
             log(db, "application_new", number)
             notify(db, [recipient_id],
-                   f"{g.user['full_name']} sent you a {kind['name']} application {number} to check.",
+                   f"{g.user['full_name']} sent you a {kind['name']} {number} to check.",
                    url_for("applications.detail", aid=aid), skip=g.user["id"])
             _dept = db.execute("SELECT * FROM departments WHERE id=?", (g.user["department_id"],)).fetchone()
+            # The watcher notification skips the checker: they were just told
+            # directly above, and a checker who is also a department admin
+            # would otherwise get the same news twice (2026-11-14).
             notify_ddb_task(db, g.user, _dept,
-                            f"{g.user['full_name']} sent a {kind['name']} application {number} to {rec['full_name'] if rec else 'their department'} to check.",
-                            url_for("applications.detail", aid=aid))
+                            f"{g.user['full_name']} sent a {kind['name']} {number} to {rec['full_name'] if rec else 'their department'} to check.",
+                            url_for("applications.detail", aid=aid), skip=recipient_id)
             db.commit()
             flash(f"Application {number} sent to {rec['full_name'] if rec else 'your department'} to check.", "ok")
             return redirect(url_for("applications.detail", aid=aid))
@@ -519,11 +577,11 @@ def application_edit(aid):
         log(db, "application_edit", app["number"])
         if g.user["id"] == app["owner_id"]:
             notify(db, [app["recipient_id"]],
-                   f"{g.user['full_name']} updated the {kind['name'] if kind else 'leave'} application {app['number']} sent to you.",
+                   f"{g.user['full_name']} updated the {kind['name'] if kind else 'leave'} {app['number']} sent to you.",
                    url_for("applications.detail", aid=aid), skip=g.user["id"])
         else:
             notify(db, [app["owner_id"]],
-                   f"{g.user['full_name']} updated your {kind['name'] if kind else 'leave'} application {app['number']}.",
+                   f"{g.user['full_name']} updated your {kind['name'] if kind else 'leave'} {app['number']}.",
                    url_for("applications.detail", aid=aid), skip=g.user["id"])
         _notify_dept_admins(db, app, f"{g.user['full_name']} updated the application {app['number']}.",
                             url_for("applications.detail", aid=aid))
@@ -585,8 +643,10 @@ def application_delete(aid):
                "updated_at=datetime('now','localtime') WHERE id=?", (g.user["id"], aid))
     _log_history(db, aid, g.user, "deleted", "Application", app["number"], "deleted")
     log(db, "application_deleted", app["number"])
-    # Tell the other party: the owner if someone else deleted it, the
-    # checker / approver if the owner deleted it.
+    # Tell the other party, and only them (2026-11-14): when the portal
+    # admin or an administrative permission user deletes it, only the owner
+    # is told; when the owner deletes it, the checker / approver is told.
+    # Nobody else — not the department admins, not HR — is told about a delete.
     other = app["recipient_id"] if g.user["id"] == app["owner_id"] else app["owner_id"]
     if other and other != g.user["id"]:
         notify(db, [other],
@@ -777,6 +837,59 @@ def code_signature_image(code, kind):
         abort(404)
     return send_file(path)
 
+@bp.route("/applications/kinds/<int:kid>/logo/<side>")
+@login_required
+def kind_logo(kid, side):
+    """Serve a kind logo image inline for the kind form preview. side is
+    'left' or 'right'. Only a department admin of the kind's department
+    can see it."""
+    from flask import send_file
+    db = get_db(); kind = _kind(db, kid)
+    if not _is_dept_admin(g.user) or kind["department_id"] != g.user["department_id"]:
+        abort(403)
+    if side not in ("left", "right"):
+        abort(404)
+    path = _kind_logo_path(kind["logo_left"] if side == "left" else kind["logo_right"])
+    if not path:
+        abort(404)
+    return send_file(path)
+
+@bp.route("/applications/<int:aid>/logo/<side>")
+@login_required
+def kind_logo_image(aid, side):
+    """Serve a kind logo image inline for the detail page letter preview.
+    side is 'left' or 'right'. Only users who can view the application
+    can see its kind's logos."""
+    from flask import send_file
+    db = get_db(); app = _app(db, aid)
+    if not _can_view(db, g.user, app):
+        abort(403)
+    kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
+    if kind is None or side not in ("left", "right"):
+        abort(404)
+    path = _kind_logo_path(kind["logo_left"] if side == "left" else kind["logo_right"])
+    if not path:
+        abort(404)
+    return send_file(path)
+
+@bp.route("/applications/code/<code>/logo/<side>")
+def code_kind_logo_image(code, side):
+    """Serve a kind logo image inline for the public code page letter
+    preview. Public, like the code PDF — only when the application's
+    public QR is on and it is not deleted."""
+    from flask import send_file
+    db = get_db()
+    app = db.execute("SELECT * FROM applications WHERE public_code=?", (code.strip().upper(),)).fetchone()
+    if app is None or app["deleted_at"] or not _public_check(db, app):
+        abort(404)
+    kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
+    if kind is None or side not in ("left", "right"):
+        abort(404)
+    path = _kind_logo_path(kind["logo_left"] if side == "left" else kind["logo_right"])
+    if not path:
+        abort(404)
+    return send_file(path)
+
 @bp.route("/applications/<int:aid>/pdf")
 @login_required
 def application_pdf(aid):
@@ -884,4 +997,6 @@ def _build_pdf(db, app):
         signer_designation=(signer["designation"] if signer else "") or (approver["designation"] if approver else ""),
         signature_path=_signature_path(app["signature_path"]), signature_date=app["signature_at"][:10] if app["signature_at"] else "",
         code=app["public_code"] if app["public_enabled"] else "",
-        company=company, company_address=address, qr_url=qr_url)
+        company=company, company_address=address, qr_url=qr_url,
+        logo_left=_kind_logo_path(kind["logo_left"]) if kind else None,
+        logo_right=_kind_logo_path(kind["logo_right"]) if kind else None)

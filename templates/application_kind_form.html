@@ -4,13 +4,15 @@
 {% block content %}
 <div class="tw"><div>
 <div class="hd"><div><h1>{{ 'Edit kind' if kind else 'New kind' }}{% if kind %} · {{ kind['name'] }}{% endif %}</h1><p class="hint">The kind name appears in the subject of the letter and on the Create card. Changes apply to new applications only.</p></div></div>
-<form method="post" class="card">
+<form method="post" class="card" enctype="multipart/form-data">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
 <div class="fd"><label>Kind name</label><input type="text" name="name" value="{{ kind['name'] if kind else '' }}" required placeholder="Annual Leave"></div>
 <div class="fd"><label>Application number prefix</label><input type="text" name="number_prefix" value="{{ kind['number_prefix'] if kind else 'LV' }}"><div class="sub">The number is per-kind, e.g. LV-0001, and never reused.</div></div>
 <div class="fd"><label>Company name (letterhead)</label><input type="text" name="company_name" value="{{ kind['company_name'] if kind else '' }}" placeholder="HRC Technologies Limited"><div class="sub">Printed at the top of the letter for applications of this kind. Leave it blank to use the portal company name.</div></div>
 <div class="fd"><label>Company address (letterhead)</label><input type="text" name="company_address" value="{{ kind['company_address'] if kind else '' }}" placeholder="Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100"><div class="sub">Printed under the company name on the letter. Leave it blank to use the portal default address.</div></div>
+<div class="fd"><label>Logo — top left corner</label><input type="file" name="logo_left" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Printed at the top left corner of the letter for applications of this kind. If you leave it blank, that corner stays empty.</div>{% if kind and kind['logo_left'] %}<p class="hint" style="margin-top:6px"><img src="{{ url_for('applications.kind_logo', kid=kind['id'], side='left') }}" alt="" style="max-height:40px; vertical-align:middle; margin-right:8px">A logo is already set for this corner. <label style="display:inline"><input type="checkbox" name="remove_logo_left" value="1"> Remove it</label></p>{% endif %}</div>
+<div class="fd"><label>Logo — top right corner</label><input type="file" name="logo_right" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Printed at the top right corner of the letter for applications of this kind. If you leave it blank, that corner stays empty.</div>{% if kind and kind['logo_right'] %}<p class="hint" style="margin-top:6px"><img src="{{ url_for('applications.kind_logo', kid=kind['id'], side='right') }}" alt="" style="max-height:40px; vertical-align:middle; margin-right:8px">A logo is already set for this corner. <label style="display:inline"><input type="checkbox" name="remove_logo_right" value="1"> Remove it</label></p>{% endif %}</div>
 <div class="fd"><label>Status</label><select name="status"><option value="active" {{ 'selected' if not kind or kind['status']=='active' }}>Active</option><option value="draft" {{ 'selected' if kind and kind['status']=='draft' }}>Draft (hidden from employees)</option></select></div>
 </div>
 <div class="acts" style="margin-top:16px"><button class="b p" type="submit">Save kind</button><a class="b" href="{{ url_for('applications.kinds') }}">Cancel</a></div>

@@ -669,7 +669,7 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                     checker_signature_path=None, recipient_name="", from_date="", to_date="",
                     days=0, reason="", letter_body="", hr_note="", signer_name="", signer_designation="",
                     signature_path=None, signature_date="", code="", company="", company_address="",
-                    qr_url=""):
+                    qr_url="", logo_left=None, logo_right=None):
     """Application Letter PDF — a FORMAL application letter, not an invoice
     (approved in leave-application-pdf-formal.jpg). A plain centred
     letterhead (company name and address, one thin rule, no logos, no teal),
@@ -709,12 +709,28 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                               textColor=colors.HexColor("#444444"))
     note_s = ParagraphStyle("anote", fontName=serif, fontSize=11, leading=17)
     story = []
-    # Letterhead: company name and address, centred, one thin rule.
-    head = Table([[Paragraph(_times_text(company), head_name)],
-                  [Paragraph(_times_text(company_address), head_addr)]],
-                 colWidths=[A4[0] - 3.6 * cm],
+    # Letterhead: company name and address, centred, one thin rule. The
+    # kind may carry a logo for the top left corner and one for the top
+    # right corner (2026-11-14); a corner with no logo stays blank, and
+    # the company name stays centred in the middle.
+    def _logo_img(path):
+        if not path:
+            return ""
+        try:
+            return Image(path, width=2.6 * cm, height=1.6 * cm, kind="proportional")
+        except Exception:
+            return ""
+    _mid_w = A4[0] - 3.6 * cm - 6 * cm
+    text_head = Table([[Paragraph(_times_text(company), head_name)],
+                       [Paragraph(_times_text(company_address), head_addr)]],
+                      colWidths=[_mid_w],
+                      style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                             ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)])
+    head = Table([[_logo_img(logo_left), text_head, _logo_img(logo_right)]],
+                 colWidths=[3 * cm, _mid_w, 3 * cm],
                  style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                         ("LINEBELOW", (0, -1), (-1, -1), 1.2, colors.HexColor("#1A1A1A"))])
     story += [head, Spacer(1, 14)]
     # Ref on the left, date on the right.

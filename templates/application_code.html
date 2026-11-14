@@ -8,8 +8,14 @@
 {% else %}
 <div class="card">
 <div style="font-family:Georgia, 'Times New Roman', serif; line-height:1.7; max-width:640px; margin:0 auto">
-  <p style="text-align:center; margin:0 0 2px"><b style="font-size:1.15rem">{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</b></p>
-  <p style="text-align:center; color:var(--soft); margin:0 0 14px; font-size:.9rem">{{ kind['company_address'] if kind and kind['company_address'] else 'Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100' }}</p>
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px">
+    <div style="width:90px; flex:0 0 auto; text-align:left">{% if kind and kind['logo_left'] %}<img src="{{ url_for('applications.code_kind_logo_image', code=code, side='left') }}" alt="" style="max-width:90px; max-height:52px">{% endif %}</div>
+    <div style="flex:1; text-align:center">
+      <p style="margin:0 0 2px"><b style="font-size:1.15rem">{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</b></p>
+      <p style="color:var(--soft); margin:0; font-size:.9rem">{{ kind['company_address'] if kind and kind['company_address'] else 'Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100' }}</p>
+    </div>
+    <div style="width:90px; flex:0 0 auto; text-align:right">{% if kind and kind['logo_right'] %}<img src="{{ url_for('applications.code_kind_logo_image', code=code, side='right') }}" alt="" style="max-width:90px; max-height:52px">{% endif %}</div>
+  </div>
   <p style="display:flex; justify-content:space-between; margin:0 0 12px"><span>Ref: {{ app['number'] or '' }}</span><span>{{ app['created_at'][:10] if app['created_at'] else '' }}</span></p>
   <p style="margin:0 0 12px">To,<br>{{ checker['full_name'] if checker else (recipient['full_name'] if recipient else '') }}<br>{{ dept['name'] if dept else '' }}<br>{{ kind['company_name'] if kind and kind['company_name'] else company_name }}</p>
   <p style="margin:0 0 12px"><b>Subject:</b> {{ kind['name'] if kind else 'leave' }} for {{ app['days'] }} {{ 'day' if app['days'] == 1 else 'days' }} ({{ app['from_date'] or '' }} – {{ app['to_date'] or '' }}).</p>
@@ -23,13 +29,13 @@
     {% if app['hr_note'] %}<p style="margin:0 0 10px"><b>HR note — {{ signer['full_name'] if signer else (recipient['full_name'] if recipient else '') }}:</b> {{ app['hr_note'] }}</p>{% endif %}
     <div style="display:flex; gap:24px; line-height:1.35">
       <div style="width:48%; text-align:center">
-        {% if app['checker_signature_path'] %}<img src="{{ url_for('applications.code_signature_image', code=code, kind='checker') }}" alt="" style="height:52px">{% else %}<div style="height:52px"></div>{% endif %}
+        {% if app['checker_signature_path'] %}<img src="{{ url_for('applications.code_signature_image', code=code, kind='checker') }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
         <p style="margin:4px 0 0"><b>Checked By</b></p>
         <p style="margin:2px 0 0"><b>{{ checker['full_name'] if checker else '' }}</b></p>
         {% if checker and checker['designation'] %}<p style="margin:0">{{ checker['designation'] }}</p>{% endif %}
       </div>
       <div style="width:48%; text-align:center">
-        {% if app['signature_path'] %}<img src="{{ url_for('applications.code_signature_image', code=code, kind='approver') }}" alt="" style="height:52px">{% else %}<div style="height:52px"></div>{% endif %}
+        {% if app['signature_path'] %}<img src="{{ url_for('applications.code_signature_image', code=code, kind='approver') }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
         <p style="margin:4px 0 0"><b>Approved By</b></p>
         <p style="margin:2px 0 0"><b>{{ signer['full_name'] if signer else '' }}</b></p>
         {% if signer and signer['designation'] %}<p style="margin:0">{{ signer['designation'] }}</p>{% endif %}

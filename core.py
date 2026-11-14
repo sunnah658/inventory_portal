@@ -698,9 +698,19 @@ def ddb_display_value(col, value):
 
 # ---------------------------------------------------------------- notifications
 def notify(db, user_ids, text, link=None, skip=None):
-    """Put a message in the bell of each user (never for 'skip', the person who acted)."""
+    """Put a message in the bell of each user (never for 'skip', the person who acted).
+    'skip' is one user id, or a list of them (2026-11-14: the application
+    send tells the checker directly, so the watcher notification skips the
+    checker too — otherwise a checker who is also a department admin gets
+    the same news twice)."""
+    if isinstance(skip, (list, tuple, set)):
+        skips = set(skip)
+    elif skip is not None:
+        skips = {skip}
+    else:
+        skips = set()
     for uid in set(user_ids or []):
-        if uid and uid != skip:
+        if uid and uid not in skips:
             db.execute("INSERT INTO notifications(user_id,text,link) VALUES (?,?,?)", (uid, text[:300], link))
 
 
@@ -722,25 +732,25 @@ def permission_user_ids(db):
     return [r[0] for r in db.execute("SELECT id FROM users WHERE role != 'admin' AND can_portal_admin=1 AND is_active=1")]
 
 
-def notify_admin_task(db, actor, text, link=None):
+def notify_admin_task(db, actor, text, link=None, skip=None):
     """A permission user did an admin task: tell the true portal admins.
     Nothing is ever sent about a true portal admin's own task, and the
     actor is never told about his own task."""
     if is_true_admin(actor):
         return
-    notify(db, true_admin_ids(db), text, link, skip=actor["id"])
+    notify(db, true_admin_ids(db), text, link, skip=[actor["id"], skip])
 
 
-def notify_dept_task(db, actor, text, link=None):
+def notify_dept_task(db, actor, text, link=None, skip=None):
     """A dept admin did a dept task: tell the true portal admins and the
     permission users. Nothing is sent about a true portal admin's task,
     and the actor is never told about his own task."""
     if is_true_admin(actor):
         return
-    notify(db, true_admin_ids(db) + permission_user_ids(db), text, link, skip=actor["id"])
+    notify(db, true_admin_ids(db) + permission_user_ids(db), text, link, skip=[actor["id"], skip])
 
 
-def notify_ddb_row_task(db, actor, dept_id, text, link=None):
+def notify_ddb_row_task(db, actor, dept_id, text, link=None, skip=None):
     """A user did something to a Department Database row: tell that
     department's dept admins. A dept admin (or delegate) acting on a row
     is a dept task, not a user task, so the caller routes those through
@@ -750,23 +760,25 @@ def notify_ddb_row_task(db, actor, dept_id, text, link=None):
         return
     targets = [r[0] for r in db.execute(
         "SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1", (dept_id,))]
-    notify(db, targets, text, link, skip=actor["id"])
+    notify(db, targets, text, link, skip=[actor["id"], skip])
 
 
-def notify_ddb_task(db, actor, dept, text, link=None):
+def notify_ddb_task(db, actor, dept, text, link=None, skip=None):
     """Route a Department Database action to its watchers (2026-11-05):
     a true portal admin's action tells nobody; a permission user's action
     tells the true portal admins; a dept admin's or delegate's action
     tells the true portal admins and the permission users; a regular
-    user's action tells that department's dept admins."""
+    user's action tells that department's dept admins. 'skip' is one more
+    user who must not be told (2026-11-14: the checker, who is already
+    told directly when an application is sent to them)."""
     if is_true_admin(actor):
         return
     if is_portal_admin(actor):
-        notify_admin_task(db, actor, text, link)
+        notify_admin_task(db, actor, text, link, skip=skip)
     elif ddb_is_tab_admin(db, actor, dept["id"]):
-        notify_dept_task(db, actor, text, link)
+        notify_dept_task(db, actor, text, link, skip=skip)
     else:
-        notify_ddb_row_task(db, actor, dept["id"], text, link)
+        notify_ddb_row_task(db, actor, dept["id"], text, link, skip=skip)
 
 
 # ---------------------------------------------------------------- sharing

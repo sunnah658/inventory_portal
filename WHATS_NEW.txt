@@ -1,4 +1,31 @@
 ==============================================================================
+ UPDATE: APPLICATION LETTERS FOR THE PORTAL ADMIN, CLICK-TO-READ,
+ BIGGER SIGNATURES AND TWO KIND LOGOS (2026-11-14)
+==============================================================================
+ 1. The portal admin now has the Application Letters page in the More
+    menu, and can see and delete every application. It used to give
+    them a 403.
+ 2. Clicking a notification now marks just that one read and opens its
+    page — no need to press "Mark all as read" separately.
+ 3. When the portal admin or an administrative permission user deletes
+    an application, only the owner is told. Nobody else is told.
+ 4. The checker and approver signatures on the application detail
+    page and the public code page are a bit larger (68px).
+ 5. The user menu now has only "My settings" and "Log out" — the
+    "Password" button is gone (changing the password is inside My
+    settings).
+ 6. Sending an application no longer gives the same person two
+    near-identical notifications, and the wording no longer repeats
+    "application" ("Leave Application LV-0004", not "Leave
+    Application application LV-0004").
+ 7. The application delete box now has an eye button on the password
+    field.
+ 8. An application kind can now carry two logos — one for the top
+    left corner of the letter and one for the top right corner. If a
+    kind has no logo for a corner, that corner stays blank. The logos
+    appear on the detail page, the public code page and the PDF.
+
+==============================================================================
  UPDATE: FIX FOR THE CONTAINER RESTARTING AFTER UPGRADE (2026-11-12)
 ==============================================================================
  1. If you applied build 44 over a portal still on build 41 or 42,

@@ -31,6 +31,27 @@ def notifications():
                            choices=config.WARN_DAY_CHOICES, hour=config.REMINDER_HOUR)
 
 
+@bp.route("/notifications/<int:nid>/open")
+@login_required
+def notification_open(nid):
+    """Clicking a notification marks just that one read, then takes the user
+    to the page it points at (2026-11-14) — so nobody has to press \"Mark all
+    as read\" separately. A notification that is not this user's, or one with
+    no page of its own, goes back to the notifications list."""
+    db = get_db()
+    row = db.execute("SELECT link FROM notifications WHERE id=? AND user_id=?",
+                     (nid, g.user["id"])).fetchone()
+    if row is None:
+        abort(404)
+    db.execute("UPDATE notifications SET read_at=datetime('now','localtime') WHERE id=? AND user_id=?",
+               (nid, g.user["id"]))
+    db.commit()
+    link = (row["link"] or "").strip()
+    if link.startswith("/"):
+        return redirect(link)
+    return redirect(url_for("flow.notifications"))
+
+
 @bp.route("/notifications/mark-read", methods=["POST"])
 @login_required
 def notifications_mark_read():
