@@ -132,10 +132,11 @@ def _application_sig_table(blocks, usable):
     everything inside it is CENTRED. 1 block sits at the left, 2 sit at
     the left and the right, 3 sit at the left, the centre and the right,
     4 spread evenly across the page. More than four wrap in groups of
-    four. A block is (image_path, title, name, designation): the signature
-    image on top (fixed height, so the lines align), then the title, then
-    the name, then the designation — with tight spacing, no extra gap.
-    Returns None when there are no blocks."""
+    four. A block is (image_path, title, name, designation, department): the
+    signature image on top (fixed height, so the lines align), then the
+    title, then the name, then the designation, then the department —
+    with tight spacing, no extra gap. An older four-element block (no
+    department) still works. Returns None when there are no blocks."""
     if not blocks:
         return None
     _t = ParagraphStyle("appt", fontName="Times-Bold", fontSize=12, leading=16, alignment=1)
@@ -143,12 +144,14 @@ def _application_sig_table(blocks, usable):
     _d = ParagraphStyle("appd", fontName="Times-Roman", fontSize=12, leading=16, alignment=1,
                         textColor=colors.HexColor("#444444"))
 
-    def _block(image_path, title, name, designation):
+    def _block(image_path, title, name, designation, department=""):
         _rows = [[_sig_image_fixed_height(image_path, 1.4 * cm)],
                  [Paragraph(_times_text(title), _t)],
                  [Paragraph(_times_text(name), _n)]]
         if designation:
             _rows.append([Paragraph(_times_text(designation), _d)])
+        if department:
+            _rows.append([Paragraph(_times_text(department), _d)])
         return Table(_rows, colWidths=[usable / 4], style=[
             ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
             ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
@@ -684,9 +687,9 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
     the left, 2 left and right, 3 left/centre/right, 4 across). There is
     no separate Status or Date line at the bottom: the status is shown by
     the watermark — the grey APPROVED seal when the last step approved,
-    the grey REJECTED stamp when the last step rejected, and no watermark
-    when the application was rejected by an earlier step or is still
-    waiting. The body is set in Times (serif), like a typed formal
+    the grey REJECTED stamp as soon as any step rejects, and no watermark
+    when the application is still waiting or only an earlier step has
+    approved. The body is set in Times (serif), like a typed formal
     letter. The QR (1.9 cm) and share code stay at the bottom left of
     every page, with the page number at the bottom right, the same as the
     other portal documents."""
@@ -801,9 +804,9 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
     else:
         _sig_blocks = []
         _sig_blocks.append((checker_signature_path, "Checked By",
-                            checker_name or "", checker_designation or ""))
+                            checker_name or "", checker_designation or "", ""))
         _sig_blocks.append((signature_path, "Approved By",
-                            signer_name or "", signer_designation or ""))
+                            signer_name or "", signer_designation or "", ""))
     _sig_table = _application_sig_table(_sig_blocks, A4[0] - 3.6 * cm)
     if _sig_table is not None:
         office.append([_sig_table])

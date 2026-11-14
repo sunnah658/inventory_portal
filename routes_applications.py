@@ -74,7 +74,7 @@ from auth import login_required
 from utils import is_portal_admin, is_true_admin
 from core import external_url, notify, notify_admin_task, notify_ddb_task, notify_dept_task, permission_user_ids, true_admin_ids
 from models import get_db, log, setting_get
-from routes_requests import can_see_all_departments, hr_admin_dept_id, hr_admin_users, management_dept_id
+from routes_requests import hr_admin_dept_id, hr_admin_users, management_dept_id
 
 bp = Blueprint("applications", __name__)
 STATUSES = ["pending", "checked", "approved", "rejected"]
@@ -145,10 +145,12 @@ def _is_hr_dept_admin(db, user):
 
 def _steps(db, aid):
     """The approval chain for an application, in order, with each step's
-    user's name and designation. A step whose user was purged has
-    user_id None and no name — it still shows, with a blank name."""
-    return db.execute("SELECT s.*, u.full_name, u.designation FROM application_steps s "
-                      "LEFT JOIN users u ON u.id=s.user_id WHERE s.application_id=? ORDER BY s.position",
+    user's name, designation and department. A step whose user was
+    purged has user_id None and no name — it still shows, with a blank
+    name."""
+    return db.execute("SELECT s.*, u.full_name, u.designation, d.name AS dept_name FROM application_steps s "
+                      "LEFT JOIN users u ON u.id=s.user_id LEFT JOIN departments d ON d.id=u.department_id "
+                      "WHERE s.application_id=? ORDER BY s.position",
                       (aid,)).fetchall()
 
 def _current_step(db, aid):
@@ -177,7 +179,16 @@ def _sync_app_from_steps(db, aid):
     if not steps:
         return
     pending = [s for s in steps if s["status"] == "pending"]
-    current = pending[0] if pending else steps[-1]
+    rejected = next((s for s in steps if s["status"] == "rejected"), None)
+    if rejected:
+        # The request goes no further once somebody rejects: the person
+        # it is with is the one who rejected it, not the next person in
+        # line (who never gets their turn).
+        current = rejected
+    elif pending:
+        current = pending[0]
+    else:
+        current = steps[-1]
     checked = next((s for s in steps if s["role"] == "checked"), steps[0])
     approved = next((s for s in steps if s["role"] == "approved"), None)
     last = steps[-1]
@@ -221,15 +232,22 @@ def _can_view(db, user, app):
     # it to know they are waiting for the current step's approval.
     if user["id"] in _step_user_ids(db, app["id"]):
         return True
-    # Every user in the same department can see that department's applications
-    # (they appear in that department's All applications sub-tab).
-    if user["department_id"] == app["department_id"]:
+    # A department admin can open his department's applications (they
+    # appear in his All applications tab).
+    if _is_dept_admin(user) and app["department_id"] == user["department_id"]:
         return True
-    # Any HR & Admin user can open and see every application (they all appear
-    # in the All applications section), whatever department it came from.
-    # Only the person whose turn it is can manage it.
-    if user["department_id"] == hr_admin_dept_id(db):
-        return True
+    # The HR & Admin department admin can also open any application
+    # sent to one of his department's users (they appear in his All
+    # applications tab too). A regular user in the same department as
+    # the applicant cannot open another user's application.
+    if _is_hr_dept_admin(db, user):
+        hr = hr_admin_dept_id(db)
+        if hr:
+            row = db.execute("SELECT 1 FROM application_steps s JOIN users u ON u.id=s.user_id "
+                             "WHERE s.application_id=? AND u.department_id=? LIMIT 1",
+                             (app["id"], hr)).fetchone()
+            if row:
+                return True
     return False
 
 def _can_edit(db, user, app):
@@ -459,13 +477,32 @@ def list_applications():
     if tab not in ("my", "all", "received"):
         tab = "my"
     is_hr = bool(hr_admin_dept_id(db)) and g.user["department_id"] == hr_admin_dept_id(db)
+    # Who gets an All applications tab, and what it shows:
+    # - the portal admin and the administrative permission users see
+    #   every application from every department;
+    # - a department admin sees his own department's applications,
+    #   and the HR & Admin department admin also sees every
+    #   application sent to one of his department's users;
+    # - a regular user has no All tab at all: only his own
+    #   applications (My) and the ones requested to him (Received).
+    if is_portal_admin(g.user):
+        all_scope = "everything"
+    elif _is_dept_admin(g.user):
+        all_scope = "dept"
+    else:
+        all_scope = "none"
+    if tab == "all" and all_scope == "none":
+        tab = "my"
     # The Received tab is for the person an application is currently
     # with: the person whose turn it is in the chain. HR users always
     # see it; anyone else sees it when something is currently with them.
-    has_received = db.execute("SELECT 1 FROM applications WHERE recipient_id=? AND deleted_at IS NULL LIMIT 1", (g.user["id"],)).fetchone() is not None
+    # Only applications still waiting for a decision count — once an
+    # application is approved or rejected it goes nowhere, so it never
+    # appears in anybody's Received tab.
+    has_received = db.execute("SELECT 1 FROM applications WHERE recipient_id=? AND status IN ('pending','checked') AND deleted_at IS NULL LIMIT 1", (g.user["id"],)).fetchone() is not None
     show_received = bool(is_hr or has_received)
     if tab == "received" and not show_received:
-        tab = "all"
+        tab = "my"
     kinds = db.execute("SELECT * FROM application_kinds WHERE department_id=? AND status='active' ORDER BY id",
                        (g.user["department_id"],)).fetchall()
     # KPI counts for the current user (deleted applications are in the Recycle Bin, not here).
@@ -473,8 +510,9 @@ def list_applications():
     for r in db.execute("SELECT status, COUNT(*) c FROM applications WHERE owner_id=? AND deleted_at IS NULL GROUP BY status", (g.user["id"],)):
         counts["my"] += r["c"]
         counts[r["status"]] = counts.get(r["status"], 0) + r["c"]
-    # The list.
-    can_all = can_see_all_departments(db, g.user)
+    # The list. The department filter is only for the portal admin and
+    # the administrative permission users, who see every department.
+    can_all = all_scope == "everything"
     fdept = request.args.get("fdept", type=int)
     fstatus = (request.args.get("status") or "").strip()
     q = (request.args.get("q") or "").strip()
@@ -484,9 +522,16 @@ def list_applications():
         where.append("a.owner_id=?"); params.append(g.user["id"])
     elif tab == "received":
         where.append("a.recipient_id=?"); params.append(g.user["id"])
+        where.append("a.status IN ('pending','checked')")
     else:
-        if not can_all:
-            where.append("a.department_id=?"); params.append(g.user["department_id"])
+        if all_scope == "dept":
+            if _is_hr_dept_admin(db, g.user):
+                hr = hr_admin_dept_id(db)
+                where.append("(a.department_id=? OR EXISTS (SELECT 1 FROM application_steps s "
+                             "JOIN users u ON u.id=s.user_id WHERE s.application_id=a.id AND u.department_id=?))")
+                params += [g.user["department_id"], hr]
+            else:
+                where.append("a.department_id=?"); params.append(g.user["department_id"])
         elif fdept:
             where.append("a.department_id=?"); params.append(fdept)
     if fstatus in STATUSES:
@@ -506,7 +551,7 @@ def list_applications():
     rows = db.execute(sql, params).fetchall()
     depts = db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_all else []
     return render_template("application_list.html", kinds=kinds, rows=rows, tab=tab, counts=counts,
-                           can_all=can_all, depts=depts, fdept=fdept, fstatus=fstatus, q=q,
+                           can_all=can_all, show_all=all_scope != "none", depts=depts, fdept=fdept, fstatus=fstatus, q=q,
                            is_hr=is_hr, show_received=show_received, statuses=STATUSES, labels=STATUS_LABELS)
 
 # ---------------------------------------------------------------- kinds (dept admin)
@@ -812,7 +857,10 @@ def detail(aid):
         qr_url = external_url(db, "applications.code_page", code=app["public_code"])
         qr_svg = _qr_svg(qr_url)
     _steps_list = _steps(db, aid)
-    _cur = _current_step(db, aid)
+    # Once the application is decided nobody is "currently with" it:
+    # the request goes no further, so no step is waiting and nobody is
+    # shown as the person holding it.
+    _cur = _current_step(db, aid) if app["status"] in ("pending", "checked") else None
     _viewer = next((s for s in _steps_list if s["user_id"] == g.user["id"]), None)
     return render_template("application_detail.html", app=app, kind=kind,
                            owner=owner, recipient=recipient, checker=checker, approver=approver,
@@ -1021,9 +1069,10 @@ def _decide(aid):
     _sync_app_from_steps(db, aid)
     if new_status == "approved" and not is_last:
         # The application stays "Checked" — log the step's own decision
-        # instead ("from Checked to Checked" would read as nothing
-        # happening).
-        _log_history(db, aid, g.user, "status", f"Step {step['position']} ({label})",
+        # as an edit ("Step 2 (Approved By): Pending → Approved"),
+        # because the status line would read "from Checked to Checked",
+        # which says nothing happened.
+        _log_history(db, aid, g.user, "edit", f"Step {step['position']} ({label})",
                      "Pending", "Approved")
     else:
         _log_history(db, aid, g.user, "status", "Status", STATUS_LABELS.get(app["status"], app["status"]), STATUS_LABELS[new_app_status])
@@ -1317,17 +1366,21 @@ def _build_pdf(db, app):
         address = config.DEFAULT_COMPANY_ADDRESS
     qr_url = external_url(db, "applications.code_page", code=app["public_code"]) if app["public_code"] else ""
     # One signature block per step in the chain, in order — a step set
-    # to None at creation has no block at all. The watermark comes only
-    # from the LAST step's decision: the seal when the last step
-    # approved, the stamp when the last step rejected, and no watermark
-    # at all when the application was rejected by an earlier step (the
-    # last person never decided) or is still waiting.
+    # to None at creation has no block at all. A step that rejected
+    # shows "Rejected By" above their name instead of their role. The
+    # watermark: the REJECTED stamp appears as soon as ANY step
+    # rejects, and the request goes no further; the APPROVED seal
+    # appears only when the LAST step approves. An approval by an
+    # earlier step shows no watermark at all.
     steps = _steps(db, app["id"])
-    sig_blocks = [(_signature_path(s["signature_path"]), STEP_ROLES.get(s["role"], s["role"]),
-                   s["full_name"] or "", s["designation"] or "") for s in steps]
+    sig_blocks = [(_signature_path(s["signature_path"]),
+                   "Rejected By" if s["status"] == "rejected" else STEP_ROLES.get(s["role"], s["role"]),
+                   s["full_name"] or "", s["designation"] or "", s["dept_name"] or "") for s in steps]
     last = steps[-1] if steps else None
-    if last and last["status"] in ("approved", "rejected"):
-        wm_status = last["status"]
+    if any(s["status"] == "rejected" for s in steps):
+        wm_status = "rejected"
+    elif last and last["status"] == "approved":
+        wm_status = "approved"
     else:
         wm_status = "pending"
     return exports.application_pdf(

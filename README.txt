@@ -3587,11 +3587,10 @@
     signature they saved in My settings) before they can approve or
     reject. The "Save status" button stays disabled until they have
     ticked it. Each decision is only Approved or Rejected.
- 4. The grey APPROVED seal or the grey REJECTED stamp appears on the
-    letter's PDF only after the LAST used step has approved or
-    rejected. An approval or rejection by an earlier step shows no
-    seal and no stamp, and a rejection by an earlier step ends the
-    application at once, with no stamp.
+ 4. The grey APPROVED seal appears on the letter's PDF only after
+    the LAST used step has approved. An approval by an earlier step
+    shows no seal. (The REJECTED stamp rule changed in build 53,
+    section 72: any rejection stamps the PDF at once.)
  5. Old applications keep working: an application sent before this
     update keeps its old two-step flow — the checker checks it, signs
     under Checked By and forwards it to one HR & Admin user, who
@@ -3610,11 +3609,11 @@
          "Choose at least one step — who approves this application?".
       b. The same person in two steps: refused — "Choose a different
          person for each step."
-      c. Step 1 or Step 2 rejects: the application is Rejected at
-         once, the chain ends, and NO watermark appears on the PDF
-         (the last person never decided, and the watermark only comes
-         from the last person's decision). A rejection BY the last
-         step does show the REJECTED stamp.
+      c. Step 1 or Step 2 rejects: ANSWERED in build 53
+         (section 72) — the application is Rejected at once, the
+         chain ends, and the REJECTED stamp DOES appear on the PDF
+         straight away. Only the APPROVED seal waits for the last
+         person.
 
     Upgrade: apply this zip the usual way (extract, then
     docker compose up -d --build). The database gains one new table
@@ -3626,3 +3625,125 @@
     gets both steps marked decided. Nothing else changes. Back up
     first and keep your live .env untouched, as before. Apply only
     this latest zip, not the older ones in order.
+
+
+==============================================================================
+ 72. "REJECTED BY" AND THE STAMP ON ANY REJECTION (2026-11-14)
+==============================================================================
+ 1. When a person in the chain chooses Reject instead of Approve,
+    the label above their name in the signature block changes from
+    their role to "Rejected By" — so the checker rejecting shows
+    "Rejected By" over the checker's name, the approver rejecting
+    shows it over the approver's name, and the authoriser rejecting
+    shows it over the authoriser's name. It shows in the same place
+    everywhere the block appears: the detail page, the public code
+    page and the PDF. Approving keeps the role label, and a step
+    that has not decided yet keeps its role label.
+ 2. The watermark rule is now split in two. The REJECTED stamp
+    appears on the PDF as soon as ANY person in the chain rejects,
+    and the request goes no further. The APPROVED seal still
+    appears only when the LAST person in the chain approves — an
+    approval by an earlier person shows no seal and no stamp.
+ 3. "The request goes no further" is now true on screen as well as
+    in the rules: once an application is approved or rejected, the
+    detail page shows "Currently with —" (nobody has it), a step
+    that never got its turn says "not reached" instead of
+    "waiting", and the application never appears in the next
+    person's Received tab. The person the application ended with
+    (the one who rejected it, or the last approver) is the one
+    shown as "Applied to" in the list.
+ 4. The edit history names the step for an approval in the middle
+    of the chain: "Step 2 (Approved By) from Pending to Approved"
+    (before, it read "changed the status from Checked to Checked",
+    which said nothing). A final decision still reads "changed the
+    status from Checked to Approved/Rejected".
+
+    TWO QUESTIONS STILL OPEN (the defaults built for now — please
+    say if you want them changed):
+      a. All three steps set to None: the application is refused —
+         "Choose at least one step — who approves this application?".
+      b. The same person in two steps: refused — "Choose a different
+         person for each step."
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). No database change in this
+    build — the tables and columns from build 52 are unchanged.
+    Back up first and keep your live .env untouched, as before.
+    Apply only this latest zip, not the older ones in order.
+
+73. WHO CAN SEE APPLICATIONS IN APPLICATION LETTERS (2026-11-14)
+    Who sees what on the Application Letters list page changed:
+
+    1. The portal admin and the administrative permission users see
+       every user's application from every department in the All
+       applications tab, as before. The department filter (All
+       departments) is only shown to them.
+    2. Every department admin has an All applications tab showing
+       his own department's users' applications.
+    3. The HR & Admin department admin sees more in All: every
+       request sent to one of his department's users — any
+       application where any person in the approval chain is an
+       HR & Admin user, even when the application came from another
+       department — as well as his own department's applications.
+       This wider "sent to" view is only for the HR & Admin
+       department admin; other department admins see only their
+       own department's applications in All.
+    4. A normal user has no All applications tab at all — only "My
+       applications" and "Received" (the applications requested to
+       them). There are no Approved or Rejected tabs.
+    5. A normal user can no longer open another user's application,
+       even one from their own department: opening it directly
+       (from a link or a notification) is refused. The old rule
+       that "every user in the same department can open an
+       application" is gone. Who CAN open an application: the
+       portal admin, the applicant, the person it is currently
+       with, anyone in the approval chain, the department admin of
+       the applicant's department, and the HR & Admin department
+       admin for a request sent to one of his users. The "How
+       approval works" text on the list page now says this.
+    6. What changed for regular HR & Admin users: until now every
+       HR user could see all departments in the All tab (a rule
+       shared with Request Items). They no longer can — only their
+       own applications and the ones requested to them, like any
+       other normal user. Request Items is unchanged: HR users
+       still see every department's requests there.
+    7. A bookmarked ?apptab=all for a user with no All tab now
+       opens My applications instead of showing other users'
+       applications; a Received tab that does not apply now also
+       falls back to My instead of All.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). No database change in this
+    build — the tables and columns from build 52 are unchanged.
+    Back up first and keep your live .env untouched, as before.
+    Apply only this latest zip, not the older ones in order.
+
+74. DEPARTMENT NAME UNDER THE DESIGNATION IN EVERY SIGNATURE
+    (2026-11-14)
+    Every signature block in Application Letters now shows the
+    signer's department name directly under their designation:
+
+    1. The FOR OFFICE USE blocks — one per step in the approval
+       chain — show the department under the designation, on the
+       application detail page, on the public code page, and in
+       the PDF letter. The department is the full department name
+       of the person who signed (for example Sales & Marketing,
+       HR & Admin, Management), centred under the designation
+       like the rest of the block, in the same grey style as the
+       designation in the PDF.
+    2. The applicant's own block already showed the department
+       (name, designation, department, company) on all three
+       places — nothing changed there.
+    3. A step whose user was deleted and has no department shows
+       no department line, the same as a missing designation.
+    4. The "Use my signature" hint on the detail page now says
+       "with your name, designation and department under it."
+    5. The "Step 1 / Step 2 / Step 3" rows in the Details rail
+       are not signature blocks (no signature image there), so
+       they are unchanged.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). No database change in this
+    build — the tables and columns from build 52 are unchanged.
+    Back up first and keep your live .env untouched, as before.
+    Apply only this latest zip, not the older ones in order.

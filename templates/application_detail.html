@@ -26,14 +26,14 @@
 </div>
 <div class="tw"><div>
 <div class="card"><div><span class="s {{ 'g' if app['status'] == 'approved' else ('r' if app['status'] == 'rejected' else 'a') }}">{{ labels[app['status']] }}</span>
-<span class="hint"> Applied by {{ owner['full_name'] if owner else '' }}{% for s in steps %} · Step {{ s['position'] }} {{ step_roles[s['role']] }}: {{ s['full_name'] or '—' }}{% if s['status'] == 'approved' %} (approved){% elif s['status'] == 'rejected' %} (rejected){% elif current_step and s['id'] == current_step['id'] %} — waiting{% endif %}{% endfor %}</span></div>
+<span class="hint"> Applied by {{ owner['full_name'] if owner else '' }}{% for s in steps %} · Step {{ s['position'] }} {{ step_roles[s['role']] }}: {{ s['full_name'] or '—' }}{% if s['status'] == 'approved' %} (approved){% elif s['status'] == 'rejected' %} (rejected){% elif current_step and s['id'] == current_step['id'] %} — waiting{% elif app['status'] in ('approved', 'rejected') %} (not reached){% endif %}{% endfor %}</span></div>
 {% if can_act %}
 {% set my_step = current_step %}
 {% set my_label = step_roles[my_step['role']] %}
 {% set my_sig = my_step['signature_path'] %}
 {% if my_signature %}
 <form method="post" action="{{ url_for('applications.step_signature', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the application and its PDF, above {{ my_label }}, with your name and designation under it. You must use your signature before you can approve or reject the application.</div></div>
+<div class="fd"><label class="ck"><input type="checkbox" name="use_my_signature" value="1"> Use my signature</label><div class="sub">Uses the signature you saved in My settings. It appears on the application and its PDF, above {{ my_label }}, with your name, designation and department under it. You must use your signature before you can approve or reject the application.</div></div>
 {% if my_sig %}<p class="hint">Signature on file{% if my_step['signature_at'] %} — used on {{ my_step['signature_at'][:10] }}{% endif %}.</p>{% endif %}
 <button class="b p" type="submit">Use my signature</button></form>
 {% else %}
@@ -82,9 +82,10 @@
       <div style="display:flex; gap:24px; line-height:1.35">
         {% for s in steps %}<div style="width:{% if steps|length == 1 %}100%{% elif steps|length == 2 %}48%{% else %}32%{% endif %}; text-align:center">
           {% if s['signature_path'] %}<img src="{{ url_for('applications.signature_image', aid=app['id'], kind='step-' ~ s['position']) }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
-          <p style="margin:4px 0 0"><b>{{ step_roles[s['role']] }}</b></p>
+          <p style="margin:4px 0 0"><b>{% if s['status'] == 'rejected' %}Rejected By{% else %}{{ step_roles[s['role']] }}{% endif %}</b></p>
           <p style="margin:2px 0 0"><b>{{ s['full_name'] or '' }}</b></p>
           {% if s['designation'] %}<p style="margin:0">{{ s['designation'] }}</p>{% endif %}
+          {% if s['dept_name'] %}<p style="margin:0">{{ s['dept_name'] }}</p>{% endif %}
         </div>{% endfor %}
       </div>
     </div>
@@ -109,8 +110,8 @@
 <div class="card"><h2>Details</h2>
   <div style="display:flex;padding:8px 0"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Kind</b>{{ kind['name'] if kind else '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Applied by</b>{{ owner['full_name'] if owner else '' }}{% if owner and owner['designation'] %} ({{ owner['designation'] }}){% endif %}</div>
-  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currently with</b>{{ recipient['full_name'] if recipient else '—' }}{% if current_step %} (Step {{ current_step['position'] }} — {{ step_roles[current_step['role']] }}){% endif %}</div>
-  {% for s in steps %}<div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Step {{ s['position'] }}</b>{{ step_roles[s['role']] }} — {{ s['full_name'] or '—' }}{% if s['designation'] %} ({{ s['designation'] }}){% endif %}{% if s['status'] != 'pending' %} · {{ labels[s['status']] }}{% if s['signature_at'] %} · {{ s['signature_at'][:10] }}{% endif %}{% endif %}</div>{% endfor %}
+  <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Currently with</b>{% if current_step %}{{ recipient['full_name'] if recipient else '—' }} (Step {{ current_step['position'] }} — {{ step_roles[current_step['role']] }}){% else %}—{% endif %}</div>
+  {% for s in steps %}<div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Step {{ s['position'] }}</b>{{ step_roles[s['role']] }} — {{ s['full_name'] or '—' }}{% if s['designation'] %} ({{ s['designation'] }}){% endif %}{% if s['status'] != 'pending' %} · {{ labels[s['status']] }}{% if s['signature_at'] %} · {{ s['signature_at'][:10] }}{% endif %}{% elif app['status'] in ('approved', 'rejected') %} · not reached{% endif %}</div>{% endfor %}
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">From</b>{{ app['from_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">To</b>{{ app['to_date'] or '—' }}</div>
   <div style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Reason</b>{{ app['reason'] or '—' }}</div>

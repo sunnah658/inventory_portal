@@ -1,4 +1,47 @@
 ==============================================================================
+ UPDATE: DEPARTMENT UNDER EVERY SIGNATURE (2026-11-14)
+==============================================================================
+ 1. Every signature block in Application Letters now shows the
+    signer's department name directly under their designation —
+    on the detail page, the public code page and the PDF letter.
+ 2. The applicant's own block already showed the department, so
+    it is unchanged.
+
+==============================================================================
+ UPDATE: WHO CAN SEE APPLICATIONS (2026-11-14)
+==============================================================================
+ 1. A normal user no longer has an All applications tab in
+    Application Letters — only "My applications" and "Received".
+    They cannot view or open another user's application, even one
+    from their own department.
+ 2. Every department admin has an All applications tab showing his
+    own department's users' applications.
+ 3. The HR & Admin department admin also sees, in All, every
+    request sent to one of his department's users — even when the
+    application came from another department.
+ 4. The portal admin and the administrative permission users still
+    see every application from every department.
+ 5. Regular HR & Admin users no longer see all departments in
+    Application Letters — only their own applications and the ones
+    requested to them. (Request Items is unchanged.)
+
+==============================================================================
+ UPDATE: "REJECTED BY" AND THE STAMP ON ANY REJECTION (2026-11-14)
+==============================================================================
+ 1. When a person in the chain rejects instead of approving, the
+    label above their name in the signature block changes from
+    their role to "Rejected By" — on the detail page, the public
+    code page and the PDF.
+ 2. The REJECTED stamp now appears on the PDF as soon as ANY
+    person rejects, and the request goes no further. The APPROVED
+    seal still appears only when the LAST person approves — an
+    approval by an earlier person shows no seal.
+ 3. Once an application is decided, the page shows "Currently
+    with —", a step that never got its turn says "not reached",
+    and the application never appears in the next person's
+    Received tab.
+
+==============================================================================
  UPDATE: THREE-STEP APPROVAL FOR APPLICATION LETTERS (2026-11-14)
 ==============================================================================
  1. The application creating page now has three approval steps

@@ -29,7 +29,7 @@
 </form>
 <div class="tabs" style="margin-top:8px">
   <a class="tab {{ 'on' if tab == 'my' }}" href="{{ url_for('applications.list_applications', apptab='my', status=fstatus, q=q, fdept=fdept) }}">My applications · {{ counts.my }}</a>
-  <a class="tab {{ 'on' if tab == 'all' }}" href="{{ url_for('applications.list_applications', apptab='all', status=fstatus, q=q, fdept=fdept) }}">All applications</a>
+  {% if show_all %}<a class="tab {{ 'on' if tab == 'all' }}" href="{{ url_for('applications.list_applications', apptab='all', status=fstatus, q=q, fdept=fdept) }}">All applications</a>{% endif %}
   {% if show_received %}<a class="tab {{ 'on' if tab == 'received' }}" href="{{ url_for('applications.list_applications', apptab='received', status=fstatus, q=q, fdept=fdept) }}">Received</a>{% endif %}
 </div>
 {% if kinds %}
@@ -55,7 +55,7 @@
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Rejected</b>{{ counts.rejected }}</div>
   </div>
   <div class="card"><h2>How approval works</h2>
-    <p class="hint">Each person in the approval chain adds their signature — the signature they saved in My settings — which appears on the application and its PDF, under their step's role. Nobody can save a decision until their signature is on file, and nobody can act until the person before them has approved. Other users can open and see an application, but not change it.</p></div>
+    <p class="hint">Each person in the approval chain adds their signature — the signature they saved in My settings — which appears on the application and its PDF, under their step's role. Nobody can save a decision until their signature is on file, and nobody can act until the person before them has approved. Only the applicant, the people in the approval chain, their department admin and the portal admin can open an application.</p></div>
   {{ quick_card([
     ('+ New application', url_for('applications.application_new', kind=kinds[0]['id']), True) if kinds else None,
     ('Application kinds', url_for('applications.kinds'), False) if g.user['is_dept_admin'] else None,

@@ -30,9 +30,10 @@
     <div style="display:flex; gap:24px; line-height:1.35">
       {% for s in steps %}<div style="width:{% if steps|length == 1 %}100%{% elif steps|length == 2 %}48%{% else %}32%{% endif %}; text-align:center">
         {% if s['signature_path'] %}<img src="{{ url_for('applications.code_signature_image', code=code, kind='step-' ~ s['position']) }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
-        <p style="margin:4px 0 0"><b>{{ step_roles[s['role']] }}</b></p>
+        <p style="margin:4px 0 0"><b>{% if s['status'] == 'rejected' %}Rejected By{% else %}{{ step_roles[s['role']] }}{% endif %}</b></p>
         <p style="margin:2px 0 0"><b>{{ s['full_name'] or '' }}</b></p>
         {% if s['designation'] %}<p style="margin:0">{{ s['designation'] }}</p>{% endif %}
+        {% if s['dept_name'] %}<p style="margin:0">{{ s['dept_name'] }}</p>{% endif %}
       </div>{% endfor %}
     </div>
   </div>
