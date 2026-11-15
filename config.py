@@ -23,11 +23,14 @@ for _folder in (DATA_DIR, UPLOAD_DIR, BRAND_DIR, BACKUP_DIR):
 # ---- The database (MySQL, since build 67) ----------------------------------
 # The portal talks to a MySQL server (the "db" service in docker-compose.yml,
 # or any MySQL 8.0 / MariaDB 10.6+ server). The settings come from the
-# environment; docker-compose sets them from the .env file, falling back to
-# the defaults below. Change the password by setting MYSQL_PASSWORD (and
-# MYSQL_ROOT_PASSWORD for the database container) in your live .env BEFORE
-# the first start — the database user is created with that password on
-# first start, and changing it later does not change the user's password.
+# environment; docker-compose sets them from the .env file. The
+# defaults below apply only when the environment does not set them
+# (for example, running outside Docker). Change the user and
+# password by setting MYSQL_USER and MYSQL_PASSWORD (and
+# MYSQL_ROOT_PASSWORD for the database container) in your live .env
+# BEFORE the first start — the database user is created with that
+# password on first start, and changing them later does not change
+# the user or password inside MySQL.
 # The database data itself lives in the "mysql_data" Docker volume
 # (mounted at /var/lib/mysql in the db container), so it survives a
 # container rebuild or restart. NEVER run "docker compose down -v": it

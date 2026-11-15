@@ -1,4 +1,4 @@
-MYSQL BACKUP GUIDE — Inventory Portal (build 67)
+MYSQL BACKUP GUIDE — Inventory Portal (build 68)
 =====================================================
 The portal's database is now MySQL (build 67). Before build 67 it was
 one SQLite file (portal.db). This guide tells you, step by step:
@@ -68,9 +68,9 @@ WAY B — mysqldump directly (gives you the file on the server):
          cd ~/inventory_portal
   2. Run mysqldump through the database container:
          docker compose exec db mysqldump --single-transaction --quick \
-             --routines --triggers -u portal -p portal > portal_backup.sql
+             --routines --triggers -u ${MYSQL_USER:-portal} -p portal > portal_backup.sql
      When it asks for the password, type the MySQL password
-     (the MYSQL_PASSWORD from your .env file).
+     (the MYSQL_USER and MYSQL_PASSWORD from your .env file).
   3. The file portal_backup.sql is now in the project folder on the
      server. Copy it somewhere safe (see section 3).
 
@@ -185,3 +185,21 @@ AUTOMATIC BACKUPS (optional, recommended):
   - The MySQL port is NOT published to the host — only the portal
     container can reach the database, over the internal Docker
     network. It is not reachable from the office LAN.
+  - Build 68: the database user and password are now read from your
+    live .env file, not written in docker-compose.yml. Set
+    MYSQL_USER and MYSQL_PASSWORD in your live .env BEFORE the
+    first start of the database (defaults: portal /
+    portal-change-me). docker-compose reads them for both the
+    database container and the portal. Changing them after the
+    database already exists does NOT change the user or password
+    inside MySQL.
+  - Build 69: the three lines now ship in the .env file itself,
+    with a comment above them (MYSQL_USER=portal,
+    MYSQL_PASSWORD=portal-change-me,
+    MYSQL_ROOT_PASSWORD=portal-change-me-root). Change the values
+    in the .env file. docker-compose.yml holds no password of its
+    own anymore, so the three lines MUST be in your live .env or
+    the database and the portal will not start. Do NOT let the
+    zip's .env overwrite your live .env — it carries the DEFAULT
+    values; copy the three lines into your live .env by hand if
+    they are not there yet.

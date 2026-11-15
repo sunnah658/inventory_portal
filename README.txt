@@ -4550,3 +4550,91 @@
     counts, and the data survived a MariaDB restart).
     Apply only this latest zip, not the older ones in order.
     Back up first and keep your live .env untouched, as before.
+
+87. MYSQL USER AND PASSWORD NOW COME FROM THE .ENV FILE (2026-11-15)
+    What this is: in build 67 the database user name "portal" was
+    written directly in docker-compose.yml, in two places (the
+    database service and the portal service), and only the password
+    was read from the .env file. Now both the user and the password
+    live only in the .env file, and docker-compose.yml reads them
+    from there.
+    What changed:
+      * docker-compose.yml: the database service now uses
+        MYSQL_USER: ${MYSQL_USER:-portal} and
+        MYSQL_PASSWORD: ${MYSQL_PASSWORD:-portal-change-me};
+        the portal service now uses the same two values for
+        DB_USER and DB_PASSWORD, so the portal always logs in
+        with the user MySQL actually created. The root password
+        already came from .env (MYSQL_ROOT_PASSWORD) and is
+        unchanged.
+      * config.py: only the comment above the database settings
+        changed, to say the user and password are set in .env.
+      * MYSQL_BACKUP_GUIDE.txt: the mysqldump command now uses
+        your MYSQL_USER from .env, and the guide notes that the
+        user and password come from .env since build 68.
+    How to use it: add these two lines to your live .env file on
+    the server (the same file that already has PORTAL_PORT), before
+    the first start of the database:
+        MYSQL_USER=portal
+        MYSQL_PASSWORD=your-own-password
+    If you leave them out, the defaults portal / portal-change-me
+    are used, so a fresh install still starts. The .env file inside
+    this zip is UNCHANGED, as before — you add the lines to your
+    live .env on the server.
+    Keep in mind: MySQL creates the user only the first time the
+    database starts. Changing MYSQL_USER or MYSQL_PASSWORD in .env
+    after the database already exists does NOT change the user or
+    password inside MySQL.
+    Tests: 895/895 checks pass on the work copy and on a fresh
+    extract (892 from builds up to 67 + 3 new). The new checks
+    cover the compose file reading the user and password from .env
+    (no hardcoded user name left in it), the portal service using
+    the same two values, and the zip's .env still containing no
+    MYSQL bytes. No database change in this build, and no screen
+    or feature change. Apply only this latest zip, not the older
+    ones in order. Back up first and keep your live .env
+    untouched, as before.
+
+88. THE MYSQL USER AND PASSWORDS ARE NOW IN THE .ENV FILE (2026-11-15)
+    What this is: builds 67 and 68 kept the .env file inside the
+    zip byte-identical and asked you to add the MySQL lines to your
+    live .env by hand. Now the three lines are written in the .env
+    file itself, with a comment above them, so you change the
+    values there:
+        # --- MySQL database. The database container and the portal
+        # both read the user and passwords from these three lines —
+        # change the values here, and nowhere else. Change them
+        # BEFORE the first start of the database: MySQL creates the
+        # user only on first start, so changing them later does not
+        # change the user or password inside MySQL.
+        MYSQL_USER=portal
+        MYSQL_PASSWORD=portal-change-me
+        MYSQL_ROOT_PASSWORD=portal-change-me-root
+    The values are the same defaults docker-compose.yml used to
+    fall back to, and no other .env line changed — PORTAL_PORT, TZ
+    and all the rest are exactly as they were.
+    The root password is in .env too: docker-compose.yml no longer
+    holds any password of its own. It reads MYSQL_USER,
+    MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD from .env with no
+    fallback value left in the file — so the three lines MUST be
+    in your live .env, or the database and the portal will not
+    start. If your live .env does not have them yet, copy the
+    three lines (and the comment) into it by hand from the .env
+    in this zip.
+    WARNING — read this before you apply the zip: the .env inside
+    this zip now carries the DEFAULT user and passwords. Do NOT
+    let it overwrite your live .env on the server. If you already
+    set your own values in your live .env, keep your live .env as
+    it is. Overwriting your live .env would also reset PORTAL_PORT
+    to 8000 and lose any values you already set — and the portal
+    would then try to log in with the default password while
+    MySQL holds yours.
+    Tests: 898/898 checks pass on the work copy and on a fresh
+    extract (895 from builds up to 68 + 3 new). The new checks
+    cover the three lines being in .env with the defaults, the
+    comment above them, and the original .env settings being
+    unchanged; the updated build-68 checks cover the compose file
+    holding no password value and no fallback. No database change
+    in this build, and no screen or feature change. Apply only
+    this latest zip, not the older ones in order. Back up first
+    and keep your live .env untouched, as before.

@@ -1,4 +1,41 @@
 ==============================================================================
+ UPDATE: THE MYSQL USER AND PASSWORDS ARE NOW IN THE .ENV FILE (2026-11-15)
+==============================================================================
+ 1. The .env file now contains the MySQL user and both passwords
+    itself, with a comment above them:
+        MYSQL_USER=portal
+        MYSQL_PASSWORD=portal-change-me
+        MYSQL_ROOT_PASSWORD=portal-change-me-root
+    Change the values in the .env file — nowhere else.
+    docker-compose.yml holds no password of its own anymore and
+    reads all three from .env, so the three lines MUST be in your
+    live .env or the database and the portal will not start.
+    Change them BEFORE the first start of the database; changing
+    them later does not change the user or password inside MySQL.
+    No other .env line changed.
+ 2. IMPORTANT: the .env inside this zip carries the DEFAULT user
+    and passwords. Do NOT let it overwrite your live .env on the
+    server. If you already set your own values in your live .env,
+    keep your live .env as it is; if the lines are not there yet,
+    copy just the three lines into it by hand.
+
+==============================================================================
+ UPDATE: MYSQL USER AND PASSWORD NOW COME FROM THE .ENV FILE (2026-11-15)
+==============================================================================
+ 1. The MySQL user and password now live only in the .env file.
+    In build 67 the user name "portal" was written directly in
+    docker-compose.yml; now docker-compose.yml reads both the user
+    and the password from .env, and the portal logs in with the
+    same two values. Add these lines to your live .env file on the
+    server, before the first start of the database:
+        MYSQL_USER=portal
+        MYSQL_PASSWORD=your-own-password
+    If you leave them out, the defaults portal / portal-change-me
+    are used. Changing them after the database already exists does
+    not change the user or password inside MySQL. The .env file
+    inside the zip is unchanged, as before.
+
+==============================================================================
  UPDATE: THE WHOLE PROJECT MOVES TO MYSQL (2026-11-15)
 ==============================================================================
  1. The portal's database is now MySQL 8.0 instead of SQLite.

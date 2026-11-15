@@ -4,11 +4,12 @@
 #   caddy   : HTTPS front door   (only when COMPOSE_PROFILES contains "https")
 #   clamav  : virus scanner      (only when COMPOSE_PROFILES contains "scan")
 #
-# The database password: set MYSQL_PASSWORD (and MYSQL_ROOT_PASSWORD) in your
-# live .env BEFORE the first start. The database user is created with that
-# password on first start, and changing it later does not change the user's
-# password. If you leave them out, the defaults below are used — change them
-# before the portal holds real data.
+# The database user and passwords live in the .env file (MYSQL_USER,
+# MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD) — docker-compose only reads
+# them from there, it holds no password of its own. Set them in your
+# live .env BEFORE the first start. The database user is created with
+# that password on first start, and changing them later does not
+# change the user or password inside MySQL.
 services:
   portal:
     build: .
@@ -29,8 +30,8 @@ services:
       REMINDER_HOUR: ${REMINDER_HOUR:-7}
       DB_HOST: db
       DB_PORT: 3306
-      DB_USER: portal
-      DB_PASSWORD: ${MYSQL_PASSWORD:-portal-change-me}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
       DB_NAME: portal
     volumes:
       - portal_data:/data            # attachments, logo, backups live here (the database lives in mysql_data)
@@ -42,15 +43,15 @@ services:
     # The database port is NOT published to the host: only the portal
     # container can reach it, over the internal Docker network.
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-portal-change-me-root}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: portal
-      MYSQL_USER: portal
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-portal-change-me}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql    # the database itself lives here
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root",
-             "-p${MYSQL_ROOT_PASSWORD:-portal-change-me-root}"]
+             "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 12
