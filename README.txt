@@ -4446,3 +4446,107 @@
     runs, so your existing Department Database rows are untouched.
     Back up first and keep your live .env untouched, as before.
     Apply only this latest zip, not the older ones in order.
+
+86. THE WHOLE PROJECT MOVES TO MYSQL (2026-11-15)
+    What this is: the portal's database changes from SQLite (one
+    file, portal.db) to MySQL 8.0 (a separate database container).
+    Nothing about the portal's screens, features or data changes —
+    this is the same portal, on a different database engine.
+    Why: you asked for the whole project to be migrated to MySQL,
+    with no errors, with a step-by-step backup guide, and with the
+    data persistent.
+    How it works: a new file, dbapi.py, keeps the exact interface
+    the portal's code was written against (the ? placeholders, the
+    Row that answers both row["name"] and row[0], the date functions)
+    and runs it on MySQL through PyMySQL, so the rest of the portal
+    does not change. The schema is the same 50 tables, rewritten
+    for MySQL: INT AUTO_INCREMENT primary keys, DATETIME defaults,
+    TEXT columns with no default (MySQL forbids defaults on TEXT —
+    the code already reads them with an "or []" / "or ''" guard),
+    the settings key renamed to setting_key (KEY is a MySQL
+    reserved word), and the partial unique indexes (a column name
+    may be reused only after the old one is removed) rebuilt as
+    generated columns, because MySQL has no partial indexes.
+    What is new in this build:
+      * docker-compose.yml gains a db service (mysql:8.0) with a
+        named volume mysql_data for /var/lib/mysql. The MySQL port
+        is NOT published to the host — only the portal container
+        can reach the database, over the internal Docker network.
+      * backup.py now runs mysqldump (the portal image installs
+        default-mysql-client) and writes portal_YYYYMMDD_HHMMSS.sql
+        into backups/ (the portal_data volume), keeping the newest
+        30. backup.sh copies the newest backup to ./backups-copy/db/.
+      * migrate_sqlite_to_mysql.py moves your existing data: it
+        copies every row of every table from the old portal.db into
+        MySQL, keeping the same IDs, so invoice numbers, record
+        links, public QR codes and approval chains all keep working.
+        It refuses to run if the MySQL database already has rows
+        (pass --replace to empty it first), and it checks every
+        table's row count against the SQLite file before finishing.
+      * MYSQL_BACKUP_GUIDE.txt — the step-by-step guide you asked
+        for: how to take a MySQL backup, where backups are stored,
+        where the current database stores its data, how to restore,
+        and how to make sure the data is persistent.
+    The .env file is UNCHANGED in this build — no MySQL variables
+    were added to it, as you required. The MySQL password is set by
+    docker-compose (MYSQL_PASSWORD, default "portal-change-me").
+    If you want a different password, add MYSQL_PASSWORD=... to
+    your live .env file BEFORE the first start of the MySQL
+    container; changing it afterwards does not change the password
+    inside MySQL.
+    How to apply this build (read this before you start):
+      1. Back up the live portal the old way first (copy
+         /data/portal.db out of the portal container, and copy the
+         portal_data volume's files). Keep that portal.db copy.
+      2. Stop the portal: docker compose stop portal
+      3. Copy the live SQLite file out:
+         docker compose cp portal:/data/portal.db /tmp/portal.db
+      4. Extract this zip over the project folder (the live .env
+         stays untouched — do NOT overwrite it).
+      5. Start the database: docker compose up -d db
+         (wait about 30 seconds for it to become healthy)
+      6. Run the migration:
+         docker compose run --rm portal python migrate_sqlite_to_mysql.py /tmp/portal.db
+         It prints one line per table and ends with "OK: N rows
+         copied into 50 tables, counts match." If it prints an
+         error instead, stop — do not start the portal on MySQL.
+      7. Start the portal: docker compose up -d
+         Open it and check your records, invoices and requests.
+         The old portal.db is NOT deleted; keep it as an extra
+         backup until you are sure the MySQL portal is working.
+    Data persistence: the MySQL data lives in the named volume
+    mysql_data (/var/lib/mysql) and the portal's files in
+    portal_data (/data). Both survive docker compose stop, down
+    (without -v), up -d --build, and a server restart. NEVER run
+    docker compose down -v — it deletes both volumes and the data
+    is gone for good.
+    Bugs found by the MySQL test run and fixed in this build:
+      * CREATE INDEX IF NOT EXISTS is accepted by MariaDB but NOT
+        by MySQL 8.0 — the two checker/approver index creations now
+        check information_schema first.
+      * INSERT OR REPLACE was translated to "REPLACE INTO INTO"
+        (a double INTO) — now translated to REPLACE.
+      * ESCAPE '\' (one backslash, SQLite's form) is a syntax
+        error in MySQL — the translator now writes ESCAPE '\\'.
+        Without this, every LIKE search on the My department tab
+        and the Department Database search failed with a 500.
+      * The Tabs page aliased a count as "rows" — ROWS is a
+        reserved word in MySQL 8.0, so the page failed with a 500.
+        The alias is now row_count.
+    Tests: 892/892 checks pass on the work copy and on a fresh
+    extract (869 from builds up to 66 + 23 new). The new checks
+    cover the 50-table MySQL schema, the setting_key rename, the
+    generated-column unique indexes (a removed column name can be
+    reused, two live ones are refused), the Row and datetime
+    behaviour, the ESCAPE fix, the Tabs page, the shipped files
+    (migration script, backup guide, dbapi.py, compose, PyMySQL),
+    and backup.py writing a .sql dump. Separately, the migration
+    was tested end to end (21/21: a build-66 SQLite database with
+    departments, users, a record, a DeptDB row, an invoice, a
+    request and an application migrated, counts matched, the
+    portal booted and the sales user logged in and saw their
+    data), and backup/restore/persistence was tested (14/14: a
+    mysqldump restored into a fresh database with matching row
+    counts, and the data survived a MariaDB restart).
+    Apply only this latest zip, not the older ones in order.
+    Back up first and keep your live .env untouched, as before.

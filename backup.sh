@@ -17,7 +17,7 @@ docker compose cp portal:/data/backups/. ./backups-copy/db/ || exit 1
 docker compose cp portal:/data/uploads/. ./backups-copy/uploads/ || exit 1
 
 # keep the newest 60 database copies on this server
-ls -1t backups-copy/db/portal_*.db 2>/dev/null | tail -n +61 | xargs -r rm --
+ls -1t backups-copy/db/portal_*.sql 2>/dev/null | tail -n +61 | xargs -r rm --
 
 if [ -n "$REMOTE_TARGET" ]; then
     echo "copying to $REMOTE_TARGET"

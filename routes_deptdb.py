@@ -27,7 +27,7 @@ deptdb_tabs, deptdb_delegates.
 import json
 import os
 import secrets
-import sqlite3
+from dbapi import IntegrityError
 
 import segno
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
@@ -827,11 +827,11 @@ def tabs():
                                 url_for("ddb.index", dept=dept["id"], tab=tab_id))
                 db.commit()
                 flash(f"Tab '{name}' created.", "ok")
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 db.rollback()
                 flash(f"A tab named '{name}' already exists.", "error")
         return redirect(url_for("ddb.tabs", **_back(dept)))
-    all_tabs = db.execute("SELECT t.*, (SELECT COUNT(*) FROM ddb_rows r WHERE r.tab_id=t.id AND r.deleted_at IS NULL) AS rows "
+    all_tabs = db.execute("SELECT t.*, (SELECT COUNT(*) FROM ddb_rows r WHERE r.tab_id=t.id AND r.deleted_at IS NULL) AS row_count "
                           "FROM ddb_tabs t WHERE t.department_id=? AND NOT (t.removed_at IS NOT NULL AND LOWER(t.name)='general') ORDER BY t.removed_at IS NOT NULL, t.position, t.id",
                           (dept["id"],)).fetchall()
     return render_template("deptdb_tabs.html", dept=dept, tabs=all_tabs, templates=TEMPLATE_TABS)
@@ -860,7 +860,7 @@ def tab_edit(tab_id):
                             url_for("ddb.index", dept=dept["id"]))
             db.commit()
             flash("Tab saved.", "ok")
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             db.rollback()
             flash(f"A tab named '{name}' already exists.", "error")
     return redirect(url_for("ddb.tabs", **_back(dept)))
@@ -904,7 +904,7 @@ def tab_restore(tab_id):
                         url_for("ddb.index", dept=dept["id"], tab=tab_id))
         db.commit()
         flash("Tab restored.", "ok")
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         db.rollback()
         flash(f"A tab named '{tab['name']}' exists already. Rename it first, then restore.", "error")
     return redirect(url_for("ddb.tabs", **_back(dept)))
@@ -1377,7 +1377,7 @@ def column_add():
                             url_for("ddb.index", dept=dept["id"], tab=tab["id"]))
             db.commit()
             flash(f"Column '{name}' added.", "ok")
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             db.rollback()
             exists = db.execute("SELECT 1 FROM ddb_columns WHERE tab_id=? AND lower(name)=lower(?) AND removed_at IS NULL",
                                 (tab["id"], name)).fetchone()
@@ -1421,7 +1421,7 @@ def column_edit(cid):
                 db.commit()
                 flash("Column saved.", "ok")
                 return redirect(url_for("ddb.columns", **_back(dept, tab)))
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 db.rollback()
                 flash(f"A column named '{name}' already exists in this tab.", "error")
     return render_template("deptdb_column_edit.html", col=col, dept=dept, tab=tab, type_label=DDB_TYPE_LABEL)
@@ -1453,7 +1453,7 @@ def column_restore(cid):
                         url_for("ddb.index", dept=dept["id"], tab=tab["id"] if tab else None))
         db.commit()
         flash(f"Column '{col['name']}' restored.", "ok")
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         db.rollback()
         flash(f"A column named '{col['name']}' exists already. Rename it first, then restore.", "error")
     return redirect(url_for("ddb.columns", **_back(dept, tab)))

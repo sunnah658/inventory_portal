@@ -1,4 +1,32 @@
 ==============================================================================
+ UPDATE: THE WHOLE PROJECT MOVES TO MYSQL (2026-11-15)
+==============================================================================
+ 1. The portal's database is now MySQL 8.0 instead of SQLite.
+    Nothing about the screens, features or data changes — this is
+    the same portal, on a different database engine.
+ 2. Your existing data is moved by the migration script that ships
+    in this build (migrate_sqlite_to_mysql.py). It copies every row
+    of every table, keeping the same IDs, so invoice numbers, record
+    links, public QR codes and approval chains all keep working.
+    Read README section 86 for the step-by-step apply order, and
+    back up the live portal.db first.
+ 3. A step-by-step backup guide ships in this build:
+    MYSQL_BACKUP_GUIDE.txt. It tells you how to take a MySQL backup
+    (docker compose exec portal python backup.py, or mysqldump),
+    where the backups are stored (backups/ in the portal_data
+    volume, as .sql files), where the database stores its data
+    (MySQL: /var/lib/mysql in the mysql_data volume; before this
+    build, SQLite: /data/portal.db in the portal_data volume), how
+    to restore a backup, and how to make sure the data is
+    persistent. The data survives restarts and rebuilds because it
+    lives in named Docker volumes — but never run
+    docker compose down -v, which deletes them.
+ 4. The .env file is unchanged in this build. The MySQL password is
+    set by docker-compose (MYSQL_PASSWORD, default
+    "portal-change-me"); add MYSQL_PASSWORD to your live .env
+    BEFORE the first start if you want a different one.
+
+==============================================================================
  UPDATE: SALES PIPELINE TAB AND REPORT FROM SELECTED RECORDS (2026-11-15)
 ==============================================================================
  1. The Department Database for Sales & Marketing now has a new

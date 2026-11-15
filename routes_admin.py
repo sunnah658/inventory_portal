@@ -9,7 +9,7 @@ Pages:   dashboard, all records, users' records, users, departments, record colu
 import csv
 import io
 import os
-import sqlite3
+from dbapi import IntegrityError
 from datetime import date, datetime, timedelta
 
 from flask import (Blueprint, abort, flash, g, redirect, render_template, request,
@@ -78,7 +78,7 @@ def dashboard():
         "bin": db.execute("SELECT COUNT(*) FROM records WHERE deleted_at IS NOT NULL").fetchone()[0],
         "repairs_on": db.execute("SELECT COUNT(*) FROM departments WHERE repairs_enabled=1").fetchone()[0],
         "sessions": db.execute("SELECT COUNT(*) FROM sessions WHERE revoked=0 AND last_seen > "
-                               "datetime('now','localtime',?)", (f"-{config.IDLE_MINUTES} minutes",)).fetchone()[0],
+                               "DATE_SUB(NOW(), INTERVAL ? MINUTE)", (config.IDLE_MINUTES,)).fetchone()[0],
     }
     by_dept = db.execute("SELECT d.id, d.name, COUNT(r.id) AS n FROM departments d LEFT JOIN records r "
                          "ON r.department_id=d.id AND r.deleted_at IS NULL GROUP BY d.id "
@@ -119,9 +119,9 @@ def dashboard():
     logged_in = db.execute(
         "SELECT u.full_name, u.username, d.name AS dept_name, s.last_seen FROM sessions s "
         "JOIN users u ON u.id=s.user_id JOIN departments d ON d.id=u.department_id "
-        "WHERE s.revoked=0 AND s.last_seen > datetime('now','localtime',?) "
+        "WHERE s.revoked=0 AND s.last_seen > DATE_SUB(NOW(), INTERVAL ? MINUTE) "
         "ORDER BY s.last_seen DESC LIMIT 5",
-        (f"-{config.IDLE_MINUTES} minutes",)).fetchall()
+        (config.IDLE_MINUTES,)).fetchall()
     return render_template(
         "admin_dashboard.html", stats=stats, by_dept=by_dept, max_dept=max([d["n"] for d in by_dept] + [1]),
         status=status, total_status=total_status, colors=DONUT_COLORS,
@@ -493,7 +493,7 @@ def departments():
                 db.commit()
                 flash(f"Department '{name}' created. Check its columns below.", "ok")
                 return redirect(url_for("admin.columns", did=dept_id))
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 db.rollback()
                 flash(f"The department '{name}' already exists.", "error")
         return redirect(url_for("admin.departments", template=template))
@@ -637,7 +637,7 @@ def column_add(did):
                           url_for("admin.columns", did=did))
         db.commit()
         flash(f"Column '{name}' added. Existing records show it as blank.", "ok")
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         db.rollback()
         flash(f"This department already has a column named '{name}'.", "error")
     return redirect(url_for("admin.columns", did=did))
@@ -674,7 +674,7 @@ def column_edit(cid):
                 db.commit()
                 flash("Column saved.", "ok")
                 return redirect(url_for("admin.columns", did=col["department_id"]))
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 db.rollback()
                 flash(f"This department already has a column named '{name}'.", "error")
     return render_template("admin_column_edit.html", col=col, type_label=TYPE_LABEL,
@@ -772,7 +772,7 @@ def column_restore(cid):
                           url_for("admin.columns", did=col["department_id"]))
         db.commit()
         flash(f"Column '{col['name']}' is back with all its data.", "ok")
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         db.rollback()
         flash(f"Cannot restore: the department already has a column named '{col['name']}'. "
               "Rename that one first.", "error")
@@ -859,8 +859,8 @@ def sessions():
     """Who is logged in right now, from which computer. The admin can end a session."""
     rows = get_db().execute(
         "SELECT s.*, u.full_name, u.username FROM sessions s JOIN users u ON u.id=s.user_id "
-        "WHERE s.revoked=0 AND s.last_seen > datetime('now','localtime',?) ORDER BY s.last_seen DESC",
-        (f"-{config.IDLE_MINUTES} minutes",)).fetchall()
+        "WHERE s.revoked=0 AND s.last_seen > DATE_SUB(NOW(), INTERVAL ? MINUTE) ORDER BY s.last_seen DESC",
+        (config.IDLE_MINUTES,)).fetchall()
     return render_template("admin_sessions.html", rows=rows, current=session.get("sid"))
 
 

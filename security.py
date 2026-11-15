@@ -47,12 +47,12 @@ def blocked_reason(db, username, ip):
         "(SELECT MAX(id) FROM login_attempts WHERE lower(username)=? AND success=1), 0)",
         (uname, uname)).fetchone()
     if row["n"] >= config.MAX_FAILED and db.execute(
-            "SELECT ?>datetime('now','localtime',?)", (row["last"], f"-{config.LOCK_MINUTES} minutes")).fetchone()[0]:
+            "SELECT ?>DATE_SUB(NOW(), INTERVAL ? MINUTE)", (row["last"], config.LOCK_MINUTES)).fetchone()[0]:
         return f"Too many wrong attempts. Try again in {config.LOCK_MINUTES} minutes."
     row = db.execute("SELECT COUNT(*) AS n, MAX(at) AS last FROM login_attempts WHERE ip=? AND success=0 "
                      "AND at > datetime('now','localtime','-30 minutes')", (ip,)).fetchone()
     if row["n"] >= config.IP_MAX_FAILED and db.execute(
-            "SELECT ?>datetime('now','localtime',?)", (row["last"], f"-{config.IP_LOCK_MINUTES} minutes")).fetchone()[0]:
+            "SELECT ?>DATE_SUB(NOW(), INTERVAL ? MINUTE)", (row["last"], config.IP_LOCK_MINUTES)).fetchone()[0]:
         return f"Too many failed logins from this computer. Try again in {config.IP_LOCK_MINUTES} minutes."
     return None
 
@@ -67,7 +67,7 @@ def create_session(db, user_id, ip, user_agent):
 
 def check_session(db, sid, user_id):
     """'ok', 'idle' (no activity for IDLE_MINUTES) or 'revoked'/'missing'."""
-    row = db.execute("SELECT revoked, (julianday('now','localtime')-julianday(last_seen))*1440 AS idle "
+    row = db.execute("SELECT revoked, TIMESTAMPDIFF(MINUTE, last_seen, NOW()) AS idle "
                      "FROM sessions WHERE id=? AND user_id=?", (sid, user_id)).fetchone()
     if row is None or row["revoked"]:
         return "revoked"

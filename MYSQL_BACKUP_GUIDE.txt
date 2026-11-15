@@ -1,0 +1,187 @@
+MYSQL BACKUP GUIDE — Inventory Portal (build 67)
+=====================================================
+The portal's database is now MySQL (build 67). Before build 67 it was
+one SQLite file (portal.db). This guide tells you, step by step:
+
+  1. Where the CURRENT database stores its data (before and after build 67)
+  2. How to take a MySQL backup (two ways)
+  3. Where the backups are stored
+  4. How to restore a backup
+  5. How to make sure the data is persistent (survives restarts and rebuilds)
+
+
+1. WHERE THE DATABASE STORES ITS DATA
+---------------------------------------
+BEFORE build 67 (SQLite):
+  The whole database was ONE file:
+      portal.db
+  It lived in the portal_data volume, mounted at /data inside the
+  portal container, so on the server it was:
+      /data/portal.db        (inside the portal_data Docker volume)
+
+AFTER build 67 (MySQL):
+  The database lives in the MySQL container, in its own volume:
+      /var/lib/mysql         (inside the mysql_data Docker volume)
+  The portal container no longer holds the database at all — it only
+  holds files (uploads, branding, backups) in /data (portal_data).
+
+  On the server you do NOT need to know the host path of either
+  volume. Docker manages them. The two commands below are the only
+  ones you need:
+      docker volume ls | grep inventory   (lists both volumes)
+      docker volume inspect inventory-portal_mysql_data
+      docker volume inspect inventory-portal_portal_data
+
+  IMPORTANT: never delete a volume with `docker compose down -v`.
+  That command erases BOTH volumes — the MySQL database AND the
+  portal's files — and the data is gone for good. A normal
+  `docker compose down` (without -v) keeps both volumes, and
+  `docker compose up -d` brings the data back.
+
+
+2. HOW TO TAKE A BACKUP (step by step)
+---------------------------------------
+There are two ways. Way A is the easy one — use it for your regular
+backups. Way B is the direct mysqldump, for when you want the file
+yourself.
+
+WAY A — from inside the portal (recommended):
+  1. Open a terminal on the server and go to the project folder:
+         cd ~/inventory_portal
+  2. Run the backup:
+         docker compose exec portal python backup.py
+     (This runs the portal's own backup: a mysqldump of the whole
+      database, with a single consistent snapshot.)
+  3. The backup file is written to:
+         /data/backups/portal_YYYYMMDD_HHMMSS.sql
+     inside the portal container — that is the portal_data volume.
+     The file name starts with "portal_" and ends with ".sql".
+  4. Check it worked:
+         docker compose exec portal ls -lh /data/backups/
+     You should see the new .sql file, and it should not be empty
+     (a small portal is tens of kilobytes; a live one is larger).
+  5. The portal keeps the newest 30 backups and deletes older ones
+     automatically, so the folder does not grow forever.
+
+WAY B — mysqldump directly (gives you the file on the server):
+  1. Open a terminal on the server and go to the project folder:
+         cd ~/inventory_portal
+  2. Run mysqldump through the database container:
+         docker compose exec db mysqldump --single-transaction --quick \
+             --routines --triggers -u portal -p portal > portal_backup.sql
+     When it asks for the password, type the MySQL password
+     (the MYSQL_PASSWORD from your .env file).
+  3. The file portal_backup.sql is now in the project folder on the
+     server. Copy it somewhere safe (see section 3).
+
+  Tip: `docker compose exec db` runs the command inside the database
+  container, where mysqldump is already installed. Do NOT install
+  MySQL on the server itself — everything runs inside Docker.
+
+AUTOMATIC BACKUPS (optional, recommended):
+  The project ships a backup.sh script. Run it once a day (for
+  example from cron) and it copies the newest backup out of the
+  portal container into ./backups-copy/db/ on the server:
+         ./backup.sh
+  Add it to cron with `crontab -e`:
+         0 2 * * * cd ~/inventory_portal && ./backup.sh
+  (That takes a backup every night at 02:00.)
+
+
+3. WHERE THE BACKUPS ARE STORED
+--------------------------------
+  Inside Docker (portal_data volume):
+      /data/backups/portal_YYYYMMDD_HHMMSS.sql
+  To see them from the server:
+      docker compose exec portal ls -lh /data/backups/
+
+  A copy outside Docker (after running backup.sh):
+      ./backups-copy/db/portal_YYYYMMDD_HHMMSS.sql
+  (in the project folder on the server)
+
+  Keep a copy OFF the server too. A backup that only lives on the
+  same machine as the database does not protect you if the machine
+  itself fails. Copy the .sql file to another computer, a USB drive,
+  or your office backup folder after each backup.
+
+
+4. HOW TO RESTORE A BACKUP
+---------------------------
+  1. Copy the .sql file onto the server (if it is not already there).
+  2. Stop the portal so nobody changes the data while you restore:
+         docker compose stop portal
+  3. Restore into the database container:
+         docker compose exec -T db mysql -u portal -p portal < portal_YYYYMMDD_HHMMSS.sql
+     (Type the MySQL password when asked. The -T flag is needed so
+      the file can be piped in.)
+  4. Start the portal again:
+         docker compose up -d
+  5. Open the portal and check that your records, invoices and
+     requests are all there.
+
+  To restore into a DIFFERENT (empty) database first, to check the
+  backup without touching the live one:
+         docker compose exec db mysql -u root -p -e "CREATE DATABASE portal_check;"
+         docker compose exec -T db mysql -u portal -p portal_check < portal_YYYYMMDD_HHMMSS.sql
+         docker compose exec db mysql -u portal -p -e "SELECT COUNT(*) FROM portal_check.invoices;"
+
+
+5. HOW TO MAKE SURE THE DATA IS PERSISTENT
+--------------------------------------------
+  The data is persistent because it lives in Docker NAMED VOLUMES,
+  not inside the containers:
+      mysql_data   -> the MySQL database (/var/lib/mysql)
+      portal_data  -> the portal's files (/data: uploads, branding, backups)
+
+  Named volumes survive:
+      - docker compose stop / start
+      - docker compose down        (without -v)
+      - docker compose up -d --build   (rebuilding the portal image)
+      - restarting the server
+      - updating the portal to a newer build (applying a new zip)
+
+  Named volumes do NOT survive:
+      - docker compose down -v     (NEVER run this — it deletes both volumes)
+      - docker volume rm inventory-portal_mysql_data
+      - docker volume rm inventory-portal_portal_data
+      - deleting the volumes by hand
+
+  How to check the data is really persistent:
+      1. Note a record you can see in the portal (for example an
+         invoice number).
+      2. Restart everything:
+             docker compose down
+             docker compose up -d
+      3. Open the portal — the record must still be there.
+      4. Do the same after a rebuild:
+             docker compose up -d --build
+         The record must still be there.
+
+  If you ever move the portal to a different server: take a backup
+  (section 2), copy the .sql file AND the portal_data volume's files
+  (uploads, branding) to the new server, start the new portal, and
+  restore the backup (section 4).
+
+
+6. THE MOVE FROM SQLITE TO MYSQL (build 67) — WHAT CHANGED
+------------------------------------------------------------
+  - The database engine changed from SQLite (one file) to MySQL 8.0
+    (a separate database container). Nothing about the portal's
+    screens, features or data changed.
+  - Your old data is moved with the migration script that ships in
+    this build: migrate_sqlite_to_mysql.py. It copies every row of
+    every table, keeping the same IDs, so invoice numbers, record
+    links, public QR codes and approval chains all keep working.
+  - The old portal.db file is NOT deleted by the migration. Keep it
+    as an extra backup until you are sure the MySQL portal is
+    working, then archive it somewhere safe.
+  - The .env file is UNCHANGED in this build (no MySQL variables
+    were added to it). The MySQL password is set by docker-compose
+    (MYSQL_PASSWORD, default "portal-change-me"). If you want a
+    different password, add MYSQL_PASSWORD=your-password to your
+    live .env file BEFORE the first start of the MySQL container.
+    Changing it after the database already exists does NOT change
+    the password inside MySQL.
+  - The MySQL port is NOT published to the host — only the portal
+    container can reach the database, over the internal Docker
+    network. It is not reachable from the office LAN.

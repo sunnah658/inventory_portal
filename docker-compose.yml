@@ -1,13 +1,23 @@
 # docker-compose.yml - how the portal runs. Settings come from the .env file next to this file.
 #   portal  : the web application (always)
+#   db      : the MySQL database (always; the portal does not start until it is healthy)
 #   caddy   : HTTPS front door   (only when COMPOSE_PROFILES contains "https")
 #   clamav  : virus scanner      (only when COMPOSE_PROFILES contains "scan")
+#
+# The database password: set MYSQL_PASSWORD (and MYSQL_ROOT_PASSWORD) in your
+# live .env BEFORE the first start. The database user is created with that
+# password on first start, and changing it later does not change the user's
+# password. If you leave them out, the defaults below are used — change them
+# before the portal holds real data.
 services:
   portal:
     build: .
     image: office-inventory-portal
     container_name: inventory-portal
     restart: unless-stopped          # starts again after a crash or a server reboot
+    depends_on:
+      db:
+        condition: service_healthy  # wait until MySQL answers before starting
     ports:
       # With HTTPS set PORTAL_BIND=127.0.0.1 so the plain-HTTP port is closed to the network.
       - "${PORTAL_BIND:-0.0.0.0}:${PORTAL_PORT:-8000}:8000"
@@ -17,8 +27,34 @@ services:
       PORTAL_BEHIND_PROXY: ${PORTAL_BEHIND_PROXY:-0}
       CLAMAV_HOST: ${CLAMAV_HOST:-}
       REMINDER_HOUR: ${REMINDER_HOUR:-7}
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: portal
+      DB_PASSWORD: ${MYSQL_PASSWORD:-portal-change-me}
+      DB_NAME: portal
     volumes:
-      - portal_data:/data            # database, attachments, logo, backups live here
+      - portal_data:/data            # attachments, logo, backups live here (the database lives in mysql_data)
+
+  db:
+    image: mysql:8.0
+    container_name: inventory-portal-db
+    restart: unless-stopped
+    # The database port is NOT published to the host: only the portal
+    # container can reach it, over the internal Docker network.
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-portal-change-me-root}
+      MYSQL_DATABASE: portal
+      MYSQL_USER: portal
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-portal-change-me}
+    volumes:
+      - mysql_data:/var/lib/mysql    # the database itself lives here
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root",
+             "-p${MYSQL_ROOT_PASSWORD:-portal-change-me-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   caddy:
     image: caddy:2
@@ -47,5 +83,6 @@ services:
 
 volumes:
   portal_data:                       # NEVER run "docker compose down -v": it deletes this volume
+  mysql_data:                        # the MySQL database — same warning: "down -v" deletes it
   caddy_data:
   clamav_db:

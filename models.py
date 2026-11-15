@@ -2,10 +2,11 @@
 models.py - database tables, connection helpers and automatic upgrades.
 
 Used by: almost every file.   Uses: config.py
-The database is one SQLite file (portal.db). Tables are created automatically on
-start (init_db) and older databases are upgraded without losing any data.
+The database is MySQL (see dbapi.py and config.py for the connection
+settings). Tables are created automatically on start (init_db) and older
+databases are upgraded without losing any data.
 """
-import sqlite3
+import dbapi
 
 from flask import g, has_app_context, has_request_context, request
 from werkzeug.security import generate_password_hash
@@ -13,704 +14,871 @@ from werkzeug.security import generate_password_hash
 import config
 
 SCHEMA = """
+-- MySQL schema for the portal (build 67). Converted from the SQLite
+-- SCHEMA in models.py. Differences from SQLite, by design:
+--   * INT AUTO_INCREMENT PRIMARY KEY (was INTEGER PRIMARY KEY AUTOINCREMENT)
+--   * System timestamps are DATETIME DEFAULT CURRENT_TIMESTAMP (was TEXT
+--     DEFAULT (datetime('now','localtime'))); dates are DATE.
+--   * User-entered dates (invoice_date, request_date, ...) stay
+--     VARCHAR(255): they hold a date string or an empty string.
+--   * Short TEXT columns with a short default are VARCHAR(255) (MySQL
+--     TEXT columns cannot have a DEFAULT); JSON/long TEXT columns with a
+--     '[]'/'{}'/'' default are plain TEXT (nullable) — the code reads
+--     them with `or "[]"` / `or "{}"`, so NULL is safe.
+--   * Inline REFERENCES are explicit FOREIGN KEY ... ON DELETE CASCADE
+--     (MySQL ignores inline REFERENCES).
+--   * SQLite's partial unique indexes (WHERE removed_at IS NULL) do not
+--     exist in MySQL: they are a generated column (the name when the row
+--     is live, NULL when removed) plus a UNIQUE KEY on it. A unique key
+--     ignores NULLs, so removed rows never conflict — exactly the
+--     SQLite behaviour.
+--   * `settings.key` is renamed `setting_key`: KEY is a reserved word
+--     in MySQL and cannot be used unquoted.
+--   * Tables are ordered so a referenced table is created before the
+--     table that references it (MySQL, unlike SQLite, refuses a
+--     foreign key to a table that does not exist yet).
+--   * All indexes are inline in the CREATE TABLE (MySQL has no
+--     CREATE INDEX IF NOT EXISTS), so CREATE TABLE IF NOT EXISTS stays
+--     idempotent.
+
 CREATE TABLE IF NOT EXISTS departments (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    name               TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    attachments_enabled INTEGER NOT NULL DEFAULT 0,   -- admin turns this on per department
-    repairs_enabled     INTEGER NOT NULL DEFAULT 0,   -- admin turns the repair log on per department
-    attachment_max_mb  INTEGER NOT NULL DEFAULT 10,   -- max size of one file
-    created_at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    name                VARCHAR(255) NOT NULL UNIQUE,
+    attachments_enabled INT NOT NULL DEFAULT 0,
+    repairs_enabled     INT NOT NULL DEFAULT 0,
+    attachment_max_mb   INT NOT NULL DEFAULT 10,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS users (
-    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-    full_name            TEXT NOT NULL,
-    designation          TEXT,                         -- job title, shown under the name in the owner signature on invoices, item requests and applications
-    username             TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    password_hash        TEXT NOT NULL,               -- never the real password
-    department_id        INTEGER REFERENCES departments(id),
-    role                 TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin','user')),
-    must_change_password INTEGER NOT NULL DEFAULT 1,
-    is_active            INTEGER NOT NULL DEFAULT 1,
-    is_dept_admin        INTEGER NOT NULL DEFAULT 0,   -- sees every record of own department (view + suggest)
-    can_ddb_attachment   INTEGER NOT NULL DEFAULT 0,   -- portal admin allows this dept admin to create attachment columns in the dept database
-    can_portal_admin     INTEGER NOT NULL DEFAULT 0,   -- portal administrative permission: may do every portal-admin task (see section 24)
-    is_deleted           INTEGER NOT NULL DEFAULT 0,   -- soft-deleted: in the Recycle Bin Users tab, work kept 30 days
-    deleted_at           TEXT,                         -- when the account was deleted (soft delete)
-    deleted_by           INTEGER REFERENCES users(id), -- who deleted the account
-    bin_purged           INTEGER NOT NULL DEFAULT 0,   -- removed from the Recycle Bin list, work kept until the 30 days end
-    approval_status      TEXT NOT NULL DEFAULT 'approved', -- approved, or pending (dept-admin-created, not functional yet)
-    created_by           INTEGER REFERENCES users(id), -- who created the account (for approval notifications)
-    theme                TEXT NOT NULL DEFAULT 'auto', -- light, dark or auto
-    warn_days            INTEGER NOT NULL DEFAULT 3,   -- reminder warning: 1, 3 or 7 days ahead
-    signature_path       TEXT,                         -- the user's own signature (PNG, from My settings), used by "Use my signature" in application letters
-    created_at           TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    id                   INT AUTO_INCREMENT PRIMARY KEY,
+    full_name            VARCHAR(255) NOT NULL,
+    designation          VARCHAR(255),
+    username             VARCHAR(255) NOT NULL UNIQUE,
+    password_hash        VARCHAR(255) NOT NULL,
+    department_id        INT,
+    role                 VARCHAR(255) NOT NULL DEFAULT 'user' CHECK (role IN ('admin','user')),
+    must_change_password INT NOT NULL DEFAULT 1,
+    is_active            INT NOT NULL DEFAULT 1,
+    is_dept_admin        INT NOT NULL DEFAULT 0,
+    can_ddb_attachment   INT NOT NULL DEFAULT 0,
+    can_portal_admin     INT NOT NULL DEFAULT 0,
+    is_deleted           INT NOT NULL DEFAULT 0,
+    deleted_at           DATETIME,
+    deleted_by           INT,
+    bin_purged           INT NOT NULL DEFAULT 0,
+    approval_status      VARCHAR(255) NOT NULL DEFAULT 'approved',
+    created_by           INT,
+    theme                VARCHAR(255) NOT NULL DEFAULT 'auto',
+    warn_days            INT NOT NULL DEFAULT 3,
+    signature_path       VARCHAR(255),
+    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id),
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    KEY idx_users_dept (department_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Departments a user may VIEW (and comment on) besides their own. No editing.
 CREATE TABLE IF NOT EXISTS user_view_departments (
-    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, department_id)
-);
+    user_id       INT NOT NULL,
+    department_id INT NOT NULL,
+    PRIMARY KEY (user_id, department_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Record columns: defined by the admin for each department.
 CREATE TABLE IF NOT EXISTS columns (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,   -- set = this user's own Mine-tab column (build 61); NULL = a department column
-    name          TEXT NOT NULL,
-    col_type      TEXT NOT NULL CHECK (col_type IN
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    user_id       INT,
+    name          VARCHAR(255) NOT NULL,
+    col_type      VARCHAR(255) NOT NULL CHECK (col_type IN
                   ('text','longtext','number','date','dropdown','yesno','attachment')),
-    options       TEXT,                 -- dropdown choices, one per line
-    required      INTEGER NOT NULL DEFAULT 0,
-    shown         INTEGER NOT NULL DEFAULT 1,
-    position      INTEGER NOT NULL DEFAULT 0,
-    protected     INTEGER NOT NULL DEFAULT 0,   -- accidental delete protection
-    is_reminder   INTEGER NOT NULL DEFAULT 0,   -- this date sends reminders (any number per department)
-    has_time      INTEGER NOT NULL DEFAULT 0,   -- date column that also keeps a time (meetings)
-    removed_at    TEXT,                 -- set = "removed" (hidden, data kept)
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_column_name
-    ON columns(department_id, name COLLATE NOCASE) WHERE removed_at IS NULL AND user_id IS NULL;
--- ux_user_column_name (one user, one department, one name) is created by
--- _upgrade_columns_user_columns in init_db, not here: an index in SCHEMA
--- that names the user_id column would crash startup on an older database
--- that does not have the column yet (the build-45 lesson).
+    options       TEXT,
+    required      INT NOT NULL DEFAULT 0,
+    shown         INT NOT NULL DEFAULT 1,
+    position      INT NOT NULL DEFAULT 0,
+    protected     INT NOT NULL DEFAULT 0,
+    is_reminder   INT NOT NULL DEFAULT 0,
+    has_time      INT NOT NULL DEFAULT 0,
+    removed_at    DATETIME,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Partial unique indexes (SQLite) as generated columns: the name
+    -- when the row is live, NULL when removed. A unique key ignores
+    -- NULLs, so a removed column never blocks a new one with its name.
+    name_dept     VARCHAR(255) GENERATED ALWAYS AS
+                  (CASE WHEN removed_at IS NULL AND user_id IS NULL THEN name ELSE NULL END) STORED,
+    name_user     VARCHAR(255) GENERATED ALWAYS AS
+                  (CASE WHEN removed_at IS NULL AND user_id IS NOT NULL THEN name ELSE NULL END) STORED,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY ux_column_name (department_id, name_dept),
+    UNIQUE KEY ux_user_column_name (user_id, department_id, name_user)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- A record belongs to the department of the person who created it.
 CREATE TABLE IF NOT EXISTS records (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id      INTEGER NOT NULL REFERENCES users(id),
-    department_id INTEGER NOT NULL REFERENCES departments(id),
-    version       INTEGER NOT NULL DEFAULT 1,   -- used to detect two people editing at once
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    deleted_at    TEXT,                          -- set = in the recycle bin
-    deleted_by    INTEGER REFERENCES users(id)
-);
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    owner_id      INT NOT NULL,
+    department_id INT NOT NULL,
+    version       INT NOT NULL DEFAULT 1,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at    DATETIME,
+    deleted_by    INT,
+    FOREIGN KEY (owner_id) REFERENCES users(id),
+    FOREIGN KEY (department_id) REFERENCES departments(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id),
+    KEY idx_records_owner (owner_id),
+    KEY idx_records_dept (department_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- The values of a record: one row per filled column (blank = no row).
 CREATE TABLE IF NOT EXISTS record_values (
-    record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    column_id INTEGER NOT NULL REFERENCES columns(id) ON DELETE CASCADE,
+    record_id INT NOT NULL,
+    column_id INT NOT NULL,
     value     TEXT,
-    PRIMARY KEY (record_id, column_id)
-);
+    PRIMARY KEY (record_id, column_id),
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (column_id) REFERENCES columns(id) ON DELETE CASCADE,
+    KEY idx_values_column (column_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Departments a record is shared with (their members can view and edit it).
 CREATE TABLE IF NOT EXISTS record_shares (
-    record_id     INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    shared_by     INTEGER REFERENCES users(id),
-    shared_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    permission    TEXT NOT NULL DEFAULT 'edit',   -- edit or view (view only)
-    PRIMARY KEY (record_id, department_id)
-);
+    record_id     INT NOT NULL,
+    department_id INT NOT NULL,
+    shared_by     INT,
+    shared_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    permission    VARCHAR(255) NOT NULL DEFAULT 'edit',
+    PRIMARY KEY (record_id, department_id),
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (shared_by) REFERENCES users(id),
+    KEY idx_shares_dept (department_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- A record shared with ONE chosen person (edit or view only), independent of departments.
 CREATE TABLE IF NOT EXISTS record_user_shares (
-    record_id  INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    permission TEXT NOT NULL DEFAULT 'edit',      -- edit or view (view only)
-    shared_by  INTEGER REFERENCES users(id),
-    shared_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    PRIMARY KEY (record_id, user_id)
-);
+    record_id  INT NOT NULL,
+    user_id    INT NOT NULL,
+    permission VARCHAR(255) NOT NULL DEFAULT 'edit',
+    shared_by  INT,
+    shared_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (record_id, user_id),
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (shared_by) REFERENCES users(id),
+    KEY idx_user_shares (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Edit history: who changed what and when. Never edited or deleted by the portal.
 CREATE TABLE IF NOT EXISTS record_history (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id  INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    user_id    INTEGER,
-    username   TEXT,
-    full_name  TEXT,
-    action     TEXT NOT NULL,
-    field      TEXT,
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    record_id  INT NOT NULL,
+    user_id    INT,
+    username   VARCHAR(255),
+    full_name  VARCHAR(255),
+    action     VARCHAR(255) NOT NULL,
+    field      VARCHAR(255),
     old_value  TEXT,
     new_value  TEXT,
-    at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    KEY idx_history_record (record_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS repairs (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id  INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    date_in    TEXT,
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    record_id  INT NOT NULL,
+    date_in    VARCHAR(255),
     problem    TEXT,
-    fixed_by   TEXT,
-    cost       TEXT,
-    date_back  TEXT,                 -- empty = still in repair
-    created_by INTEGER REFERENCES users(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    fixed_by   VARCHAR(255),
+    cost       VARCHAR(255),
+    date_back  VARCHAR(255),
+    created_by INT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS attachments (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id     INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    original_name TEXT NOT NULL,
-    stored_name   TEXT NOT NULL,     -- random name on disk
-    size          INTEGER NOT NULL,
-    uploaded_by   INTEGER REFERENCES users(id),
-    scan_status   TEXT,              -- clean, or empty when scanning was off
-    uploaded_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    record_id     INT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name   VARCHAR(255) NOT NULL,
+    size          INT NOT NULL,
+    uploaded_by   INT,
+    scan_status   VARCHAR(255),
+    uploaded_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS activity_log (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    INTEGER,
-    username   TEXT,
-    action     TEXT NOT NULL,
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT,
+    username   VARCHAR(255),
+    action     VARCHAR(255) NOT NULL,
     details    TEXT,
-    ip         TEXT,                 -- computer the action came from
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    ip         VARCHAR(255),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Logged-in browsers. Lets the admin see and end sessions and enforces the idle timeout.
 CREATE TABLE IF NOT EXISTS sessions (
-    id         TEXT PRIMARY KEY,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    ip         TEXT,
+    id         VARCHAR(255) PRIMARY KEY,
+    user_id    INT NOT NULL,
+    ip         VARCHAR(255),
     user_agent TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    last_seen  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    revoked    INTEGER NOT NULL DEFAULT 0
-);
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked    INT NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    KEY idx_sessions_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS login_attempts (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT,
-    ip       TEXT,
-    success  INTEGER NOT NULL,
-    at       TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    id       INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(255),
+    ip       VARCHAR(255),
+    success  INT NOT NULL,
+    at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_attempts_user (username, at),
+    KEY idx_attempts_ip (ip, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Comments and suggestions on a record (separate from the edit history).
 CREATE TABLE IF NOT EXISTS comments (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    user_id   INTEGER NOT NULL REFERENCES users(id),
-    kind      TEXT NOT NULL DEFAULT 'comment',     -- comment or suggestion
+    id        INT AUTO_INCREMENT PRIMARY KEY,
+    record_id INT NOT NULL,
+    user_id   INT NOT NULL,
+    kind      VARCHAR(255) NOT NULL DEFAULT 'comment',
     text      TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_comments_record (record_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS notifications (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT NOT NULL,
     text       TEXT NOT NULL,
-    link       TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    read_at    TEXT
-);
+    link       VARCHAR(255),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    read_at    DATETIME,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    KEY idx_notif_user (user_id, read_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- LEGACY (kept, not deleted, not rebuilt — see README section 25):
 -- Handover of a record to another user (the receiver must accept).
 -- There are no pages or routes for transfers, requests or saved_views
 -- in this build; their rows are kept so old data is not lost.
 CREATE TABLE IF NOT EXISTS transfers (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id   INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    from_user   INTEGER NOT NULL REFERENCES users(id),
-    to_user     INTEGER NOT NULL REFERENCES users(id),
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending, accepted, declined, cancelled
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    record_id   INT NOT NULL,
+    from_user   INT NOT NULL,
+    to_user     INT NOT NULL,
+    status      VARCHAR(255) NOT NULL DEFAULT 'pending',
     note        TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    resolved_at TEXT
-);
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_user) REFERENCES users(id),
+    FOREIGN KEY (to_user) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Requests that need approval (new item, repair, other).
 CREATE TABLE IF NOT EXISTS requests (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    requester_id  INTEGER NOT NULL REFERENCES users(id),
-    department_id INTEGER REFERENCES departments(id),
-    kind          TEXT NOT NULL DEFAULT 'other',
-    title         TEXT NOT NULL,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    requester_id  INT NOT NULL,
+    department_id INT,
+    kind          VARCHAR(255) NOT NULL DEFAULT 'other',
+    title         VARCHAR(255) NOT NULL,
     details       TEXT,
-    status        TEXT NOT NULL DEFAULT 'pending',  -- pending, approved, rejected, cancelled
-    decided_by    INTEGER REFERENCES users(id),
-    decided_at    TEXT,
+    status        VARCHAR(255) NOT NULL DEFAULT 'pending',
+    decided_by    INT,
+    decided_at    DATETIME,
     decision_note TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (requester_id) REFERENCES users(id),
+    FOREIGN KEY (department_id) REFERENCES departments(id),
+    FOREIGN KEY (decided_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Public QR links: anyone with the link sees ONLY the chosen fields, read-only.
 CREATE TABLE IF NOT EXISTS public_links (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    token        TEXT NOT NULL UNIQUE,      -- long random code in the link
-    owner_id     INTEGER NOT NULL REFERENCES users(id),
-    title        TEXT,
-    kind         TEXT NOT NULL DEFAULT 'single',   -- single record or group of records
-    fields       TEXT NOT NULL DEFAULT '',  -- chosen column names, one per line (lower case)
-    enabled      INTEGER NOT NULL DEFAULT 1,
-    views        INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    regenerated_at TEXT,
-    code_no      INTEGER,                   -- internal sequential number; never reused, never changes, never shown or searched
-    code_text    TEXT,                      -- random code HRC-##### (5 digits), shown under the QR and the only code that opens a link
-    full_record  INTEGER NOT NULL DEFAULT 0 -- 1 = show every column instead of chosen fields
-);
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    token        VARCHAR(255) NOT NULL UNIQUE,
+    owner_id     INT NOT NULL,
+    title        VARCHAR(255),
+    kind         VARCHAR(255) NOT NULL DEFAULT 'single',
+    fields       TEXT,
+    enabled      INT NOT NULL DEFAULT 1,
+    views        INT NOT NULL DEFAULT 0,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    regenerated_at DATETIME,
+    code_no      INT,
+    code_text    VARCHAR(255),
+    full_record  INT NOT NULL DEFAULT 0,
+    FOREIGN KEY (owner_id) REFERENCES users(id),
+    UNIQUE KEY ux_public_code (code_no),
+    UNIQUE KEY ux_public_code_text (code_text)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS public_link_records (
-    link_id   INTEGER NOT NULL REFERENCES public_links(id) ON DELETE CASCADE,
-    record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    PRIMARY KEY (link_id, record_id)
-);
+    link_id   INT NOT NULL,
+    record_id INT NOT NULL,
+    PRIMARY KEY (link_id, record_id),
+    FOREIGN KEY (link_id) REFERENCES public_links(id) ON DELETE CASCADE,
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Saved filters and sorting ("saved views") of the record lists.
 CREATE TABLE IF NOT EXISTS saved_views (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    page       TEXT NOT NULL,
-    name       TEXT NOT NULL,
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT NOT NULL,
+    page       VARCHAR(255) NOT NULL,
+    name       VARCHAR(255) NOT NULL,
     query      TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Which reminder notifications were already sent (so nobody gets the same one twice).
 -- The date/time VALUE is part of the key: when a meeting is moved, new reminders are sent.
 CREATE TABLE IF NOT EXISTS reminder_sent (
-    record_id   INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
-    column_id   INTEGER NOT NULL REFERENCES columns(id) ON DELETE CASCADE,
-    value       TEXT NOT NULL,
-    offset_days INTEGER NOT NULL,
-    sent_on     TEXT NOT NULL DEFAULT (date('now','localtime')),
-    PRIMARY KEY (record_id, column_id, value, offset_days)
-);
+    record_id   INT NOT NULL,
+    column_id   INT NOT NULL,
+    value       VARCHAR(255) NOT NULL,
+    offset_days INT NOT NULL,
+    sent_on     DATE NOT NULL DEFAULT (CURDATE()),
+    PRIMARY KEY (record_id, column_id, value, offset_days),
+    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+    FOREIGN KEY (column_id) REFERENCES columns(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Which daily "upload your signature" morning reminders were already sent
 -- (so each user gets it once a day, not on every 5-minute check).
 CREATE TABLE IF NOT EXISTS signature_reminder_sent (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    sent_on TEXT NOT NULL,
-    PRIMARY KEY (user_id, sent_on)
-);
+    user_id INT NOT NULL,
+    sent_on DATE NOT NULL,
+    PRIMARY KEY (user_id, sent_on),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Columns a user hid on their own My records Mine tab (build 60). A column
 -- a user hid never shows on their Mine tab; a column with no row here
 -- shows. The department admin still makes the department's columns — this
 -- only records each user's own show/hide choice.
 CREATE TABLE IF NOT EXISTS user_hidden_columns (
-    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    column_id INTEGER NOT NULL REFERENCES columns(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, column_id)
-);
+    user_id   INT NOT NULL,
+    column_id INT NOT NULL,
+    PRIMARY KEY (user_id, column_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (column_id) REFERENCES columns(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+-- `key` is a reserved word in MySQL, so the column is `setting_key`.
+CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(255) PRIMARY KEY, value TEXT)
+ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ======================= Department database (tabs inside one department database) =======================
 CREATE TABLE IF NOT EXISTS ddb_tabs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    name          TEXT NOT NULL,
-    template      TEXT,                -- client, meetings, employee, billing, accounts, custom or NULL (old data)
-    meeting_notify INTEGER NOT NULL DEFAULT 0,  -- date+time rows in this tab send meeting notifications
-    position      INTEGER NOT NULL DEFAULT 0,
-    created_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    removed_at    TEXT
-);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_ddb_tab_name
-    ON ddb_tabs(department_id, name COLLATE NOCASE) WHERE removed_at IS NULL;
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    name          VARCHAR(255) NOT NULL,
+    template      VARCHAR(255),
+    meeting_notify INT NOT NULL DEFAULT 0,
+    position      INT NOT NULL DEFAULT 0,
+    created_by    INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    removed_at    DATETIME,
+    name_live     VARCHAR(255) GENERATED ALWAYS AS
+                  (CASE WHEN removed_at IS NULL THEN name ELSE NULL END) STORED,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    UNIQUE KEY ux_ddb_tab_name (department_id, name_live)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- A user a dept admin chose to do everything a dept admin can do in the Department Database.
 CREATE TABLE IF NOT EXISTS ddb_delegates (
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    granted_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    PRIMARY KEY (department_id, user_id)
-);
--- Row sharing: a whole department, or one specific user, with view or edit permission.
-CREATE TABLE IF NOT EXISTS ddb_row_shares (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    row_id        INTEGER NOT NULL REFERENCES ddb_rows(id) ON DELETE CASCADE,
-    department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
-    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    permission    TEXT NOT NULL DEFAULT 'view',
-    created_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    department_id INT NOT NULL,
+    user_id       INT NOT NULL,
+    granted_by    INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (department_id, user_id),
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (granted_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ddb_columns (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    tab_id        INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE,
-    name          TEXT NOT NULL,
-    col_type      TEXT NOT NULL CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment')),
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    tab_id        INT,
+    name          VARCHAR(255) NOT NULL,
+    col_type      VARCHAR(255) NOT NULL CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment')),
     options       TEXT,
-    required      INTEGER NOT NULL DEFAULT 0,
-    shown         INTEGER NOT NULL DEFAULT 1,
-    has_time      INTEGER NOT NULL DEFAULT 0,
-    position      INTEGER NOT NULL DEFAULT 0,
-    removed_at    TEXT,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_ddb_column_name
-    ON ddb_columns(department_id, tab_id, name COLLATE NOCASE) WHERE removed_at IS NULL;
+    required      INT NOT NULL DEFAULT 0,
+    shown         INT NOT NULL DEFAULT 1,
+    has_time      INT NOT NULL DEFAULT 0,
+    position      INT NOT NULL DEFAULT 0,
+    removed_at    DATETIME,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    name_live     VARCHAR(255) GENERATED ALWAYS AS
+                  (CASE WHEN removed_at IS NULL THEN name ELSE NULL END) STORED,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (tab_id) REFERENCES ddb_tabs(id) ON DELETE CASCADE,
+    UNIQUE KEY ux_ddb_column_name (department_id, tab_id, name_live)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ddb_rows (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    tab_id        INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE,
-    owner_id      INTEGER NOT NULL REFERENCES users(id),
-    version       INTEGER NOT NULL DEFAULT 1,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    deleted_at    TEXT,
-    deleted_by    INTEGER REFERENCES users(id),
-    source_record_id INTEGER,               -- the personal record it was copied from (if any)
-    public_code   TEXT,                     -- random HRC-##### share code for the row's public QR
-    public_enabled INTEGER NOT NULL DEFAULT 0,
-    public_views  INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_ddb_rows_dept ON ddb_rows(department_id, deleted_at);
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    tab_id        INT,
+    owner_id      INT NOT NULL,
+    version       INT NOT NULL DEFAULT 1,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at    DATETIME,
+    deleted_by    INT,
+    source_record_id INT,
+    public_code   VARCHAR(255),
+    public_enabled INT NOT NULL DEFAULT 0,
+    public_views  INT NOT NULL DEFAULT 0,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (tab_id) REFERENCES ddb_tabs(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES users(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id),
+    KEY idx_ddb_rows_dept (department_id, deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ddb_values (
-    row_id    INTEGER NOT NULL REFERENCES ddb_rows(id) ON DELETE CASCADE,
-    column_id INTEGER NOT NULL REFERENCES ddb_columns(id) ON DELETE CASCADE,
+    row_id    INT NOT NULL,
+    column_id INT NOT NULL,
     value     TEXT,
-    PRIMARY KEY (row_id, column_id)
-);
+    PRIMARY KEY (row_id, column_id),
+    FOREIGN KEY (row_id) REFERENCES ddb_rows(id) ON DELETE CASCADE,
+    FOREIGN KEY (column_id) REFERENCES ddb_columns(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ddb_history (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    row_id    INTEGER NOT NULL REFERENCES ddb_rows(id) ON DELETE CASCADE,
-    user_id   INTEGER REFERENCES users(id),
-    full_name TEXT,
-    action    TEXT NOT NULL,
-    field     TEXT,
+    id        INT AUTO_INCREMENT PRIMARY KEY,
+    row_id    INT NOT NULL,
+    user_id   INT,
+    full_name VARCHAR(255),
+    action    VARCHAR(255) NOT NULL,
+    field     VARCHAR(255),
     old_value TEXT,
     new_value TEXT,
-    at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (row_id) REFERENCES ddb_rows(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- What each person may do in the department database: view, own (add + manage own rows),
 -- edit (edit every row) or manager (does the department admin's tasks). No row = own.
 CREATE TABLE IF NOT EXISTS ddb_meeting_sent (
-    row_id      INTEGER NOT NULL REFERENCES ddb_rows(id) ON DELETE CASCADE,
-    column_id   INTEGER NOT NULL REFERENCES ddb_columns(id) ON DELETE CASCADE,
-    value       TEXT NOT NULL,
-    offset_days INTEGER NOT NULL,
-    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    sent_on     TEXT NOT NULL DEFAULT (date('now','localtime')),
-    PRIMARY KEY (row_id, column_id, value, offset_days, user_id)
-);
+    row_id      INT NOT NULL,
+    column_id   INT NOT NULL,
+    value       VARCHAR(255) NOT NULL,
+    offset_days INT NOT NULL,
+    user_id     INT NOT NULL,
+    sent_on     DATE NOT NULL DEFAULT (CURDATE()),
+    PRIMARY KEY (row_id, column_id, value, offset_days, user_id),
+    FOREIGN KEY (row_id) REFERENCES ddb_rows(id) ON DELETE CASCADE,
+    FOREIGN KEY (column_id) REFERENCES ddb_columns(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ddb_perms (
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    level         TEXT NOT NULL DEFAULT 'own',
-    PRIMARY KEY (department_id, user_id)
-);
+    department_id INT NOT NULL,
+    user_id       INT NOT NULL,
+    level         VARCHAR(255) NOT NULL DEFAULT 'own',
+    PRIMARY KEY (department_id, user_id),
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Row sharing: a whole department, or one specific user, with view or edit permission.
+CREATE TABLE IF NOT EXISTS ddb_row_shares (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    row_id        INT NOT NULL,
+    department_id INT,
+    user_id       INT,
+    permission    VARCHAR(255) NOT NULL DEFAULT 'view',
+    created_by    INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (row_id) REFERENCES ddb_rows(id) ON DELETE CASCADE,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ======================= Invoices (dept-admin templates, employee invoices) =======================
 CREATE TABLE IF NOT EXISTS invoice_templates (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    created_by    INTEGER REFERENCES users(id),
-    name          TEXT NOT NULL,
-    kind          TEXT NOT NULL DEFAULT 'billing',
-    title         TEXT NOT NULL DEFAULT 'INVOICE',
-    subtitle      TEXT,
-    number_prefix TEXT NOT NULL DEFAULT 'BIL',
-    next_number   INTEGER NOT NULL DEFAULT 1,
-    default_currency TEXT NOT NULL DEFAULT 'BDT',
-    vat_percent   REAL NOT NULL DEFAULT 0,
-    show_tax      INTEGER NOT NULL DEFAULT 1,
-    show_amount_in_words INTEGER NOT NULL DEFAULT 1,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    created_by    INT,
+    name          VARCHAR(255) NOT NULL,
+    kind          VARCHAR(255) NOT NULL DEFAULT 'billing',
+    title         VARCHAR(255) NOT NULL DEFAULT 'INVOICE',
+    subtitle      VARCHAR(255),
+    number_prefix VARCHAR(255) NOT NULL DEFAULT 'BIL',
+    next_number   INT NOT NULL DEFAULT 1,
+    default_currency VARCHAR(255) NOT NULL DEFAULT 'BDT',
+    vat_percent   DOUBLE NOT NULL DEFAULT 0,
+    show_tax      INT NOT NULL DEFAULT 1,
+    show_amount_in_words INT NOT NULL DEFAULT 1,
     notes         TEXT,
-    show_company_logo INTEGER NOT NULL DEFAULT 1,
-    show_address  INTEGER NOT NULL DEFAULT 1,
-    company_name  TEXT NOT NULL DEFAULT '',
-    company_address TEXT NOT NULL DEFAULT '',
-    logo_left     TEXT,
-    logo_right    TEXT,
-    watermark_on  INTEGER NOT NULL DEFAULT 0,
+    show_company_logo INT NOT NULL DEFAULT 1,
+    show_address  INT NOT NULL DEFAULT 1,
+    company_name  VARCHAR(255) NOT NULL DEFAULT '',
+    company_address VARCHAR(255) NOT NULL DEFAULT '',
+    logo_left     VARCHAR(255),
+    logo_right    VARCHAR(255),
+    watermark_on  INT NOT NULL DEFAULT 0,
     watermark_text TEXT,
-    signatures_json TEXT NOT NULL DEFAULT '[]',
-    top_fields_json TEXT NOT NULL DEFAULT '[]',
-    item_columns_json TEXT NOT NULL DEFAULT '[]',
-    status        TEXT NOT NULL DEFAULT 'active',
-    shared_from_id INTEGER REFERENCES invoice_templates(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    signatures_json TEXT,
+    top_fields_json TEXT,
+    item_columns_json TEXT,
+    status        VARCHAR(255) NOT NULL DEFAULT 'active',
+    shared_from_id INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    FOREIGN KEY (shared_from_id) REFERENCES invoice_templates(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS invoices (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    tab_id        INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE,
-    owner_id      INTEGER NOT NULL REFERENCES users(id),
-    template_id   INTEGER REFERENCES invoice_templates(id),
-    number        TEXT,
-    title         TEXT,
-    subtitle      TEXT,
-    currency      TEXT NOT NULL DEFAULT 'BDT',
-    customer_name TEXT,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    tab_id        INT,
+    owner_id      INT NOT NULL,
+    template_id   INT,
+    number        VARCHAR(255),
+    title         VARCHAR(255),
+    subtitle      VARCHAR(255),
+    currency      VARCHAR(255) NOT NULL DEFAULT 'BDT',
+    customer_name VARCHAR(255),
     customer_address TEXT,
-    reference     TEXT,
-    invoice_date  TEXT,
-    status        TEXT NOT NULL DEFAULT 'draft',
-    subtotal      REAL NOT NULL DEFAULT 0,
-    vat_amount    REAL NOT NULL DEFAULT 0,
-    total         REAL NOT NULL DEFAULT 0,
+    reference     VARCHAR(255),
+    invoice_date  VARCHAR(255),
+    status        VARCHAR(255) NOT NULL DEFAULT 'draft',
+    subtotal      DOUBLE NOT NULL DEFAULT 0,
+    vat_amount    DOUBLE NOT NULL DEFAULT 0,
+    total         DOUBLE NOT NULL DEFAULT 0,
     amount_in_words TEXT,
     notes         TEXT,
-    signatures_json TEXT NOT NULL DEFAULT '[]',
-    template_snapshot_json TEXT NOT NULL DEFAULT '{}',
-    public_code   TEXT UNIQUE,
-    public_enabled INTEGER NOT NULL DEFAULT 0,
-    public_views  INTEGER NOT NULL DEFAULT 0,
-    public_show_amounts INTEGER NOT NULL DEFAULT 1,
-    public_show_customer INTEGER NOT NULL DEFAULT 1,
-    public_show_lines INTEGER NOT NULL DEFAULT 0,
-    public_expires TEXT,
+    signatures_json TEXT,
+    template_snapshot_json TEXT,
+    public_code   VARCHAR(255) UNIQUE,
+    public_enabled INT NOT NULL DEFAULT 0,
+    public_views  INT NOT NULL DEFAULT 0,
+    public_show_amounts INT NOT NULL DEFAULT 1,
+    public_show_customer INT NOT NULL DEFAULT 1,
+    public_show_lines INT NOT NULL DEFAULT 0,
+    public_expires VARCHAR(255),
     void_reason   TEXT,
-    deleted_at    TEXT,
-    deleted_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    deleted_at    DATETIME,
+    deleted_by    INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (tab_id) REFERENCES ddb_tabs(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES users(id),
+    FOREIGN KEY (template_id) REFERENCES invoice_templates(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS invoice_lines (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    invoice_id    INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-    position      INTEGER NOT NULL DEFAULT 0,
-    item_name     TEXT,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    invoice_id    INT NOT NULL,
+    position      INT NOT NULL DEFAULT 0,
+    item_name     VARCHAR(255),
     description   TEXT,
-    qty           REAL NOT NULL DEFAULT 1,
-    rate          REAL NOT NULL DEFAULT 0,
-    amount        REAL NOT NULL DEFAULT 0,
-    line_date     TEXT,
-    from_place    TEXT,
-    to_place      TEXT,
-    mode          TEXT,
-    purpose       TEXT,
-    spec          TEXT
-);
+    qty           DOUBLE NOT NULL DEFAULT 1,
+    rate          DOUBLE NOT NULL DEFAULT 0,
+    amount        DOUBLE NOT NULL DEFAULT 0,
+    line_date     VARCHAR(255),
+    from_place    VARCHAR(255),
+    to_place      VARCHAR(255),
+    mode          VARCHAR(255),
+    purpose       VARCHAR(255),
+    spec          VARCHAR(255),
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS invoice_template_shares (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    template_id   INTEGER NOT NULL REFERENCES invoice_templates(id) ON DELETE CASCADE,
-    from_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    to_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    shared_by     INTEGER REFERENCES users(id),
-    expires       TEXT,
-    revoked       INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    template_id   INT NOT NULL,
+    from_department_id INT NOT NULL,
+    to_department_id INT NOT NULL,
+    shared_by     INT,
+    expires       VARCHAR(255),
+    revoked       INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (template_id) REFERENCES invoice_templates(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (shared_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS invoice_dept_shares (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    to_department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    shared_by     INTEGER REFERENCES users(id),
-    scope         TEXT NOT NULL DEFAULT 'invoices',
-    expires       TEXT,
-    revoked       INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_records_owner   ON records(owner_id);
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    from_department_id INT NOT NULL,
+    to_department_id INT NOT NULL,
+    shared_by     INT,
+    scope         VARCHAR(255) NOT NULL DEFAULT 'invoices',
+    expires       VARCHAR(255),
+    revoked       INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (from_department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (shared_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS invoice_steps (
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    invoice_id     INT NOT NULL,
+    position       INT NOT NULL,
+    role           VARCHAR(255) NOT NULL CHECK (role IN ('checked','approved','authorised')),
+    user_id        INT,
+    status         VARCHAR(255) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    signature_path VARCHAR(255),
+    signature_at   DATETIME,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY (invoice_id, position),
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_inv_steps (invoice_id, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ======================= Item Requests (dept-admin kinds, user requests to HR & Admin) =======================
 CREATE TABLE IF NOT EXISTS item_request_kinds (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    created_by    INTEGER REFERENCES users(id),
-    name          TEXT NOT NULL,
-    number_prefix TEXT NOT NULL DEFAULT 'REQ',
-    next_number   INTEGER NOT NULL DEFAULT 1,
-    default_currency TEXT NOT NULL DEFAULT 'BDT',
-    show_amount_in_words INTEGER NOT NULL DEFAULT 1,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    created_by    INT,
+    name          VARCHAR(255) NOT NULL,
+    number_prefix VARCHAR(255) NOT NULL DEFAULT 'REQ',
+    next_number   INT NOT NULL DEFAULT 1,
+    default_currency VARCHAR(255) NOT NULL DEFAULT 'BDT',
+    show_amount_in_words INT NOT NULL DEFAULT 1,
     notes         TEXT,
-    show_company_logo INTEGER NOT NULL DEFAULT 1,
-    show_address  INTEGER NOT NULL DEFAULT 1,
-    company_name  TEXT NOT NULL DEFAULT '',
-    company_address TEXT NOT NULL DEFAULT '',
-    logo_left     TEXT,
-    logo_right    TEXT,
-    signatures_json TEXT NOT NULL DEFAULT '[]',
-    status        TEXT NOT NULL DEFAULT 'active',
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    show_company_logo INT NOT NULL DEFAULT 1,
+    show_address  INT NOT NULL DEFAULT 1,
+    company_name  VARCHAR(255) NOT NULL DEFAULT '',
+    company_address VARCHAR(255) NOT NULL DEFAULT '',
+    logo_left     VARCHAR(255),
+    logo_right    VARCHAR(255),
+    signatures_json TEXT,
+    status        VARCHAR(255) NOT NULL DEFAULT 'active',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS item_requests (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    kind_id       INTEGER REFERENCES item_request_kinds(id),
-    owner_id      INTEGER NOT NULL REFERENCES users(id),
-    recipient_id  INTEGER REFERENCES users(id),
-    number        TEXT,
-    currency      TEXT NOT NULL DEFAULT 'BDT',
-    request_date  TEXT,
-    status        TEXT NOT NULL DEFAULT 'pending',
-    subtotal      REAL NOT NULL DEFAULT 0,
-    total         REAL NOT NULL DEFAULT 0,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    kind_id       INT,
+    owner_id      INT NOT NULL,
+    recipient_id  INT,
+    number        VARCHAR(255),
+    currency      VARCHAR(255) NOT NULL DEFAULT 'BDT',
+    request_date  VARCHAR(255),
+    status        VARCHAR(255) NOT NULL DEFAULT 'pending',
+    subtotal      DOUBLE NOT NULL DEFAULT 0,
+    total         DOUBLE NOT NULL DEFAULT 0,
     amount_in_words TEXT,
     notes         TEXT,
-    signatures_json TEXT NOT NULL DEFAULT '[]',
-    kind_snapshot_json TEXT NOT NULL DEFAULT '{}',
-    public_code   TEXT UNIQUE,
-    public_enabled INTEGER NOT NULL DEFAULT 0,
-    public_views  INTEGER NOT NULL DEFAULT 0,
-    deleted_at    TEXT,
-    deleted_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    signatures_json TEXT,
+    kind_snapshot_json TEXT,
+    public_code   VARCHAR(255) UNIQUE,
+    public_enabled INT NOT NULL DEFAULT 0,
+    public_views  INT NOT NULL DEFAULT 0,
+    deleted_at    DATETIME,
+    deleted_by    INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (kind_id) REFERENCES item_request_kinds(id),
+    FOREIGN KEY (owner_id) REFERENCES users(id),
+    FOREIGN KEY (recipient_id) REFERENCES users(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id),
+    KEY idx_req_owner (owner_id),
+    KEY idx_req_recip (recipient_id),
+    KEY idx_req_dept (department_id),
+    KEY idx_req_code (public_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS item_request_lines (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    request_id    INTEGER NOT NULL REFERENCES item_requests(id) ON DELETE CASCADE,
-    position      INTEGER NOT NULL DEFAULT 0,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    request_id    INT NOT NULL,
+    position      INT NOT NULL DEFAULT 0,
+    item_name     VARCHAR(255),
     description   TEXT,
-    qty           REAL NOT NULL DEFAULT 1,
-    rate          REAL NOT NULL DEFAULT 0,
-    amount        REAL NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_req_owner ON item_requests(owner_id);
-CREATE INDEX IF NOT EXISTS idx_req_recip ON item_requests(recipient_id);
-CREATE INDEX IF NOT EXISTS idx_req_dept  ON item_requests(department_id);
-CREATE INDEX IF NOT EXISTS idx_req_code  ON item_requests(public_code);
+    qty           DOUBLE NOT NULL DEFAULT 1,
+    rate          DOUBLE NOT NULL DEFAULT 0,
+    amount        DOUBLE NOT NULL DEFAULT 0,
+    FOREIGN KEY (request_id) REFERENCES item_requests(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS item_request_history (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    request_id INTEGER NOT NULL REFERENCES item_requests(id) ON DELETE CASCADE,
-    user_id    INTEGER,
-    username   TEXT,
-    full_name  TEXT,
-    action     TEXT NOT NULL,
-    field      TEXT,
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    request_id INT NOT NULL,
+    user_id    INT,
+    username   VARCHAR(255),
+    full_name  VARCHAR(255),
+    action     VARCHAR(255) NOT NULL,
+    field      VARCHAR(255),
     old_value  TEXT,
     new_value  TEXT,
-    at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_req_hist ON item_request_history(request_id);
+    at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (request_id) REFERENCES item_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_req_hist (request_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---- Application Letters (2026-11-10): kinds made by the dept admin, and the
---- applications users send to one specific HR & Admin user. The HR recipient
---- and the HR & Admin dept admin can edit, set a note, upload a signature
---- and change the status. The document is a formal letter, not an invoice.
+CREATE TABLE IF NOT EXISTS item_request_steps (
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    request_id     INT NOT NULL,
+    position       INT NOT NULL,
+    role           VARCHAR(255) NOT NULL CHECK (role IN ('checked','send_to','approved','authorised')),
+    user_id        INT,
+    status         VARCHAR(255) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    signature_path VARCHAR(255),
+    signature_at   DATETIME,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY (request_id, position),
+    FOREIGN KEY (request_id) REFERENCES item_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_req_steps (request_id, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Application Letters (2026-11-10): kinds made by the dept admin, and the
+-- applications users send to one specific HR & Admin user. The HR recipient
+-- and the HR & Admin dept admin can edit, set a note, upload a signature
+-- and change the status. The document is a formal letter, not an invoice.
 CREATE TABLE IF NOT EXISTS application_kinds (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    created_by    INTEGER REFERENCES users(id),
-    name          TEXT NOT NULL,
-    number_prefix TEXT NOT NULL DEFAULT 'LV',
-    company_name  TEXT,
-    company_address TEXT,
-    logo_left     TEXT,
-    logo_right    TEXT,
-    next_number   INTEGER NOT NULL DEFAULT 1,
-    status        TEXT NOT NULL DEFAULT 'active',
-    is_custom     INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    created_by    INT,
+    name          VARCHAR(255) NOT NULL,
+    number_prefix VARCHAR(255) NOT NULL DEFAULT 'LV',
+    company_name  VARCHAR(255),
+    company_address VARCHAR(255),
+    logo_left     VARCHAR(255),
+    logo_right    VARCHAR(255),
+    next_number   INT NOT NULL DEFAULT 1,
+    status        VARCHAR(255) NOT NULL DEFAULT 'active',
+    is_custom     INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS applications (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-    kind_id       INTEGER REFERENCES application_kinds(id),
-    owner_id      INTEGER NOT NULL REFERENCES users(id),
-    recipient_id  INTEGER REFERENCES users(id),
-    checker_id    INTEGER REFERENCES users(id),
-    checker_signature_path TEXT,
-    checker_signature_at TEXT,
-    approver_id   INTEGER REFERENCES users(id),
-    number        TEXT,
-    status        TEXT NOT NULL DEFAULT 'pending',
-    from_date     TEXT,
-    to_date       TEXT,
-    days          INTEGER NOT NULL DEFAULT 0,
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    department_id INT NOT NULL,
+    kind_id       INT,
+    owner_id      INT NOT NULL,
+    recipient_id  INT,
+    checker_id    INT,
+    checker_signature_path VARCHAR(255),
+    checker_signature_at DATETIME,
+    approver_id   INT,
+    number        VARCHAR(255),
+    status        VARCHAR(255) NOT NULL DEFAULT 'pending',
+    from_date     VARCHAR(255),
+    to_date       VARCHAR(255),
+    days          INT NOT NULL DEFAULT 0,
     reason        TEXT,
     letter_body   TEXT,
-    subject       TEXT,
+    subject       VARCHAR(255),
     to_lines      TEXT,
     hr_note       TEXT,
-    signature_path TEXT,
-    signature_by  INTEGER REFERENCES users(id),
-    signature_at  TEXT,
-    public_code   TEXT UNIQUE,
-    public_enabled INTEGER NOT NULL DEFAULT 0,
-    public_views  INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    deleted_at    TEXT,
-    deleted_by    INTEGER REFERENCES users(id)
-);
+    signature_path VARCHAR(255),
+    signature_by  INT,
+    signature_at  DATETIME,
+    public_code   VARCHAR(255) UNIQUE,
+    public_enabled INT NOT NULL DEFAULT 0,
+    public_views  INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at    DATETIME,
+    deleted_by    INT,
+    chain_legacy  INT NOT NULL DEFAULT 0,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (kind_id) REFERENCES application_kinds(id),
+    FOREIGN KEY (owner_id) REFERENCES users(id),
+    FOREIGN KEY (recipient_id) REFERENCES users(id),
+    FOREIGN KEY (checker_id) REFERENCES users(id),
+    FOREIGN KEY (approver_id) REFERENCES users(id),
+    FOREIGN KEY (signature_by) REFERENCES users(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id),
+    KEY idx_app_owner (owner_id),
+    KEY idx_app_recip (recipient_id),
+    KEY idx_app_checker (checker_id),
+    KEY idx_app_approver (approver_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS application_history (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    user_id        INTEGER,
-    username       TEXT,
-    full_name      TEXT,
-    action         TEXT NOT NULL,
-    field          TEXT,
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    application_id INT NOT NULL,
+    user_id        INT,
+    username       VARCHAR(255),
+    full_name      VARCHAR(255),
+    action         VARCHAR(255) NOT NULL,
+    field          VARCHAR(255),
     old_value      TEXT,
     new_value      TEXT,
-    at             TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_app_hist (application_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS application_steps (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    position       INTEGER NOT NULL,
-    role           TEXT NOT NULL CHECK (role IN ('checked','approved','authorised')),
-    user_id        INTEGER REFERENCES users(id),
-    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-    signature_path TEXT,
-    signature_at   TEXT,
-    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    UNIQUE (application_id, position)
-);
-CREATE INDEX IF NOT EXISTS idx_app_steps ON application_steps(application_id, position);
-CREATE TABLE IF NOT EXISTS invoice_steps (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    invoice_id     INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-    position       INTEGER NOT NULL,
-    role           TEXT NOT NULL CHECK (role IN ('checked','approved','authorised')),
-    user_id        INTEGER REFERENCES users(id),
-    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-    signature_path TEXT,
-    signature_at   TEXT,
-    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    UNIQUE (invoice_id, position)
-);
-CREATE INDEX IF NOT EXISTS idx_inv_steps ON invoice_steps(invoice_id, position);
-CREATE TABLE IF NOT EXISTS item_request_steps (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    request_id     INTEGER NOT NULL REFERENCES item_requests(id) ON DELETE CASCADE,
-    position       INTEGER NOT NULL,
-    role           TEXT NOT NULL CHECK (role IN ('checked','send_to','approved','authorised')),
-    user_id        INTEGER REFERENCES users(id),
-    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-    signature_path TEXT,
-    signature_at   TEXT,
-    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    UNIQUE (request_id, position)
-);
-CREATE INDEX IF NOT EXISTS idx_req_steps ON item_request_steps(request_id, position);
-CREATE INDEX IF NOT EXISTS idx_app_owner ON applications(owner_id);
-CREATE INDEX IF NOT EXISTS idx_app_recip ON applications(recipient_id);
-CREATE INDEX IF NOT EXISTS idx_app_hist ON application_history(application_id);
-CREATE INDEX IF NOT EXISTS idx_records_dept    ON records(department_id);
-CREATE INDEX IF NOT EXISTS idx_values_column   ON record_values(column_id);
-CREATE INDEX IF NOT EXISTS idx_history_record  ON record_history(record_id);
-CREATE INDEX IF NOT EXISTS idx_shares_dept     ON record_shares(department_id);
-CREATE INDEX IF NOT EXISTS idx_user_shares     ON record_user_shares(user_id);
-CREATE INDEX IF NOT EXISTS idx_users_dept      ON users(department_id);
-CREATE INDEX IF NOT EXISTS idx_attempts_user   ON login_attempts(username, at);
-CREATE INDEX IF NOT EXISTS idx_attempts_ip     ON login_attempts(ip, at);
-CREATE INDEX IF NOT EXISTS idx_notif_user      ON notifications(user_id, read_at);
-CREATE INDEX IF NOT EXISTS idx_comments_record ON comments(record_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_user   ON sessions(user_id);
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    application_id INT NOT NULL,
+    position       INT NOT NULL,
+    role           VARCHAR(255) NOT NULL CHECK (role IN ('checked','approved','authorised')),
+    user_id        INT,
+    status         VARCHAR(255) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+    signature_path VARCHAR(255),
+    signature_at   DATETIME,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY (application_id, position),
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    KEY idx_app_steps (application_id, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Dashboard settings (2026-11-06): one row per admin, JSON with which
 -- dashboard sections that admin wants to see and which chart type (bar/pie)
 -- each of the two department charts uses. No row = everything shown, bars.
 CREATE TABLE IF NOT EXISTS dashboard_settings (
-    user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    settings_json TEXT NOT NULL DEFAULT '{}',
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+    user_id       INT NOT NULL PRIMARY KEY,
+    settings_json TEXT,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
 
 def connect():
-    """Open a SQLite connection with the safe settings for many users."""
-    conn = sqlite3.connect(config.DB_PATH, timeout=5)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")     # readers do not block the writer
-    conn.execute("PRAGMA busy_timeout=5000")    # wait up to 5 s when the DB is busy
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    """Open a MySQL connection (see dbapi.py for the wrapper)."""
+    return dbapi.connect()
 
 
 def get_db():
@@ -731,14 +899,43 @@ def init_app(app):
 
 
 def _table_exists(conn, name):
-    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+    return conn.execute("SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema=DATABASE() AND table_name=?",
                         (name,)).fetchone() is not None
+
+
+def _columns(conn, table):
+    """The column names of a table (MySQL's answer to PRAGMA table_info)."""
+    return [r[0] for r in conn.execute(
+        "SELECT COLUMN_NAME FROM information_schema.columns "
+        "WHERE table_schema=DATABASE() AND table_name=? ORDER BY ORDINAL_POSITION",
+        (table,))]
+
+
+def _index_exists(conn, name):
+    return conn.execute("SELECT 1 FROM information_schema.statistics "
+                        "WHERE table_schema=DATABASE() AND index_name=?",
+                        (name,)).fetchone() is not None
+
+
+def _drop_index(conn, name, table):
+    """Drop an index only if it exists (MySQL has no DROP INDEX IF EXISTS)."""
+    if _index_exists(conn, name):
+        conn.execute(f"DROP INDEX {name} ON {table}")
+
+
+def _table_sql(conn, table):
+    """The CREATE TABLE statement of a table, or None. Used to tell
+    whether an old table's CHECK still lacks a value (the rebuild
+    migrations below)."""
+    row = conn.execute("SHOW CREATE TABLE " + table).fetchone()
+    return row[1] if row else None
 
 
 def _upgrade_repairs_switch(conn):
     """The repair log became a per-department switch. Departments that already have repair
     entries (and the IT department) keep it ON, so nothing disappears; all others start OFF."""
-    have = [r["name"] for r in conn.execute("PRAGMA table_info(departments)")]
+    have = _columns(conn, "departments")
     if "repairs_enabled" in have:
         return
     conn.execute("ALTER TABLE departments ADD COLUMN repairs_enabled INTEGER NOT NULL DEFAULT 0")
@@ -765,102 +962,61 @@ def _upgrade_public_codes(conn):
     NEW: every link also gets a random HRC-##### code_text, which is what is shown and searched.
     Old code_no values are kept internally only and are never shown or searched any more;
     a link missing code_text is given a random one here, so no link is left code-less."""
-    have = [r["name"] for r in conn.execute("PRAGMA table_info(public_links)")]
+    have = _columns(conn, "public_links")
     if "code_no" not in have:
-        conn.execute("ALTER TABLE public_links ADD COLUMN code_no INTEGER")
+        conn.execute("ALTER TABLE public_links ADD COLUMN code_no INT")
     if "full_record" not in have:
-        conn.execute("ALTER TABLE public_links ADD COLUMN full_record INTEGER NOT NULL DEFAULT 0")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_public_code ON public_links(code_no)")
-    if "code_text" not in [r["name"] for r in conn.execute("PRAGMA table_info(public_links)")]:
-        conn.execute("ALTER TABLE public_links ADD COLUMN code_text TEXT")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_public_code_text ON public_links(code_text) WHERE code_text IS NOT NULL")
+        conn.execute("ALTER TABLE public_links ADD COLUMN full_record INT NOT NULL DEFAULT 0")
+    # A plain UNIQUE KEY already allows several NULLs, so the SQLite
+    # partial index (WHERE code_text IS NOT NULL) needs no equivalent.
+    if not _index_exists(conn, "ux_public_code"):
+        conn.execute("CREATE UNIQUE INDEX ux_public_code ON public_links(code_no)")
+    if "code_text" not in _columns(conn, "public_links"):
+        conn.execute("ALTER TABLE public_links ADD COLUMN code_text VARCHAR(255)")
+    if not _index_exists(conn, "ux_public_code_text"):
+        conn.execute("CREATE UNIQUE INDEX ux_public_code_text ON public_links(code_text)")
     for _row in conn.execute("SELECT id FROM public_links WHERE code_text IS NULL OR code_text='' ORDER BY id").fetchall():
         _cand = _new_random_code_text(conn)
         if _cand:
             conn.execute("UPDATE public_links SET code_text=? WHERE id=?", (_cand, _row["id"]))
-    nxt = conn.execute("SELECT value FROM settings WHERE key='hrc_next'").fetchone()
+    nxt = conn.execute("SELECT value FROM settings WHERE setting_key='hrc_next'").fetchone()
     n = int(nxt["value"]) if nxt else 0
     for row in conn.execute("SELECT id FROM public_links WHERE code_no IS NULL ORDER BY id").fetchall():
         conn.execute("UPDATE public_links SET code_no=? WHERE id=?", (n, row["id"]))
         n += 1
-    conn.execute("INSERT INTO settings(key,value) VALUES ('hrc_next',?) "
-                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(n),))
+    conn.execute("INSERT INTO settings(setting_key,value) VALUES ('hrc_next',?) "
+                 "ON CONFLICT(setting_key) DO UPDATE SET value=excluded.value", (str(n),))
 
 
 def _upgrade_ddb_attachment_type(conn):
     """Old ddb_columns tables have CHECK(col_type IN (...)) without 'attachment'.
-    Recreate the table with the wider CHECK, keeping all rows and the unique index."""
-    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='ddb_columns'").fetchone()
-    if row is None or "'attachment'" in (row[0] or ""):
+    On MySQL there is no table rebuild: the column is widened in place.
+    (A fresh MySQL database already has 'attachment' in the CHECK from
+    SCHEMA, so this is a no-op there.)"""
+    sql = _table_sql(conn, "ddb_columns")
+    if sql is None or "'attachment'" in sql:
         return
-    # Commit first: PRAGMA foreign_keys is a no-op inside an open
-    # transaction (see _upgrade_columns_user_columns) — without it, the
-    # DROP TABLE below would cascade-delete every department-database value.
-    conn.commit()
-    conn.execute("PRAGMA foreign_keys=OFF")
-    try:
-        _has_tab = any(r[1] == "tab_id" for r in conn.execute("PRAGMA table_info(ddb_columns)"))
-        conn.execute("CREATE TABLE ddb_columns_new ("
-                     "id INTEGER PRIMARY KEY AUTOINCREMENT, department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE, "
-                     "tab_id INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE, "
-                     "name TEXT NOT NULL, col_type TEXT NOT NULL CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment')), "
-                     "options TEXT, required INTEGER NOT NULL DEFAULT 0, shown INTEGER NOT NULL DEFAULT 1, has_time INTEGER NOT NULL DEFAULT 0, "
-                     "position INTEGER NOT NULL DEFAULT 0, removed_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))")
-        if _has_tab:
-            conn.execute("INSERT INTO ddb_columns_new(id,department_id,tab_id,name,col_type,options,required,shown,has_time,position,removed_at,created_at) "
-                         "SELECT id,department_id,tab_id,name,col_type,options,required,shown,has_time,position,removed_at,created_at FROM ddb_columns")
-        else:
-            conn.execute("INSERT INTO ddb_columns_new(id,department_id,tab_id,name,col_type,options,required,shown,has_time,position,removed_at,created_at) "
-                         "SELECT id,department_id,NULL,name,col_type,options,required,shown,has_time,position,removed_at,created_at FROM ddb_columns")
-        conn.execute("DROP TABLE ddb_columns")
-        conn.execute("ALTER TABLE ddb_columns_new RENAME TO ddb_columns")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_ddb_column_name ON ddb_columns(department_id, tab_id, name COLLATE NOCASE) WHERE removed_at IS NULL")
-    finally:
-        conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("ALTER TABLE ddb_columns MODIFY COLUMN col_type VARCHAR(255) NOT NULL "
+                 "CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment'))")
 
 
 def _upgrade_columns_user_columns(conn):
     """Old columns tables have no user_id and a CHECK(col_type IN (...))
     without 'attachment' (build 61: users add their own Mine-tab columns,
-    including an Attachment type). Recreate the table with the user_id
-    column, the wider CHECK and the per-user unique index, keeping all
-    rows and the old department-column unique index's meaning (it now
-    covers department columns only). Dropping the table also drops the
-    old ux_column_name index, which is recreated below. Both indexes are
-    ensured at the end either way: a fresh database gets ux_column_name
-    from SCHEMA but not ux_user_column_name, which lives here."""
-    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='columns'").fetchone()
-    if row is None:
+    including an Attachment type). On MySQL the column is added in place
+    (with its foreign key) and the CHECK is widened in place — no table
+    rebuild, so no data is ever at risk. The per-user and per-department
+    unique indexes live in SCHEMA as generated columns, so they need no
+    ensuring here. (A fresh MySQL database already has all of this.)"""
+    if not _table_exists(conn, "columns"):
         return
-    have_user = any(r[1] == "user_id" for r in conn.execute("PRAGMA table_info(columns)"))
-    if not (have_user and "'attachment'" in (row[0] or "")):
-        # Commit first: PRAGMA foreign_keys is a no-op inside an open
-        # transaction, and init_db has one open by now (the seed inserts).
-        # Without the commit, DROP TABLE below would cascade-delete every
-        # record value and Mine-tab column choice through the
-        # ON DELETE CASCADE foreign keys.
-        conn.commit()
-        conn.execute("PRAGMA foreign_keys=OFF")
-        try:
-            conn.execute("CREATE TABLE columns_new ("
-                         "id INTEGER PRIMARY KEY AUTOINCREMENT, department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE, "
-                         "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, "
-                         "name TEXT NOT NULL, col_type TEXT NOT NULL CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment')), "
-                         "options TEXT, required INTEGER NOT NULL DEFAULT 0, shown INTEGER NOT NULL DEFAULT 1, position INTEGER NOT NULL DEFAULT 0, "
-                         "protected INTEGER NOT NULL DEFAULT 0, is_reminder INTEGER NOT NULL DEFAULT 0, has_time INTEGER NOT NULL DEFAULT 0, "
-                         "removed_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))")
-            if have_user:
-                conn.execute("INSERT INTO columns_new(id,department_id,user_id,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at) "
-                             "SELECT id,department_id,user_id,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at FROM columns")
-            else:
-                conn.execute("INSERT INTO columns_new(id,department_id,user_id,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at) "
-                             "SELECT id,department_id,NULL,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at FROM columns")
-            conn.execute("DROP TABLE columns")
-            conn.execute("ALTER TABLE columns_new RENAME TO columns")
-        finally:
-            conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_column_name ON columns(department_id, name COLLATE NOCASE) WHERE removed_at IS NULL AND user_id IS NULL")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_column_name ON columns(user_id, department_id, name COLLATE NOCASE) WHERE removed_at IS NULL AND user_id IS NOT NULL")
+    if "user_id" not in _columns(conn, "columns"):
+        conn.execute("ALTER TABLE columns ADD COLUMN user_id INT")
+        conn.execute("ALTER TABLE columns ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE")
+    sql = _table_sql(conn, "columns")
+    if sql is not None and "'attachment'" not in sql:
+        conn.execute("ALTER TABLE columns MODIFY COLUMN col_type VARCHAR(255) NOT NULL "
+                     "CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment'))")
 
 
 def _upgrade_invoice_tax_tick(conn):
@@ -869,7 +1025,7 @@ def _upgrade_invoice_tax_tick(conn):
     once: existing templates are backfilled from their VAT % (a template with
     a VAT % above 0 keeps tax on, the 0 % starters keep it off), and later
     admin changes to the tick are never overwritten by this upgrade."""
-    have = [r["name"] for r in conn.execute("PRAGMA table_info(invoice_templates)")]
+    have = _columns(conn, "invoice_templates")
     if "show_tax" not in have:
         conn.execute("ALTER TABLE invoice_templates ADD COLUMN show_tax INTEGER NOT NULL DEFAULT 1")
         conn.execute("UPDATE invoice_templates SET show_tax = CASE WHEN vat_percent > 0 THEN 1 ELSE 0 END")
@@ -882,11 +1038,11 @@ def _upgrade_invoice_header(conn):
     (portal company name + the default address line, no email), so existing
     templates keep looking as they did, minus the email, until an admin edits
     them. No backfill: nothing is overwritten."""
-    have = [r["name"] for r in conn.execute("PRAGMA table_info(invoice_templates)")]
+    have = _columns(conn, "invoice_templates")
     if "company_name" not in have:
-        conn.execute("ALTER TABLE invoice_templates ADD COLUMN company_name TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE invoice_templates ADD COLUMN company_name VARCHAR(255) NOT NULL DEFAULT ''")
     if "company_address" not in have:
-        conn.execute("ALTER TABLE invoice_templates ADD COLUMN company_address TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE invoice_templates ADD COLUMN company_address VARCHAR(255) NOT NULL DEFAULT ''")
 
 
 def _upgrade_ddb_tabs(conn):
@@ -903,30 +1059,34 @@ def _upgrade_ddb_tabs(conn):
     create, rename to, or restore one."""
     _ensure_column(conn, "ddb_columns", "tab_id", "INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE")
     _ensure_column(conn, "ddb_rows", "tab_id", "INTEGER REFERENCES ddb_tabs(id) ON DELETE CASCADE")
-    _ensure_column(conn, "ddb_rows", "public_code", "TEXT")  # public QR share code (2026-11-09)
+    _ensure_column(conn, "ddb_rows", "public_code", "VARCHAR(255)")  # public QR share code (2026-11-09)
     _ensure_column(conn, "ddb_rows", "public_enabled", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "ddb_rows", "public_views", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "ddb_rows", "deleted_by", "INTEGER REFERENCES users(id)")  # who deleted the row, shown in the Recycle Bin (2026-11-10)
-    _ensure_column(conn, "applications", "deleted_at", "TEXT")  # soft delete, shown in the Recycle Bin (2026-11-10)
+    _ensure_column(conn, "applications", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-10)
     _ensure_column(conn, "applications", "deleted_by", "INTEGER REFERENCES users(id)")
-    _ensure_column(conn, "invoices", "deleted_at", "TEXT")  # soft delete, shown in the Recycle Bin (2026-11-14)
+    _ensure_column(conn, "invoices", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-14)
     _ensure_column(conn, "invoices", "deleted_by", "INTEGER REFERENCES users(id)")
-    _ensure_column(conn, "item_requests", "deleted_at", "TEXT")  # soft delete, shown in the Recycle Bin (2026-11-14)
+    _ensure_column(conn, "item_requests", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-14)
     _ensure_column(conn, "item_requests", "deleted_by", "INTEGER REFERENCES users(id)")
     _ensure_column(conn, "applications", "checker_id", "INTEGER REFERENCES users(id)")  # own-department checker (two-stage, 2026-11-10)
-    _ensure_column(conn, "applications", "checker_signature_path", "TEXT")  # checker's uploaded signature image
-    _ensure_column(conn, "applications", "checker_signature_at", "TEXT")  # when the checker signed
+    _ensure_column(conn, "applications", "checker_signature_path", "VARCHAR(255)")  # checker's uploaded signature image
+    _ensure_column(conn, "applications", "checker_signature_at", "DATETIME")  # when the checker signed
     _ensure_column(conn, "applications", "approver_id", "INTEGER REFERENCES users(id)")  # HR & Admin user it was forwarded to
     _ensure_column(conn, "applications", "to_lines", "TEXT")  # the lines the user wrote for the letter's To section (2026-11-14)
     _ensure_column(conn, "applications", "chain_legacy", "INTEGER NOT NULL DEFAULT 0")  # 1 = made the old single-recipient way (or before build 52 with no approver yet): the checker may still forward it to HR (2026-11-14)
-    _ensure_column(conn, "applications", "subject", "TEXT")  # the subject the user wrote, for a Custom Application (2026-11-14)
+    _ensure_column(conn, "applications", "subject", "VARCHAR(255)")  # the subject the user wrote, for a Custom Application (2026-11-14)
     # The checker/approver indexes live HERE, after the columns above —
     # not in SCHEMA. SCHEMA runs before _ensure_column, so on a database
     # made before build 43 (no checker_id/approver_id yet) the index
     # creation in SCHEMA crashed init_db with "no such column:
     # checker_id" and the container kept restarting (2026-11-12).
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_app_checker ON applications(checker_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_app_approver ON applications(approver_id)")
+    # MySQL has no CREATE INDEX IF NOT EXISTS (MariaDB accepts it, MySQL 8.0
+    # does not), so guard with the information_schema check instead.
+    if not _index_exists(conn, "idx_app_checker"):
+        conn.execute("CREATE INDEX idx_app_checker ON applications(checker_id)")
+    if not _index_exists(conn, "idx_app_approver"):
+        conn.execute("CREATE INDEX idx_app_approver ON applications(approver_id)")
     # The To box (2026-11-14): applications made before this build have no
     # typed To lines, so fill theirs in from the three lines the letter
     # used to show automatically (checker name, department, company) —
@@ -980,10 +1140,10 @@ def _upgrade_ddb_tabs(conn):
                          "VALUES (?,?,?,?,?,?,?)", (_a["id"], _i, _role, _uid, _st, _sig, _sig_at))
         if _a["status"] == "pending" and not _a["approver_id"]:
             conn.execute("UPDATE applications SET chain_legacy=1 WHERE id=?", (_a["id"],))
-    _ensure_column(conn, "application_kinds", "company_name", "TEXT")  # letterhead company for this kind (2026-11-10)
-    _ensure_column(conn, "application_kinds", "company_address", "TEXT")  # letterhead address for this kind
-    _ensure_column(conn, "application_kinds", "logo_left", "TEXT")  # letterhead logo, top left corner (2026-11-14)
-    _ensure_column(conn, "application_kinds", "logo_right", "TEXT")  # letterhead logo, top right corner
+    _ensure_column(conn, "application_kinds", "company_name", "VARCHAR(255)")  # letterhead company for this kind (2026-11-10)
+    _ensure_column(conn, "application_kinds", "company_address", "VARCHAR(255)")  # letterhead address for this kind
+    _ensure_column(conn, "application_kinds", "logo_left", "VARCHAR(255)")  # letterhead logo, top left corner (2026-11-14)
+    _ensure_column(conn, "application_kinds", "logo_right", "VARCHAR(255)")  # letterhead logo, top right corner
     _ensure_column(conn, "application_kinds", "is_custom", "INTEGER NOT NULL DEFAULT 0")  # 1 = the default Custom Application kind (2026-11-14)
     # The closing moves into the body (2026-11-14): the letter no longer
     # adds "Thanking you. Yours faithfully," of its own — it is part of
@@ -1006,12 +1166,19 @@ def _upgrade_ddb_tabs(conn):
                         (_d["id"],)).fetchone() is None:
             conn.execute("INSERT INTO application_kinds(department_id,name,number_prefix,next_number,is_custom) "
                          "VALUES (?,?,?,1,1)", (_d["id"], "Custom Application", "CA"))
-    _ensure_column(conn, "item_request_lines", "item_name", "TEXT")  # item name per line (2026-11-09)
-    # per-tab column unique index (old index was department-wide)
-    idx = conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='ux_ddb_column_name'").fetchone()
-    if idx and idx[0] and "tab_id" not in idx[0]:
-        conn.execute("DROP INDEX ux_ddb_column_name")
-        conn.execute("CREATE UNIQUE INDEX ux_ddb_column_name ON ddb_columns(department_id, tab_id, name COLLATE NOCASE) WHERE removed_at IS NULL")
+    _ensure_column(conn, "item_request_lines", "item_name", "VARCHAR(255)")  # item name per line (2026-11-09)
+    # Per-tab column unique index (an old index was department-wide).
+    # On MySQL the index is on the generated name_live column (see
+    # SCHEMA); an index that does not cover tab_id is the old one, so
+    # it is dropped and the per-tab one is created.
+    _idx_cols = [r[0] for r in conn.execute(
+        "SELECT COLUMN_NAME FROM information_schema.statistics "
+        "WHERE table_schema=DATABASE() AND table_name='ddb_columns' "
+        "AND index_name='ux_ddb_column_name' ORDER BY SEQ_IN_INDEX")]
+    if _idx_cols and "tab_id" not in _idx_cols:
+        _drop_index(conn, "ux_ddb_column_name", "ddb_columns")
+        conn.execute("CREATE UNIQUE INDEX ux_ddb_column_name "
+                     "ON ddb_columns(department_id, tab_id, name_live)")
     # Delete the General tab everywhere (soft delete; rows stay in the database).
     conn.execute("UPDATE ddb_tabs SET removed_at=datetime('now','localtime') "
                  "WHERE LOWER(name)='general' AND removed_at IS NULL")
@@ -1038,10 +1205,20 @@ def _upgrade_ddb_tabs(conn):
 
 
 def _ensure_column(conn, table, column, ddl):
-    """Add a column to an older table if it is missing (keeps existing data)."""
-    have = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})")]
-    if column not in have:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+    """Add a column to an older table if it is missing (keeps existing data).
+    The ddl may name a foreign key (``INTEGER REFERENCES users(id)``);
+    MySQL ignores an inline REFERENCES, so it is stripped here and the
+    foreign key is added as its own constraint."""
+    if column in _columns(conn, table):
+        return
+    import re as _re
+    m = _re.search(r"REFERENCES\s+(\w+)\s*\((\w+)\)\s*(ON DELETE CASCADE)?", ddl)
+    col_ddl = _re.sub(r"\s*REFERENCES\s+\w+\s*\(\w+\)\s*(ON DELETE CASCADE)?", "", ddl)
+    col_ddl = col_ddl.replace("INTEGER", "INT")
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_ddl}")
+    if m:
+        conn.execute(f"ALTER TABLE {table} ADD FOREIGN KEY ({column}) "
+                     f"REFERENCES {m.group(1)}({m.group(2)}) {m.group(3) or ''}")
 
 
 # Old versions kept equipment in one fixed table. These are turned into normal columns.
@@ -1086,26 +1263,27 @@ def _migrate_legacy_equipment(conn):
 
 def init_db():
     """Create tables, upgrade old databases and create the first admin."""
+    dbapi.ensure_database()   # create the database itself on the very first start
     conn = connect()
     try:
         conn.executescript(SCHEMA)
-        _ensure_column(conn, "departments", "attachments_enabled", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "departments", "attachment_max_mb", "INTEGER NOT NULL DEFAULT 10")
-        _ensure_column(conn, "users", "created_by", "INTEGER REFERENCES users(id)")  # who created the account (2026-11-05)
-        _ensure_column(conn, "users", "designation", "TEXT")  # job title, for the owner signature (2026-11-10)
-        _ensure_column(conn, "users", "is_dept_admin", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "users", "can_ddb_attachment", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "users", "can_portal_admin", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "users", "is_deleted", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "users", "deleted_at", "TEXT")
-        _ensure_column(conn, "users", "deleted_by", "INTEGER REFERENCES users(id)")
-        _ensure_column(conn, "users", "bin_purged", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "users", "approval_status", "TEXT NOT NULL DEFAULT 'approved'")
-        _ensure_column(conn, "users", "theme", "TEXT NOT NULL DEFAULT 'auto'")
-        _ensure_column(conn, "users", "warn_days", "INTEGER NOT NULL DEFAULT 3")
-        _ensure_column(conn, "users", "signature_path", "TEXT")  # the user's own signature (PNG, from My settings) for "Use my signature" (2026-11-14)
-        _ensure_column(conn, "columns", "has_time", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "record_shares", "permission", "TEXT NOT NULL DEFAULT 'edit'")   # old shares stay 'edit'
+        _ensure_column(conn, "departments", "attachments_enabled", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "departments", "attachment_max_mb", "INT NOT NULL DEFAULT 10")
+        _ensure_column(conn, "users", "created_by", "INT REFERENCES users(id)")  # who created the account (2026-11-05)
+        _ensure_column(conn, "users", "designation", "VARCHAR(255)")  # job title, for the owner signature (2026-11-10)
+        _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "is_deleted", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "deleted_at", "DATETIME")
+        _ensure_column(conn, "users", "deleted_by", "INT REFERENCES users(id)")
+        _ensure_column(conn, "users", "bin_purged", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "approval_status", "VARCHAR(255) NOT NULL DEFAULT 'approved'")
+        _ensure_column(conn, "users", "theme", "VARCHAR(255) NOT NULL DEFAULT 'auto'")
+        _ensure_column(conn, "users", "warn_days", "INT NOT NULL DEFAULT 3")
+        _ensure_column(conn, "users", "signature_path", "VARCHAR(255)")  # the user's own signature (PNG, from My settings) for "Use my signature" (2026-11-14)
+        _ensure_column(conn, "columns", "has_time", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "record_shares", "permission", "VARCHAR(255) NOT NULL DEFAULT 'edit'")   # old shares stay 'edit'
         _upgrade_repairs_switch(conn)
         _upgrade_public_codes(conn)
         _upgrade_ddb_attachment_type(conn)
@@ -1113,9 +1291,9 @@ def init_db():
         _upgrade_ddb_tabs(conn)
         _upgrade_invoice_tax_tick(conn)
         _upgrade_invoice_header(conn)
-        conn.execute("DROP INDEX IF EXISTS ux_column_reminder")   # several reminder columns are allowed now
-        _ensure_column(conn, "activity_log", "ip", "TEXT")
-        _ensure_column(conn, "attachments", "scan_status", "TEXT")
+        _drop_index(conn, "ux_column_reminder", "columns")   # several reminder columns are allowed now
+        _ensure_column(conn, "activity_log", "ip", "VARCHAR(255)")
+        _ensure_column(conn, "attachments", "scan_status", "VARCHAR(255)")
         _migrate_legacy_equipment(conn)
         if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
             row = conn.execute("SELECT id FROM departments WHERE name=?",
@@ -1147,10 +1325,10 @@ def log(db, action, details="", username=None, ip=None):
 
 
 def setting_get(db, key, default=None):
-    row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    row = db.execute("SELECT value FROM settings WHERE setting_key=?", (key,)).fetchone()
     return row["value"] if row else default
 
 
 def setting_set(db, key, value):
-    db.execute("INSERT INTO settings(key,value) VALUES (?,?) "
-               "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+    db.execute("INSERT INTO settings(setting_key,value) VALUES (?,?) "
+               "ON CONFLICT(setting_key) DO UPDATE SET value=excluded.value", (key, value))

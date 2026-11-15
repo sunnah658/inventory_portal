@@ -7,12 +7,12 @@
 <div class="kp">
   {{ kpi('Tabs', tabs|length) }}
   {{ kpi('Active tabs', tabs|selectattr('removed_at', 'none')|list|length) }}
-  {{ kpi('Rows in all tabs', tabs|sum(attribute='rows')) }}
+  {{ kpi('Rows in all tabs', tabs|sum(attribute='row_count')) }}
 </div>
 <div class="tw">
   <div class="tb"><table><thead><tr><th>Tab</th><th>Template</th><th>Meeting notices</th><th>Rows</th><th></th></tr></thead><tbody>
   {% for tb in tabs %}<tr class="r"><td><b>{{ tb['name'] }}</b>{% if tb['removed_at'] %} <span class="pill">deleted</span>{% endif %}</td>
-    <td>{{ tb['template'] or '—' }}</td><td>{{ 'Yes' if tb['meeting_notify'] else 'No' }}</td><td>{{ tb['rows'] }}</td>
+    <td>{{ tb['template'] or '—' }}</td><td>{{ 'Yes' if tb['meeting_notify'] else 'No' }}</td><td>{{ tb['row_count'] }}</td>
     <td class="actcell">
       {% if not tb['removed_at'] %}
       <a class="b sm" href="{{ url_for('ddb.columns', dept=dept['id'], tab=tb['id']) }}">Columns</a>

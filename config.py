@@ -11,14 +11,32 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ---- Where data is stored -------------------------------------------------
 # In Docker, PORTAL_DATA=/data (a persistent Docker volume). Without Docker the
-# data folder is the project folder.
+# data folder is the project folder. Uploads, branding and backups still live
+# here as files; the database itself lives in MySQL (see below).
 DATA_DIR = os.environ.get("PORTAL_DATA", BASE_DIR)
-DB_PATH = os.environ.get("PORTAL_DB", os.path.join(DATA_DIR, "portal.db"))
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")      # record attachments
 BRAND_DIR = os.path.join(DATA_DIR, "branding")      # logo uploaded from Admin > Settings
-BACKUP_DIR = os.path.join(DATA_DIR, "backups")      # database backups
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")      # database backups (.sql files)
 for _folder in (DATA_DIR, UPLOAD_DIR, BRAND_DIR, BACKUP_DIR):
     os.makedirs(_folder, exist_ok=True)
+
+# ---- The database (MySQL, since build 67) ----------------------------------
+# The portal talks to a MySQL server (the "db" service in docker-compose.yml,
+# or any MySQL 8.0 / MariaDB 10.6+ server). The settings come from the
+# environment; docker-compose sets them from the .env file, falling back to
+# the defaults below. Change the password by setting MYSQL_PASSWORD (and
+# MYSQL_ROOT_PASSWORD for the database container) in your live .env BEFORE
+# the first start — the database user is created with that password on
+# first start, and changing it later does not change the user's password.
+# The database data itself lives in the "mysql_data" Docker volume
+# (mounted at /var/lib/mysql in the db container), so it survives a
+# container rebuild or restart. NEVER run "docker compose down -v": it
+# deletes that volume and the database with it.
+DB_HOST = os.environ.get("DB_HOST", "db")
+DB_PORT = int(os.environ.get("DB_PORT", "3306"))
+DB_USER = os.environ.get("DB_USER", "portal")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "portal-change-me")
+DB_NAME = os.environ.get("DB_NAME", "portal")
 
 # ---- First admin account (created only once, on the very first start) -----
 DEFAULT_ADMIN_USERNAME = "admin"

@@ -122,7 +122,7 @@ def create_department_columns(db, dept_id, template_key, selected=None):
 
 
 def create_department(db, name, template_key=None, selected=None):
-    """Create a department (and its starter columns). Raises sqlite3.IntegrityError if it exists."""
+    """Create a department (and its starter columns). Raises dbapi.IntegrityError if it exists."""
     dept_id = db.execute("INSERT INTO departments(name,repairs_enabled) VALUES (?,?)",
                          (name, 1 if template_key == "IT" else 0)).lastrowid   # only the IT starter has a repair log
     create_department_columns(db, dept_id, template_key, selected)
@@ -670,38 +670,38 @@ def purge_expired(db):
     """Erase records that stayed in the bin too long and trim the old activity log."""
     ids = [r[0] for r in db.execute(
         "SELECT id FROM records WHERE deleted_at IS NOT NULL "
-        "AND deleted_at < datetime('now','localtime',?)", (f"-{config.BIN_DAYS} days",))]
+        "AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)", (config.BIN_DAYS,))]
     for rid in ids:
         purge_record(db, rid)
-    db.execute("DELETE FROM activity_log WHERE created_at < datetime('now','localtime',?)",
-               (f"-{config.ACTIVITY_KEEP_DAYS} days",))
+    db.execute("DELETE FROM activity_log WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+               (config.ACTIVITY_KEEP_DAYS,))
     db.execute("DELETE FROM reminder_sent WHERE sent_on < date('now','localtime','-90 days')")
     db.execute("DELETE FROM signature_reminder_sent WHERE sent_on < date('now','localtime','-90 days')")
     for _rid in [r[0] for r in db.execute(
-            "SELECT id FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
-            (f"-{config.BIN_DAYS} days",))]:
+            "SELECT id FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+            (config.BIN_DAYS,))]:
         purge_ddb_row(db, _rid)
     # Deleted application letters: after 30 days the letter and its uploaded
     # signature are erased for good, the same as a deleted record or row.
     for _aid in [r[0] for r in db.execute(
-            "SELECT id FROM applications WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
-            (f"-{config.BIN_DAYS} days",))]:
+            "SELECT id FROM applications WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+            (config.BIN_DAYS,))]:
         purge_application(db, _aid)
     # Deleted invoices and item requests: after 30 days the invoice or
     # request and its lines and chain signatures are erased for good, the
     # same as a deleted record, row or application letter (build 60).
     for _iid in [r[0] for r in db.execute(
-            "SELECT id FROM invoices WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
-            (f"-{config.BIN_DAYS} days",))]:
+            "SELECT id FROM invoices WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+            (config.BIN_DAYS,))]:
         purge_invoice(db, _iid)
     for _rid in [r[0] for r in db.execute(
-            "SELECT id FROM item_requests WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
-            (f"-{config.BIN_DAYS} days",))]:
+            "SELECT id FROM item_requests WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+            (config.BIN_DAYS,))]:
         purge_request(db, _rid)
     # Deleted users: after 30 days the account AND all his work go, together.
     for _uid in [r[0] for r in db.execute(
             "SELECT id FROM users WHERE is_deleted=1 AND deleted_at IS NOT NULL "
-            "AND deleted_at < datetime('now','localtime',?)", (f"-{config.BIN_DAYS} days",))]:
+            "AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)", (config.BIN_DAYS,))]:
         purge_user_account(db, _uid, delete_work=True)
     db.commit()
     return len(ids)
@@ -1294,9 +1294,9 @@ def parse_code(text):
 def next_code_no(db):
     """The next free number, starting at 0. A number is never given twice, even when a QR
     is turned off or deleted (the counter only goes up)."""
-    db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('hrc_next','0')")
-    db.execute("UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='hrc_next'")   # takes the write lock
-    return int(db.execute("SELECT value FROM settings WHERE key='hrc_next'").fetchone()[0]) - 1
+    db.execute("INSERT OR IGNORE INTO settings(setting_key,value) VALUES ('hrc_next','0')")
+    db.execute("UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE setting_key='hrc_next'")   # takes the write lock
+    return int(db.execute("SELECT value FROM settings WHERE setting_key='hrc_next'").fetchone()[0]) - 1
 
 
 def create_public_link(db, owner_id, kind, fields, full_record=False, title=None):

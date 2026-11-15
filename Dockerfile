@@ -6,9 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORTAL_DATA=/data
 
-# tzdata makes the TZ setting in .env work (correct times in the portal)
+# tzdata makes the TZ setting in .env work (correct times in the portal).
+# default-mysql-client gives backup.py its mysqldump (the database backup).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata \
+    && apt-get install -y --no-install-recommends tzdata default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
