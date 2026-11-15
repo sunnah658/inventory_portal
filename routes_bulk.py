@@ -13,7 +13,7 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 import config
 import exports
 from auth import admin_required, login_required
-from core import (MANAGE_LEVELS, show_when, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, dept_member_ids, get_columns,
+from core import (display_record_value, record_columns, MANAGE_LEVELS, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, dept_member_ids,
                   get_record, notify, rec_select, reminder_rows, search_clause, soft_delete,
                   summaries_for, values_for)
 from models import get_db, log, setting_get
@@ -144,14 +144,14 @@ def record_pdf(rid):
     Edit history and repair log are never part of the PDF."""
     rec, _level = load_record(rid, "view")
     db = get_db()
-    cols = get_columns(db, rec["department_id"])
+    cols = record_columns(db, rec["department_id"], rec["owner_id"])
     chosen = {int(x) for x in request.args.getlist("col") if x.isdigit()}
     if request.args.get("pdf_form"):
         cols = [c for c in cols if c["id"] in chosen]
     elif chosen:
         cols = [c for c in cols if c["id"] in chosen]
     vals = values_for(db, [rid])[rid]
-    details = [[c["name"], show_when(vals[c["id"]]) if c["col_type"] == "date" else vals[c["id"]]]
+    details = [[c["name"], display_record_value(c, vals[c["id"]])]
                for c in cols if vals.get(c["id"])]                      # empty fields are left out
     data = exports.document_pdf(f"{rec['department_name']} record #{rid}",
                                 f"Owner: {rec['owner_name']}",
@@ -226,7 +226,7 @@ def report(name, fmt):
                              "AND r.deleted_at IS NULL WHERE " + scope.replace("r.department_id", "d.id") +
                              " GROUP BY d.id ORDER BY n DESC", sp).fetchall()
         by_status = db.execute("SELECT v.value AS label, COUNT(*) AS n FROM record_values v "
-                               "JOIN columns c ON c.id=v.column_id AND c.removed_at IS NULL AND lower(c.name)='status' "
+                               "JOIN columns c ON c.id=v.column_id AND c.removed_at IS NULL AND c.user_id IS NULL AND lower(c.name)='status' "
                                "JOIN records r ON r.id=v.record_id AND r.deleted_at IS NULL WHERE " + scope +
                                " GROUP BY v.value ORDER BY n DESC", sp).fetchall()
         sheets = [{"title": "By department", "header": ["Department", "Records"], "rows": [[r["name"], r["n"]] for r in by_dept],

@@ -12,7 +12,9 @@ Permission levels (see core.access_level):
   supervisor - department admin of the record's department: view and comment/suggest only
   viewer     - allowed to view another department: view and comment/suggest only
 """
+import json
 import os
+import secrets
 import uuid
 from datetime import date, datetime, timedelta
 
@@ -24,13 +26,13 @@ import config
 from auth import admin_required, login_required
 from utils import is_portal_admin, is_true_admin
 import scanner
-from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_history, ddb_is_tab_admin, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, external_url, first_text_value, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
-                  share_with_user, access_level, add_history, admin_ids, build_csv,
-                  column_names, col_weight, create_record, dept_member_ids, filter_clause, get_columns, get_record,
-                  hidden_mine_columns, set_hidden_mine_columns,
+from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_history, ddb_is_tab_admin, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, display_record_value, external_url, first_text_value, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
+                  share_with_user, access_level, add_history, admin_ids, build_csv, can_use_record_attachments,
+                  column_names, col_weight, create_record, dept_member_ids, filter_clause, get_record,
+                  hidden_mine_columns, set_hidden_mine_columns, record_columns,
                   names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_application, purge_ddb_row, purge_invoice, purge_record, purge_request, purge_user_account, rec_select, reminder_rows,
-                  restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
-                  update_record, values_for, viewable_departments)
+                  restore, search_clause, soft_delete, sort_clause, summaries_for, table_context, USER_COLUMN_TYPES,
+                  update_record, values_for, viewable_departments, USER_TYPE_LABEL)
 from models import get_db, log
 from utils import csv_response, is_portal_admin, like_pattern, page_info
 
@@ -256,7 +258,8 @@ def home():
 def _mine_column_picker(db, user):
     """The columns offered on this user's Mine tab, grouped by department:
     the user's own department plus every department their records sit in.
-    Returns [(dept_id, dept_name, [columns])]."""
+    Each group lists the department's columns first, then the user's own
+    columns for that department (build 61). Returns [(dept_id, dept_name, [columns])]."""
     dept_ids = [user["department_id"]] if user["department_id"] else []
     for (d,) in db.execute("SELECT DISTINCT department_id FROM records WHERE owner_id=? AND deleted_at IS NULL",
                            (user["id"],)):
@@ -265,10 +268,44 @@ def _mine_column_picker(db, user):
     out = []
     for did in dept_ids:
         row = db.execute("SELECT name FROM departments WHERE id=?", (did,)).fetchone()
-        cols = get_columns(db, did)
+        cols = record_columns(db, did, user["id"])
         if cols:
             out.append((did, row["name"] if row else "", cols))
     return out
+
+
+def _own_column(db, cid, user):
+    """One of this user's own columns, or 404 (a department column, another
+    user's column, a removed column and a missing one all look the same)."""
+    col = db.execute("SELECT * FROM columns WHERE id=? AND user_id=? AND removed_at IS NULL",
+                     (cid, user["id"])).fetchone()
+    if col is None:
+        abort(404)
+    return col
+
+
+def _user_column_name_taken(db, dept_id, user_id, name, exclude=None):
+    """Does this department already have a column with this name — a
+    department column, or one of this user's own columns in it? (Two
+    different users may each have a column of the same name; the unique
+    index only stops the same user, or the department, from doubling it.)"""
+    row = db.execute("SELECT id FROM columns WHERE department_id=? AND removed_at IS NULL "
+                     "AND user_id IS NULL AND lower(name)=lower(?)", (dept_id, name)).fetchone()
+    if row:
+        return True
+    row = db.execute("SELECT id FROM columns WHERE department_id=? AND user_id=? AND removed_at IS NULL "
+                     "AND lower(name)=lower(?)", (dept_id, user_id, name)).fetchone()
+    return row is not None and (exclude is None or row["id"] != exclude)
+
+
+def _parse_column_options(text):
+    return "\n".join(o.strip() for o in (text or "").replace("\r", "").split("\n") if o.strip())
+
+
+def _display_values(cols, values):
+    """Values as shown on a form or a detail page: an attachment column
+    shows the file's name, not the stored JSON."""
+    return {c["id"]: display_record_value(c, values.get(c["id"])) for c in cols}
 
 
 def _list_records_view(db, user, args, admin_view=False):
@@ -306,7 +343,14 @@ def _list_records_view(db, user, args, admin_view=False):
     keep = {k: v for k, v in args.items() if k != "page"}
     hidden = hidden_mine_columns(db, user["id"]) if tab == "mine" else None
     picker = _mine_column_picker(db, user) if tab == "mine" and not admin_view else []
-    return render_template("records_list.html", ctx=table_context(db, rows, user, hidden=hidden),
+    # The Mine tab and Shared by me list only this user's own records, so
+    # their own columns belong there too (build 61); every other tab shows
+    # department columns alone. The admin view uses the page owner's
+    # columns, not the viewer's.
+    mine_user_id = user["id"] if tab in ("mine", "shared_by_me") else None
+    can_attach = can_use_record_attachments(g.user)
+    return render_template("records_list.html", ctx=table_context(db, rows, user, hidden=hidden,
+                                                                  mine_user_id=mine_user_id),
                            tab=tab, tabs=tabs, q=q, counts=counts, total=total,
                            page=page, pages=pages, info=info, names=column_names(db, user),
                            keep=keep, admin_view=admin_view, view_user=user,
@@ -314,6 +358,9 @@ def _list_records_view(db, user, args, admin_view=False):
                            bar_hidden=dict(list_args, tab=tab),
                            admin_next=url_for(list_endpoint, tab=tab, **list_args) if admin_view else "",
                            picker=picker, hidden=hidden or set(),
+                           can_attach=can_attach,
+                           col_types=[t for t in USER_COLUMN_TYPES if t[0] != "attachment" or can_attach],
+                           type_label=USER_TYPE_LABEL,
                            departments=[] if admin_view else db.execute("SELECT id, name FROM departments ORDER BY name").fetchall())
 
 
@@ -344,6 +391,215 @@ def save_mine_columns():
     db.commit()
     flash("Your Mine tab columns are saved.", "ok")
     return redirect(url_for("records.list_records", tab="mine"))
+
+
+# ---------------------------------------------------------------- my own columns (build 61)
+# A user adds columns to their OWN Mine tab, inside the Columns box:
+# name, type, dropdown options, required — the same fields the portal
+# admin fills in Departments → record columns, minus reminder/time (those
+# stay admin columns). The column shows only on that user's Mine tab
+# (and in the admin's Users' records view of them), never on anyone
+# else's page, and it is never a department column.
+@bp.route("/records/columns/add", methods=["POST"])
+@login_required
+def add_mine_column():
+    db = get_db()
+    dept = g.user["department_id"]
+    if not dept:
+        flash("You have no department yet, so you cannot add a column.", "error")
+        return redirect(url_for("records.list_records", tab="mine"))
+    name = " ".join((request.form.get("name") or "").split())[:60]
+    ctype = request.form.get("col_type", "")
+    options = _parse_column_options(request.form.get("options"))
+    can_attach = can_use_record_attachments(g.user)
+    allowed = [k for k, _label in USER_COLUMN_TYPES if k != "attachment" or can_attach]
+    error = None
+    if not name:
+        error = "Type a column name."
+    elif ctype not in allowed:
+        error = ("Choose a column type." if ctype != "attachment"
+                 else "Only users given attachment access can add an Attachment column.")
+    elif ctype == "dropdown" and not options:
+        error = "A dropdown column needs at least one option (one per line)."
+    elif _user_column_name_taken(db, dept, g.user["id"], name):
+        error = f"There is already a column named '{name}'."
+    if error:
+        flash(error, "error")
+        return redirect(url_for("records.list_records", tab="mine"))
+    pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM columns "
+                     "WHERE department_id=? AND user_id=? AND removed_at IS NULL",
+                     (dept, g.user["id"])).fetchone()[0]
+    try:
+        db.execute("INSERT INTO columns(department_id,user_id,name,col_type,options,required,position) "
+                   "VALUES (?,?,?,?,?,?,?)",
+                   (dept, g.user["id"], name, ctype, options or None,
+                    1 if request.form.get("required") else 0, pos))
+        log(db, "user_column_add", f"user {g.user['id']}: {name}")
+        db.commit()
+        flash(f"Column '{name}' added to your Mine tab.", "ok")
+    except Exception:
+        db.rollback()
+        flash(f"There is already a column named '{name}'.", "error")
+    return redirect(url_for("records.list_records", tab="mine"))
+
+
+@bp.route("/records/columns/<int:cid>/edit", methods=["POST"])
+@login_required
+def edit_mine_column(cid):
+    """Rename one of my own columns, change its dropdown options or its
+    required tick. The type never changes, and nobody else's column —
+    department or another user's — can be touched here."""
+    db = get_db()
+    col = _own_column(db, cid, g.user)
+    name = " ".join((request.form.get("name") or "").split())[:60]
+    options = _parse_column_options(request.form.get("options")) if col["col_type"] == "dropdown" else None
+    if not name:
+        flash("Type a column name.", "error")
+    elif col["col_type"] == "dropdown" and not options:
+        flash("A dropdown column needs at least one option.", "error")
+    elif _user_column_name_taken(db, col["department_id"], g.user["id"], name, exclude=cid):
+        flash(f"There is already a column named '{name}'.", "error")
+    else:
+        db.execute("UPDATE columns SET name=?, options=?, required=? WHERE id=?",
+                   (name, options, 1 if request.form.get("required") else 0, cid))
+        log(db, "user_column_edit", f"user {g.user['id']}: {col['name']} -> {name}")
+        db.commit()
+        flash("Column saved.", "ok")
+    return redirect(url_for("records.list_records", tab="mine"))
+
+
+@bp.route("/records/columns/<int:cid>/move", methods=["POST"])
+@login_required
+def move_mine_column(cid):
+    """Move one of my own columns up or down among my own columns."""
+    db = get_db()
+    col = _own_column(db, cid, g.user)
+    ids = [r["id"] for r in db.execute("SELECT id FROM columns WHERE department_id=? AND user_id=? "
+                                       "AND removed_at IS NULL ORDER BY position, id",
+                                       (col["department_id"], g.user["id"]))]
+    i = ids.index(cid)
+    j = i - 1 if request.form.get("dir") == "up" else i + 1
+    if 0 <= j < len(ids):
+        ids[i], ids[j] = ids[j], ids[i]
+        for pos, one in enumerate(ids):
+            db.execute("UPDATE columns SET position=? WHERE id=?", (pos, one))
+        db.commit()
+    return redirect(url_for("records.list_records", tab="mine"))
+
+
+@bp.route("/records/columns/<int:cid>/remove", methods=["POST"])
+@login_required
+def remove_mine_column(cid):
+    """Hide one of my own columns. Its values stay in the database, like a
+    removed department column — nothing is lost."""
+    db = get_db()
+    col = _own_column(db, cid, g.user)
+    db.execute("UPDATE columns SET removed_at=datetime('now','localtime') WHERE id=?", (cid,))
+    log(db, "user_column_remove", f"user {g.user['id']}: {col['name']}")
+    db.commit()
+    flash(f"Column '{col['name']}' removed from your Mine tab. Its data is kept.", "ok")
+    return redirect(url_for("records.list_records", tab="mine"))
+
+
+# ---------------------------------------------------------------- my records' attachment files (build 61)
+def _record_file_path(stored):
+    return os.path.join(config.UPLOAD_DIR, "record_attachments", stored)
+
+
+def _save_record_file(file_storage, dept):
+    """Save one uploaded file for a record attachment column, the same way
+    Department Database attachments are saved (allowed type, virus scan,
+    size limit). Returns (json value, error)."""
+    if not file_storage or not file_storage.filename:
+        return None, None
+    original = file_storage.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1][:200]
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in config.ALLOWED_EXTENSIONS:
+        return None, f"File type '.{ext}' is not allowed for attachments."
+    if scanner.enabled():
+        verdict, detail = scanner.scan_stream(file_storage.stream)
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+        if verdict != "clean":
+            return None, f"'{original}' could not be scanned, so it was not uploaded. Tell the admin ({detail})."
+    folder = os.path.join(config.UPLOAD_DIR, "record_attachments")
+    os.makedirs(folder, exist_ok=True)
+    stored = secrets.token_hex(10) + "." + ext
+    file_storage.save(os.path.join(folder, stored))
+    limit = min(int(dept["attachment_max_mb"] or 10), config.MAX_UPLOAD_MB) * 1024 * 1024
+    if os.path.getsize(os.path.join(folder, stored)) > limit:
+        os.remove(os.path.join(folder, stored))
+        return None, f"'{original}' is too large (max {limit // 1024 // 1024} MB)."
+    return json.dumps({"stored": stored, "original": original}), None
+
+
+def _handle_record_files(dept, cols, values, existing):
+    """Uploads, keeps and removals for attachment columns on a record form
+    (mirrors the Department Database handling). Returns (errors, saved, to_delete)."""
+    errors, saved, to_delete = [], [], []
+    for c in cols:
+        if c["col_type"] != "attachment":
+            continue
+        cid = c["id"]
+        if request.form.get(f"remove_c{cid}"):
+            old = ddb_attachment_info(existing.get(cid))
+            if old:
+                to_delete.append(old["stored"])
+            values[cid] = None
+            continue
+        file_storage = request.files.get(f"c{cid}_file")
+        if file_storage and file_storage.filename:
+            if not can_use_record_attachments(g.user):
+                errors.append(f"'{c['name']}': only users given attachment access can upload a file.")
+                values[cid] = existing.get(cid)
+                continue
+            val, err = _save_record_file(file_storage, dept)
+            if err:
+                errors.append(err)
+            else:
+                old = ddb_attachment_info(existing.get(cid))
+                if old:
+                    to_delete.append(old["stored"])
+                info = ddb_attachment_info(val)
+                if info:
+                    saved.append(info["stored"])
+                values[cid] = val
+        else:
+            values[cid] = existing.get(cid)
+        if c["required"] and not values[cid]:
+            errors.append(f"{c['name']} is required.")
+    return errors, saved, to_delete
+
+
+def _delete_record_files(stored_list):
+    for s in stored_list:
+        try:
+            os.remove(_record_file_path(s))
+        except OSError:
+            pass
+
+
+@bp.route("/records/<int:rid>/attachment/<int:cid>")
+@login_required
+def download_record_attachment(rid, cid):
+    """Download the file in one of a record's attachment columns."""
+    rec, _level = _load(rid, "view")
+    db = get_db()
+    col = db.execute("SELECT * FROM columns WHERE id=? AND department_id=? AND removed_at IS NULL "
+                     "AND (user_id IS NULL OR user_id=?)",
+                     (cid, rec["department_id"], rec["owner_id"])).fetchone()
+    if col is None or col["col_type"] != "attachment":
+        abort(404)
+    vals = values_for(db, [rid])[rid]
+    info = ddb_attachment_info(vals.get(cid))
+    if info is None:
+        abort(404)
+    path = _record_file_path(info["stored"])
+    if not os.path.exists(path):
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=info["original"])
 
 
 @bp.route("/records/download")
@@ -383,16 +639,20 @@ def _form_page(rec, cols, values, version=None, conflict=None):
 def new_record():
     db = get_db()
     dept = g.user["department_id"]
-    cols = get_columns(db, dept)
+    cols = record_columns(db, dept, g.user["id"])
     if not cols:
         flash("Your department has no record columns yet. Ask the admin to add them.", "error")
         return redirect(url_for("records.list_records"))
     if request.method == "POST":
         values, errors = parse_form(cols, request.form)
+        dept_row = db.execute("SELECT * FROM departments WHERE id=?", (dept,)).fetchone()
+        ferr, saved, _td = _handle_record_files(dept_row, cols, values, {})
+        errors += ferr
         if errors:
+            _delete_record_files(saved)
             for e in errors:
                 flash(e, "error")
-            return _form_page(None, cols, values)
+            return _form_page(None, cols, _display_values(cols, values))
         rid = create_record(db, g.user, dept, values)
         log(db, "record_add", f"record {rid}")
         db.commit()
@@ -406,38 +666,45 @@ def new_record():
 def edit_record(rid):
     rec, _level = _load(rid, "edit")
     db = get_db()
-    cols = get_columns(db, rec["department_id"])
+    cols = record_columns(db, rec["department_id"], rec["owner_id"])
     old = values_for(db, [rid])[rid]
     if request.method == "POST":
         values, errors = parse_form(cols, request.form, old)
+        dept_row = db.execute("SELECT * FROM departments WHERE id=?", (rec["department_id"],)).fetchone()
+        ferr, saved, to_delete = _handle_record_files(dept_row, cols, values, old)
+        errors += ferr
         version = request.form.get("version", type=int) or 0
         if errors:
+            _delete_record_files(saved)
             for e in errors:
                 flash(e, "error")
-            return _form_page(rec, cols, values, version)
+            return _form_page(rec, cols, _display_values(cols, values), version)
         result = update_record(db, g.user, rec, cols, values, version)
         if result == "conflict":
             # Somebody saved first. Nothing is overwritten: show the latest values and
             # keep the person's own entries visible so they can apply them again.
+            _delete_record_files(saved)
             fresh = get_record(db, rid)
             latest = values_for(db, [rid])[rid]
             last = db.execute("SELECT full_name, at FROM record_history WHERE record_id=? "
                               "ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
-            mine = [(c["name"], values[c["id"]] or "") for c in cols
+            mine = [(c["name"], display_record_value(c, values[c["id"]]) or "") for c in cols
                     if (values[c["id"]] or None) != (latest.get(c["id"]) or None)]
             flash("This record was changed by someone else while you were editing. "
                   "Your changes were NOT saved.", "error")
-            return _form_page(fresh, cols, latest, fresh["version"],
+            return _form_page(fresh, cols, _display_values(cols, latest), fresh["version"],
                               {"by": last["full_name"] if last else "Someone",
                                "at": last["at"] if last else "", "mine": mine})
         if result == "nochange":
+            _delete_record_files(saved)
             flash("There was nothing to change.", "ok")
         else:
+            _delete_record_files(to_delete)
             log(db, "record_edit", f"record {rid}")
             db.commit()
             flash("Changes saved.", "ok")
         return redirect(url_for("records.detail", rid=rid))
-    return _form_page(rec, cols, old, rec["version"])
+    return _form_page(rec, cols, _display_values(cols, old), rec["version"])
 
 
 @bp.route("/records/<int:rid>/delete", methods=["POST"])
@@ -470,8 +737,13 @@ def delete_record(rid):
 def detail(rid):
     rec, level = _load(rid, "view")
     db = get_db()
-    cols = get_columns(db, rec["department_id"])
-    vals = values_for(db, [rid])[rid]
+    cols = record_columns(db, rec["department_id"], rec["owner_id"])
+    raw_vals = values_for(db, [rid])[rid]
+    vals = _display_values(cols, raw_vals)
+    urls = {}
+    for c in cols:
+        if c["col_type"] == "attachment" and ddb_attachment_info(raw_vals.get(c["id"])):
+            urls[c["id"]] = url_for("records.download_record_attachment", rid=rid, cid=c["id"])
     link = db.execute("SELECT pl.* FROM public_links pl JOIN public_link_records plr ON plr.link_id=pl.id "
                       "WHERE plr.record_id=? AND pl.kind='single'", (rid,)).fetchone()
     public_url = public_svg = public_code = None
@@ -482,7 +754,7 @@ def detail(rid):
     can_manage = level in MANAGE_LEVELS
     can_owner = may_change_owner(g.user, rec) and not rec["deleted_at"]
     return render_template(
-        "record_detail.html", rec=rec, level=level, cols=cols, vals=vals,
+        "record_detail.html", rec=rec, level=level, cols=cols, vals=vals, urls=urls,
         can_edit=level in EDIT_LEVELS and not rec["deleted_at"], can_manage=can_manage,
         history=db.execute("SELECT * FROM record_history WHERE record_id=? ORDER BY id DESC LIMIT 100",
                            (rid,)).fetchall(),

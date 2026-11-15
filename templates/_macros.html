@@ -35,7 +35,7 @@
     {% for r in grp.rows %}{% set vals = ctx.vmap[r.id] %}{% set lvl = ctx.levels.get(r.id) %}
     <tr class="r">
       {% if bulk %}<td class="chk"><input type="checkbox" class="rowck" name="ids" value="{{ r.id }}" form="bulkform" aria-label="Select"></td>{% endif %}
-      {% for c in showcols %}<td{% if sel and loop.index > 7 %} class="xcol"{% endif %}>{{ cell(c, vals.get(c.id)) }}</td>{% endfor %}
+      {% for c in showcols %}<td{% if sel and loop.index > 7 %} class="xcol"{% endif %}>{% set _u = ctx.urls.get(r.id, {}).get(c.id) if ctx.urls is defined else None %}{% if _u %}<a href="{{ _u }}">{{ cell(c, vals.get(c.id)) }}</a>{% else %}{{ cell(c, vals.get(c.id)) }}{% endif %}</td>{% endfor %}
       <td>{% if mode == 'shared' %}<span class="{{ user_name_class(r) }}">{{ r.owner_name }}</span>{% else %}{% for n in ctx.shares[r.id] %}<span class="dp">{{ n }}</span>{% endfor %}{% endif %}</td>
       <td class="actcell noprint">
         <a class="b sm" href="{{ url_for('records.detail', rid=r.id) }}">Open</a>

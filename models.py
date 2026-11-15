@@ -58,9 +58,10 @@ CREATE TABLE IF NOT EXISTS user_view_departments (
 CREATE TABLE IF NOT EXISTS columns (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    user_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,   -- set = this user's own Mine-tab column (build 61); NULL = a department column
     name          TEXT NOT NULL,
     col_type      TEXT NOT NULL CHECK (col_type IN
-                  ('text','longtext','number','date','dropdown','yesno')),
+                  ('text','longtext','number','date','dropdown','yesno','attachment')),
     options       TEXT,                 -- dropdown choices, one per line
     required      INTEGER NOT NULL DEFAULT 0,
     shown         INTEGER NOT NULL DEFAULT 1,
@@ -72,7 +73,11 @@ CREATE TABLE IF NOT EXISTS columns (
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_column_name
-    ON columns(department_id, name COLLATE NOCASE) WHERE removed_at IS NULL;
+    ON columns(department_id, name COLLATE NOCASE) WHERE removed_at IS NULL AND user_id IS NULL;
+-- ux_user_column_name (one user, one department, one name) is created by
+-- _upgrade_columns_user_columns in init_db, not here: an index in SCHEMA
+-- that names the user_id column would crash startup on an older database
+-- that does not have the column yet (the build-45 lesson).
 
 -- A record belongs to the department of the person who created it.
 CREATE TABLE IF NOT EXISTS records (
@@ -788,6 +793,10 @@ def _upgrade_ddb_attachment_type(conn):
     row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='ddb_columns'").fetchone()
     if row is None or "'attachment'" in (row[0] or ""):
         return
+    # Commit first: PRAGMA foreign_keys is a no-op inside an open
+    # transaction (see _upgrade_columns_user_columns) — without it, the
+    # DROP TABLE below would cascade-delete every department-database value.
+    conn.commit()
     conn.execute("PRAGMA foreign_keys=OFF")
     try:
         _has_tab = any(r[1] == "tab_id" for r in conn.execute("PRAGMA table_info(ddb_columns)"))
@@ -808,6 +817,50 @@ def _upgrade_ddb_attachment_type(conn):
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_ddb_column_name ON ddb_columns(department_id, tab_id, name COLLATE NOCASE) WHERE removed_at IS NULL")
     finally:
         conn.execute("PRAGMA foreign_keys=ON")
+
+
+def _upgrade_columns_user_columns(conn):
+    """Old columns tables have no user_id and a CHECK(col_type IN (...))
+    without 'attachment' (build 61: users add their own Mine-tab columns,
+    including an Attachment type). Recreate the table with the user_id
+    column, the wider CHECK and the per-user unique index, keeping all
+    rows and the old department-column unique index's meaning (it now
+    covers department columns only). Dropping the table also drops the
+    old ux_column_name index, which is recreated below. Both indexes are
+    ensured at the end either way: a fresh database gets ux_column_name
+    from SCHEMA but not ux_user_column_name, which lives here."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='columns'").fetchone()
+    if row is None:
+        return
+    have_user = any(r[1] == "user_id" for r in conn.execute("PRAGMA table_info(columns)"))
+    if not (have_user and "'attachment'" in (row[0] or "")):
+        # Commit first: PRAGMA foreign_keys is a no-op inside an open
+        # transaction, and init_db has one open by now (the seed inserts).
+        # Without the commit, DROP TABLE below would cascade-delete every
+        # record value and Mine-tab column choice through the
+        # ON DELETE CASCADE foreign keys.
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            conn.execute("CREATE TABLE columns_new ("
+                         "id INTEGER PRIMARY KEY AUTOINCREMENT, department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE, "
+                         "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, "
+                         "name TEXT NOT NULL, col_type TEXT NOT NULL CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment')), "
+                         "options TEXT, required INTEGER NOT NULL DEFAULT 0, shown INTEGER NOT NULL DEFAULT 1, position INTEGER NOT NULL DEFAULT 0, "
+                         "protected INTEGER NOT NULL DEFAULT 0, is_reminder INTEGER NOT NULL DEFAULT 0, has_time INTEGER NOT NULL DEFAULT 0, "
+                         "removed_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))")
+            if have_user:
+                conn.execute("INSERT INTO columns_new(id,department_id,user_id,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at) "
+                             "SELECT id,department_id,user_id,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at FROM columns")
+            else:
+                conn.execute("INSERT INTO columns_new(id,department_id,user_id,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at) "
+                             "SELECT id,department_id,NULL,name,col_type,options,required,shown,position,protected,is_reminder,has_time,removed_at,created_at FROM columns")
+            conn.execute("DROP TABLE columns")
+            conn.execute("ALTER TABLE columns_new RENAME TO columns")
+        finally:
+            conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_column_name ON columns(department_id, name COLLATE NOCASE) WHERE removed_at IS NULL AND user_id IS NULL")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_column_name ON columns(user_id, department_id, name COLLATE NOCASE) WHERE removed_at IS NULL AND user_id IS NOT NULL")
 
 
 def _upgrade_invoice_tax_tick(conn):
@@ -1046,6 +1099,7 @@ def init_db():
         _upgrade_repairs_switch(conn)
         _upgrade_public_codes(conn)
         _upgrade_ddb_attachment_type(conn)
+        _upgrade_columns_user_columns(conn)
         _upgrade_ddb_tabs(conn)
         _upgrade_invoice_tax_tick(conn)
         _upgrade_invoice_header(conn)

@@ -85,7 +85,7 @@ def dashboard():
                          "ORDER BY n DESC, d.name").fetchall()
     status = db.execute(
         "SELECT v.value AS label, COUNT(*) AS n FROM record_values v "
-        "JOIN columns c ON c.id=v.column_id AND c.removed_at IS NULL AND lower(c.name)='status' "
+        "JOIN columns c ON c.id=v.column_id AND c.removed_at IS NULL AND c.user_id IS NULL AND lower(c.name)='status' "
         "JOIN records r ON r.id=v.record_id AND r.deleted_at IS NULL "
         "GROUP BY v.value ORDER BY n DESC LIMIT 6").fetchall()
     total_status = sum(s["n"] for s in status)
@@ -436,27 +436,39 @@ def user_reset(user_id):
     return redirect(url_for("admin.users"))
 
 
-# ================================================================ deptdb attachment access (portal admin only)
-@bp.route("/ddb-attachment-access", methods=["GET", "POST"])
+# ================================================================ user attachment access (portal admin + permission users)
+# (build 61) Was "Department DB attachment access" and listed dept admins
+# only; now "User Attachment Access" and lists every user. Ticking a user
+# lets them add an Attachment column to their own Mine tab and upload a
+# file into it. The same tick still lets a dept admin create attachment
+# columns in the Department Database — that rule is unchanged.
+@bp.route("/user-attachment-access", methods=["GET", "POST"])
 @admin_required
-def ddb_attachment_access():
-    """Portal admin gives (or removes) attachment-column access for dept admins."""
+def user_attachment_access():
+    """Portal admin / permission user gives (or removes) attachment access for users."""
     db = get_db()
     if request.method == "POST":
-        rows = db.execute("SELECT id FROM users WHERE is_dept_admin=1 AND is_active=1").fetchall()
+        rows = db.execute("SELECT id FROM users WHERE is_active=1 AND is_deleted=0").fetchall()
         for r in rows:
             db.execute("UPDATE users SET can_ddb_attachment=? WHERE id=?",
                        (1 if request.form.get(f"allow_{r['id']}") else 0, r["id"]))
-        log(db, "ddb_attachment_access", "portal admin updated dept-admin attachment access")
+        log(db, "user_attachment_access", "portal admin updated user attachment access")
         notify_admin_task(db, g.user,
-                          f"{g.user['full_name']} changed the Department Database attachment access list.",
-                          url_for("admin.ddb_attachment_access"))
+                          f"{g.user['full_name']} changed the User Attachment Access list.",
+                          url_for("admin.user_attachment_access"))
         db.commit()
-        flash("Attachment-column access saved.", "ok")
-        return redirect(url_for("admin.ddb_attachment_access"))
+        flash("Attachment access saved.", "ok")
+        return redirect(url_for("admin.user_attachment_access"))
     rows = db.execute("SELECT u.*, d.name AS department_name FROM users u LEFT JOIN departments d ON d.id=u.department_id "
-                      "WHERE u.is_dept_admin=1 AND u.is_active=1 ORDER BY d.name, u.full_name").fetchall()
-    return render_template("admin_ddb_attachment.html", rows=rows)
+                      "WHERE u.is_active=1 AND u.is_deleted=0 ORDER BY d.name, u.full_name").fetchall()
+    return render_template("admin_user_attachment.html", rows=rows)
+
+
+@bp.route("/ddb-attachment-access")
+@admin_required
+def ddb_attachment_access():
+    """Old address of the attachment access page — send it to the new name."""
+    return redirect(url_for("admin.user_attachment_access"))
 
 
 # ================================================================ departments
@@ -489,7 +501,7 @@ def departments():
     rows = db.execute(
         "SELECT d.id, d.name, (SELECT COUNT(*) FROM users u WHERE u.department_id=d.id) AS user_count, "
         "(SELECT COUNT(*) FROM records r WHERE r.department_id=d.id AND r.deleted_at IS NULL) AS item_count, "
-        "(SELECT COUNT(*) FROM columns c WHERE c.department_id=d.id AND c.removed_at IS NULL) AS col_count "
+        "(SELECT COUNT(*) FROM columns c WHERE c.department_id=d.id AND c.removed_at IS NULL AND c.user_id IS NULL) AS col_count "
         "FROM departments d ORDER BY d.name").fetchall()
     return render_template("admin_departments.html", rows=rows, templates=TEMPLATES,
                            template=template if template in TEMPLATES else "")
@@ -562,7 +574,9 @@ def department_attachments(did):
 
 # ================================================================ record columns
 def _column(cid):
-    col = get_db().execute("SELECT * FROM columns WHERE id=?", (cid,)).fetchone()
+    # Department columns only: a user's own Mine-tab column (build 61) is
+    # never managed from here — it 404s like a missing column.
+    col = get_db().execute("SELECT * FROM columns WHERE id=? AND user_id IS NULL", (cid,)).fetchone()
     if col is None:
         abort(404)
     return col
@@ -580,9 +594,10 @@ def columns(did):
     if dept is None:
         abort(404)
     cols = db.execute("SELECT c.*, (SELECT COUNT(*) FROM record_values v WHERE v.column_id=c.id) AS used "
-                      "FROM columns c WHERE c.department_id=? AND c.removed_at IS NULL "
+                      "FROM columns c WHERE c.department_id=? AND c.removed_at IS NULL AND c.user_id IS NULL "
                       "ORDER BY c.position, c.id", (did,)).fetchall()
-    removed = db.execute("SELECT COUNT(*) FROM columns WHERE department_id=? AND removed_at IS NOT NULL",
+    removed = db.execute("SELECT COUNT(*) FROM columns WHERE department_id=? AND removed_at IS NOT NULL "
+                         "AND user_id IS NULL",
                          (did,)).fetchone()[0]
     return render_template("admin_columns.html", dept=dept, cols=cols, removed=removed,
                            types=COLUMN_TYPES, type_label=TYPE_LABEL, server_max=config.MAX_UPLOAD_MB)
@@ -609,7 +624,7 @@ def column_add(did):
     if error:
         flash(error, "error")
         return redirect(url_for("admin.columns", did=did))
-    pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM columns WHERE department_id=?", (did,)).fetchone()[0]
+    pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM columns WHERE department_id=? AND user_id IS NULL", (did,)).fetchone()[0]
     try:
         db.execute("INSERT INTO columns(department_id,name,col_type,options,required,protected,"
                    "is_reminder,has_time,position) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -672,7 +687,7 @@ def column_edit(cid):
 def column_move(cid):
     col = _column(cid)
     db = get_db()
-    ids = [r["id"] for r in db.execute("SELECT id FROM columns WHERE department_id=? AND removed_at IS NULL "
+    ids = [r["id"] for r in db.execute("SELECT id FROM columns WHERE department_id=? AND removed_at IS NULL AND user_id IS NULL "
                                        "ORDER BY position, id", (col["department_id"],))]
     i = ids.index(cid)
     j = i - 1 if request.form.get("dir") == "up" else i + 1
@@ -738,7 +753,7 @@ def removed_columns(did):
     if dept is None:
         abort(404)
     cols = db.execute("SELECT c.*, (SELECT COUNT(*) FROM record_values v WHERE v.column_id=c.id) AS used "
-                      "FROM columns c WHERE c.department_id=? AND c.removed_at IS NOT NULL "
+                      "FROM columns c WHERE c.department_id=? AND c.removed_at IS NOT NULL AND c.user_id IS NULL "
                       "ORDER BY c.removed_at DESC", (did,)).fetchall()
     return render_template("admin_removed_columns.html", dept=dept, cols=cols, type_label=TYPE_LABEL)
 

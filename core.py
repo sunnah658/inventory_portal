@@ -22,9 +22,14 @@ from utils import is_portal_admin, is_true_admin, like_pattern
 COLUMN_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                 ("date", "Date"), ("dropdown", "Dropdown list"), ("yesno", "Yes / No")]
 TYPE_LABEL = dict(COLUMN_TYPES)
-# Department-database columns only: attachment is NOT a record column type.
+# Department-database columns: attachment is a type there. For personal
+# records, 'attachment' is a type only on a user's OWN columns (build 61);
+# a department column is never an attachment column.
 DDB_COLUMN_TYPES = COLUMN_TYPES + [("attachment", "Attachment (file)")]
 DDB_TYPE_LABEL = dict(DDB_COLUMN_TYPES)
+# What a user may pick when adding a column of their own (build 61).
+USER_COLUMN_TYPES = COLUMN_TYPES + [("attachment", "Attachment (file)")]
+USER_TYPE_LABEL = dict(USER_COLUMN_TYPES)
 
 
 # ---------------------------------------------------------------- columns
@@ -41,11 +46,59 @@ def print_col_widths(weights):
 
 
 def get_columns(db, dept_id, only_shown=True):
-    """Active (not removed) columns of a department, in display order."""
-    sql = "SELECT * FROM columns WHERE department_id=? AND removed_at IS NULL"
+    """Active (not removed) DEPARTMENT columns of a department, in display
+    order. A user's own columns are never in here — see get_user_columns."""
+    sql = "SELECT * FROM columns WHERE department_id=? AND removed_at IS NULL AND user_id IS NULL"
     if only_shown:
         sql += " AND shown=1"
     return db.execute(sql + " ORDER BY position, id", (dept_id,)).fetchall()
+
+
+def get_user_columns(db, user_id, dept_id, only_shown=True):
+    """Active (not removed) columns one user added for their own Mine tab
+    in this department (build 61), in display order."""
+    sql = "SELECT * FROM columns WHERE department_id=? AND user_id=? AND removed_at IS NULL"
+    if only_shown:
+        sql += " AND shown=1"
+    return db.execute(sql + " ORDER BY position, id", (dept_id, user_id)).fetchall()
+
+
+def record_columns(db, dept_id, owner_id=None):
+    """Every column a record in this department is shown with: the
+    department's columns first, then the record owner's own columns
+    (build 61). With no owner, just the department's columns."""
+    cols = list(get_columns(db, dept_id))
+    if owner_id:
+        cols.extend(get_user_columns(db, owner_id, dept_id))
+    return cols
+
+
+def display_record_value(col, value):
+    """What to show for one record value: an attachment column shows the
+    file's name, not the stored JSON; a date shows its time too."""
+    if not value:
+        return value or ""
+    if col["col_type"] == "attachment":
+        info = ddb_attachment_info(value)
+        return info["original"] if info else ""
+    if col["col_type"] == "date":
+        return show_when(value)
+    return value
+
+
+def can_use_record_attachments(user):
+    """May this user add an Attachment column to their own Mine tab and
+    upload files into it (build 61)? The portal admin always can; anyone
+    else only when the portal admin or a permission user ticked them on
+    the User Attachment Access page (users.can_ddb_attachment)."""
+    if user is None:
+        return False
+    if is_portal_admin(user):
+        return True
+    try:
+        return bool(user["can_ddb_attachment"])
+    except Exception:
+        return False
 
 
 def options_of(col):
@@ -211,17 +264,22 @@ def summary_of(columns, vals, n=2):
     return " · ".join(parts[:n]) or "(empty record)"
 
 
-def table_context(db, rows, user=None, hidden=None):
+def table_context(db, rows, user=None, hidden=None, mine_user_id=None):
     """Group records by department so each group is shown with its own columns.
     hidden is an optional set of column ids to leave out of every group (a
     user's own Mine-tab choice, build 60) — the print widths are computed
-    from the columns that remain, so they stay in step with the table."""
+    from the columns that remain, so they stay in step with the table.
+    mine_user_id (build 61): when set, each group also shows that user's
+    own columns for the department — the Mine tab and Shared by me only;
+    every other list shows department columns alone. Attachment values
+    are shown as the file name, with a download link in urls."""
+    from flask import url_for
     ids = [r["id"] for r in rows]
     cols, groups, index = {}, [], {}
     for r in rows:
         d = r["department_id"]
         if d not in cols:
-            cols[d] = get_columns(db, d)
+            cols[d] = record_columns(db, d, mine_user_id)
             if hidden:
                 cols[d] = [c for c in cols[d] if c["id"] not in hidden]
         if d not in index:
@@ -233,7 +291,21 @@ def table_context(db, rows, user=None, hidden=None):
                            "widths": print_col_widths(
                                [col_weight(c["col_type"]) for c in cols[d]] + [1.0])})
         groups[index[d]]["rows"].append(r)
-    return {"groups": groups, "vmap": values_for(db, ids), "shares": shares_for(db, ids),
+    vmap = values_for(db, ids)
+    urls = {rid: {} for rid in ids}
+    for grp in groups:
+        for c in grp["columns"]:
+            if c["col_type"] != "attachment":
+                continue
+            for r in grp["rows"]:
+                info = ddb_attachment_info(vmap[r["id"]].get(c["id"]))
+                if info:
+                    vmap[r["id"]][c["id"]] = info["original"]
+                    urls[r["id"]][c["id"]] = url_for("records.download_record_attachment",
+                                                     rid=r["id"], cid=c["id"])
+                else:
+                    vmap[r["id"]][c["id"]] = ""
+    return {"groups": groups, "vmap": vmap, "urls": urls, "shares": shares_for(db, ids),
             "multi": len(groups) > 1,
             "levels": {r["id"]: access_level(db, user, r) for r in rows} if user else {}}
 
@@ -349,7 +421,8 @@ def update_record(db, user, rec, columns, new_values, version):
             db.execute("INSERT INTO record_values(record_id,column_id,value) VALUES (?,?,?) "
                        "ON CONFLICT(record_id,column_id) DO UPDATE SET value=excluded.value",
                        (rec["id"], col["id"], after))
-        add_history(db, rec["id"], user, "edit", col["name"], before, after)
+        add_history(db, rec["id"], user, "edit", col["name"],
+                    display_record_value(col, before), display_record_value(col, after))
     return "ok"
 
 
@@ -366,9 +439,25 @@ def restore(db, user, rec):
     add_history(db, rec["id"], user, "restored")
 
 
+def _record_attachment_files(db, rid):
+    """Stored attachment file names of one record's own-column files (build 61)."""
+    out = []
+    for _v in db.execute("SELECT v.value FROM record_values v JOIN columns c ON c.id=v.column_id "
+                         "WHERE v.record_id=? AND c.col_type='attachment'", (rid,)):
+        info = ddb_attachment_info(_v[0] or "")
+        if info and info.get("stored"):
+            out.append(info["stored"])
+    return out
+
+
 def purge_record(db, rid):
     """Erase a record for good, including its attachment files."""
     shutil.rmtree(os.path.join(config.UPLOAD_DIR, str(rid)), ignore_errors=True)
+    for stored in _record_attachment_files(db, rid):
+        try:
+            os.remove(os.path.join(config.UPLOAD_DIR, "record_attachments", stored))
+        except OSError:
+            pass
     db.execute("DELETE FROM records WHERE id=?", (rid,))      # children are deleted by CASCADE
 
 
@@ -581,23 +670,29 @@ def build_table(db, rows, with_owner):
     """(header, rows, kinds) for CSV, Excel and PDF. Columns with the same name share one
     output column. kinds tells which output columns hold numbers."""
     vals = values_for(db, [r["id"] for r in rows])
-    dept_cols, names, seen, numeric = {}, [], set(), {}
+    dept_cols, names, seen, numeric, depts_seen = {}, [], set(), {}, set()
     for r in rows:
         d = r["department_id"]
-        if d not in dept_cols:
-            dept_cols[d] = get_columns(db, d)
-            for c in dept_cols[d]:
-                key = c["name"].lower()
-                if key not in seen:
-                    seen.add(key)
+        depts_seen.add(d)
+        # Columns are per record owner: a department column plus the
+        # owner's own columns (build 61). Two records in one department
+        # can have different own columns, so the key is (department, owner).
+        key = (d, r["owner_id"])
+        if key not in dept_cols:
+            dept_cols[key] = record_columns(db, d, r["owner_id"])
+            for c in dept_cols[key]:
+                key_name = c["name"].lower()
+                if key_name not in seen:
+                    seen.add(key_name)
                     names.append(c["name"])
-                numeric[key] = numeric.get(key, True) and c["col_type"] == "number"
-    with_dept = with_owner or len(dept_cols) > 1
+                numeric[key_name] = numeric.get(key_name, True) and c["col_type"] == "number"
+    with_dept = with_owner or len(depts_seen) > 1
     header = (["Department"] if with_dept else []) + (["Owner", "Username"] if with_owner else []) \
         + names + ["Last updated"]
     out = []
     for r in rows:
-        by_name = {c["name"].lower(): vals[r["id"]].get(c["id"]) for c in dept_cols[r["department_id"]]}
+        by_name = {c["name"].lower(): display_record_value(c, vals[r["id"]].get(c["id"]))
+                   for c in dept_cols[(r["department_id"], r["owner_id"])]}
         line = ([r["department_name"]] if with_dept else []) \
             + ([r["owner_name"], r["owner_username"]] if with_owner else []) \
             + [by_name.get(n.lower()) for n in names] + [r["updated_at"]]
@@ -612,10 +707,10 @@ def summaries_for(db, rows):
     vals = values_for(db, [r["id"] for r in rows])
     cols, out = {}, {}
     for r in rows:
-        d = r["department_id"]
-        if d not in cols:
-            cols[d] = get_columns(db, d)
-        out[r["id"]] = summary_of(cols[d], vals[r["id"]])
+        key = (r["department_id"], r["owner_id"])
+        if key not in cols:
+            cols[key] = record_columns(db, r["department_id"], r["owner_id"])
+        out[r["id"]] = summary_of(cols[key], vals[r["id"]])
     return out
 
 
@@ -1001,8 +1096,9 @@ def column_names(db, user):
     else:
         depts = [user["department_id"]] + viewable_departments(db, user)
         rows = db.execute("SELECT DISTINCT name FROM columns WHERE removed_at IS NULL AND shown=1 "
-                          "AND department_id IN (%s) ORDER BY name COLLATE NOCASE" % ",".join("?" * len(depts)),
-                          depts).fetchall()
+                          "AND department_id IN (%s) AND (user_id IS NULL OR user_id=?) "
+                          "ORDER BY name COLLATE NOCASE" % ",".join("?" * len(depts)),
+                          depts + [user["id"]]).fetchall()
     seen, out = set(), []
     for r in rows:
         if r["name"].lower() not in seen:
@@ -1024,6 +1120,7 @@ def names_for_records(db, record_ids):
     q = ",".join("?" * len(record_ids))
     rows = db.execute(f"SELECT DISTINCT c.name FROM columns c JOIN records r ON r.department_id=c.department_id "
                       f"WHERE r.id IN ({q}) AND c.removed_at IS NULL AND c.shown=1 "
+                      f"AND (c.user_id IS NULL OR c.user_id=r.owner_id) "
                       f"ORDER BY c.position, c.id", list(record_ids)).fetchall()
     seen, out = set(), []
     for r in rows:
@@ -1042,9 +1139,9 @@ def public_view(db, rec, fields, full=False):
     only the filled ones. Dates show their time as '2026-11-04 3:30 PM'."""
     vals = values_for(db, [rec["id"]])[rec["id"]]
     out = []
-    for c in get_columns(db, rec["department_id"]):
+    for c in record_columns(db, rec["department_id"], rec["owner_id"]):
         if (full or c["name"].lower() in fields) and vals.get(c["id"]):
-            out.append((c["name"], show_when(vals[c["id"]]) if c["col_type"] == "date" else vals[c["id"]]))
+            out.append((c["name"], display_record_value(c, vals[c["id"]])))
     return out
 
 

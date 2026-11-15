@@ -32,7 +32,7 @@
   <div class="stack">
     <div class="card"><h2>Details</h2>
       <div class="ig">
-      {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}{% if c['is_reminder'] %}<span class="noprint"> · reminder date</span>{% endif %}</span>{{ cell(c, vals.get(c['id'])) or '' }}</div>{% endfor %}
+      {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}{% if c['is_reminder'] %}<span class="noprint"> · reminder date</span>{% endif %}</span>{% if c['col_type'] == 'attachment' and urls.get(c['id']) %}<a href="{{ urls[c['id']] }}">{{ cell(c, vals.get(c['id'])) or '' }}</a>{% else %}{{ cell(c, vals.get(c['id'])) or '' }}{% endif %}</div>{% endfor %}
       </div>
     </div>
 

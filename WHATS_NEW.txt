@@ -1,4 +1,27 @@
 ==============================================================================
+ UPDATE: ADD YOUR OWN MINE-TAB COLUMNS; USER ATTACHMENT ACCESS (2026-11-15)
+==============================================================================
+ 1. You can now add a column of your own to your Mine tab. Open
+    the "Columns" box on the Mine tab and use "Add a column":
+    name, type (Text, Long text, Number, Date, Dropdown list,
+    Yes / No, plus Attachment when you have attachment access),
+    dropdown options one per line, and a Required tick. The column
+    appears on your Mine tab straight away and in the Add record
+    form. It shows only on your own Mine tab — nobody else's page
+    changes, and it never becomes a department column.
+ 2. In the same Columns box, under "Your columns", you can rename
+    a column you added, move it up or down, or remove it. Removing
+    it hides it; its data is kept. Your department's columns are
+    unchanged and still made by the admin.
+ 3. "Department DB attachment access" is now "User Attachment
+    Access". It lists every user, and the portal admin and
+    permission users tick who may upload attachments on their own
+    My records page. A ticked user can add an Attachment column
+    and put a file in it; the file shows by name and downloads
+    from the record page. A dept admin with the tick can still
+    make attachment columns in the Department Database, as before.
+
+==============================================================================
  UPDATE: MY RECORDS COLUMNS PER USER, USERS' RECORDS PAGE, INVOICES + REQUESTS IN THE RECYCLE BIN (2026-11-14)
 ==============================================================================
  1. The columns on your Mine tab are now your own choice. The Mine

@@ -4,7 +4,7 @@
 {% block title %}Users{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Users</h1><p class="hint">Create accounts, change departments, reset passwords or disable a user. Deleted users are in the Recycle Bin, Users tab. A name in green is active, in yellow is locked (disabled), in red is deleted.</p></div>
-  <div class="acts"><a class="b" href="{{ url_for('admin.ddb_attachment_access') }}">Department DB attachment access</a><a class="b" href="{{ url_for('admin.import_page') }}">Import from CSV</a><a class="b p" href="{{ url_for('admin.user_add') }}">+ Add user</a></div></div>
+  <div class="acts"><a class="b" href="{{ url_for('admin.user_attachment_access') }}">User Attachment Access</a><a class="b" href="{{ url_for('admin.import_page') }}">Import from CSV</a><a class="b p" href="{{ url_for('admin.user_add') }}">+ Add user</a></div></div>
 {% set ns = namespace(pending=0, locked=0, admins=0) %}
 {% for u in rows %}
 {% if u['approval_status'] == 'pending' %}{% set ns.pending = ns.pending + 1 %}
@@ -49,7 +49,7 @@
   {{ quick_card([
     ('+ Add user', url_for('admin.user_add'), True),
     ('Import from CSV', url_for('admin.import_page'), False),
-    ('Department DB attachment access', url_for('admin.ddb_attachment_access'), False),
+    ('User Attachment Access', url_for('admin.user_attachment_access'), False),
   ]) }}
 </div></div>
 {% endblock %}

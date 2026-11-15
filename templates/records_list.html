@@ -28,17 +28,66 @@
 </div>
 {% if not admin_view %}<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>{% endif %}
 </div>
-{% if tab == 'mine' and not admin_view and picker %}
+{% if tab == 'mine' and not admin_view %}
 <details class="card" style="margin-bottom:12px"><summary class="b">Columns</summary>
+{% if picker %}
 <form method="post" action="{{ url_for('records.save_mine_columns') }}" style="margin-top:10px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <p class="hint">Tick the columns you want on your Mine tab. An unticked column stays hidden here only — nobody else's page changes, and your department's columns themselves are unchanged.</p>
 {% for did, dname, cols in picker %}
   {% if picker|length > 1 %}<h3>{{ dname }}</h3>{% endif %}
-  {% for c in cols %}<label style="display:block"><input type="checkbox" name="col" value="col_{{ c['id'] }}" {{ 'checked' if c['id'] not in hidden }}> {{ c['name'] }}</label>{% endfor %}
+  {% for c in cols %}<label style="display:block"><input type="checkbox" name="col" value="col_{{ c['id'] }}" {{ 'checked' if c['id'] not in hidden }}> {{ c['name'] }}{% if c['user_id'] %} <span class="sub">· yours</span>{% endif %}</label>{% endfor %}
 {% endfor %}
 <button class="b p" type="submit" style="margin-top:8px">Save columns</button>
+</form>
+{% set ns = namespace(has_own=false) %}
+{% for did, dname, cols in picker %}{% for c in cols %}{% if c['user_id'] %}{% set ns.has_own = true %}{% endif %}{% endfor %}{% endfor %}
+{% if ns.has_own %}
+<hr style="margin:16px 0 10px">
+<h3>Your columns</h3>
+<p class="hint">Columns you added yourself. They show only on your Mine tab. Rename them, move them, or remove them here — your department's columns are unchanged. Removing one hides it; its data is kept.</p>
+{% for did, dname, cols in picker %}
+{% set own = cols | selectattr('user_id') | list %}
+{% if own %}
+{% if picker|length > 1 %}<h3>{{ dname }}</h3>{% endif %}
+{% for c in own %}
+<div style="margin-bottom:12px"><b>{{ c['name'] }}</b> <span class="sub">{{ type_label[c['col_type']] }}{% if c['required'] %} · required{% endif %}{% if c['col_type'] == 'dropdown' %} · {{ (c['options'] or '').replace('\n', ', ') }}{% endif %}</span>
+<span style="white-space:nowrap">
+{% if not loop.first %}<form method="post" action="{{ url_for('records.move_mine_column', cid=c['id']) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="up"><button class="b sm" type="submit" title="Move up">↑</button></form>{% endif %}
+{% if not loop.last %}<form method="post" action="{{ url_for('records.move_mine_column', cid=c['id']) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="down"><button class="b sm" type="submit" title="Move down">↓</button></form>{% endif %}
+<form method="post" action="{{ url_for('records.remove_mine_column', cid=c['id']) }}" style="display:inline" onsubmit="return confirm('Remove the column \'{{ c['name'] }}\' from your Mine tab? Its data is kept.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>
+</span>
+<details style="margin-top:6px"><summary class="b sm">Edit</summary>
+<form method="post" action="{{ url_for('records.edit_mine_column', cid=c['id']) }}" style="margin-top:8px">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm">
+<div class="fd"><label>Column name</label><input type="text" name="name" value="{{ c['name'] }}" maxlength="60" required></div>
+{% if c['col_type'] == 'dropdown' %}<div class="fd"><label>Dropdown options (one per line)</label><textarea name="options" style="min-height:70px">{{ c['options'] or '' }}</textarea></div>{% endif %}
+<label class="ck"><input type="checkbox" name="required" value="1" {{ 'checked' if c['required'] }}> Required</label>
+</div>
+<button class="b sm p" type="submit">Save</button>
 </form></details>
+</div>
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+<hr style="margin:16px 0 10px">
+<h3>Add a column</h3>
+<p class="hint">Add a column of your own to your Mine tab. It shows only here — nobody else's page changes, and it is never a department column. Existing records show it blank.</p>
+<form method="post" action="{{ url_for('records.add_mine_column') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm">
+<div class="fd"><label>Column name</label><input type="text" name="name" maxlength="60" required></div>
+<div class="fd"><label>Type</label><select name="col_type">{% for k, label in col_types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+<div class="fd"><label>Dropdown options (one per line, only for Dropdown)</label><textarea name="options" style="min-height:70px"></textarea></div>
+<label class="ck"><input type="checkbox" name="required" value="1"> Required</label>
+</div>
+{% if not can_attach %}<p class="hint">Attachment columns need attachment access — ask the portal admin or an administrative permission user to allow you on the User Attachment Access page.</p>{% endif %}
+<button class="b p" type="submit">Add column</button>
+</form>
+</details>
 {% endif %}
 {{ listbar(list_endpoint, bar_hidden, q, info, names) }}
 {% if ctx.groups %}

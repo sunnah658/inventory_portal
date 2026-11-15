@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% block title %}User Attachment Access{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>User Attachment Access</h1><p class="hint">Tick a user to let them upload attachments on their own My records page — they can then add an Attachment column to their Mine tab and put a file in it. Unticked users cannot add an Attachment column (they can still add all other column types). The portal admin can always do this. The same tick still lets a dept admin create attachment columns in the Department Database.</p></div></div>
+<div class="kp">
+  {{ kpi('Users', rows|length) }}
+  {{ kpi('Can upload attachments', rows|selectattr('can_ddb_attachment')|list|length) }}
+</div>
+<div class="tw"><div>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="tb"><table><thead><tr><th>User</th><th>Department</th><th>Role</th><th>Can upload attachments</th></tr></thead><tbody>
+{% for u in rows %}<tr class="r"><td><b>{{ u['full_name'] }}</b> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td><td>{{ 'Administrator' if u['role'] == 'admin' else ('Portal administrative permission' if u['can_portal_admin'] else ('Department admin' if u['is_dept_admin'] else 'User')) }}</td><td><label class="ck"><input type="checkbox" name="allow_{{ u['id'] }}" value="1" {{ 'checked' if u['can_ddb_attachment'] }}> Allow</label></td></tr>
+{% else %}<tr><td colspan="4"><div class="empty">No users yet.</div></td></tr>{% endfor %}
+</tbody></table></div>
+<button class="b p" type="submit" style="margin-top:14px">Save access</button></form>
+</div>
+<div class="stack rail">
+  {{ quick_card([
+    ('Users', url_for('admin.users'), False),
+    ('Departments', url_for('admin.departments'), False),
+  ]) }}
+</div></div>
+{% endblock %}

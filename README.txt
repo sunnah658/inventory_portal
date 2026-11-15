@@ -4042,3 +4042,70 @@
     database). Back up first and keep your live .env untouched,
     as before. Apply only this latest zip, not the older ones in
     order.
+
+80. USERS ADD THEIR OWN MINE-TAB COLUMNS; USER ATTACHMENT ACCESS (2026-11-15)
+
+    1. A user can now add a column of their own to their Mine tab.
+       Inside the "Columns" box on the Mine tab there is an "Add a
+       column" section: column name, type (Text, Long text, Number,
+       Date, Dropdown list, Yes / No, plus Attachment (file) when
+       the user has attachment access), dropdown options one per
+       line when the type is a dropdown, and a Required tick.
+       Required means the field must be filled when a record is
+       added or edited. The new column appears on the Mine tab
+       straight away, ticked in the picker, and in the Add record
+       form; existing records show it blank.
+    2. A column a user adds shows ONLY on that user's own Mine tab
+       — never on another user's page, and it never becomes a
+       department column. It also shows in the portal admin /
+       permission user's Users' records view of that user, and in
+       that user's own record exports and record PDF. The user's
+       columns do not appear on the Shared with me tab, the Other
+       departments tab, or the All records page, which keep showing
+       department columns only.
+    3. The user can rename, move and remove the columns they added
+       themselves, from the "Your columns" part of the same Columns
+       box. The type never changes. They cannot change the
+       department's columns — those stay the admin's, and the
+       Departments -> record columns page never lists a user's own
+       columns. Removing a column hides it from the Mine tab and
+       the Add form; its values stay in the database, like a
+       removed department column.
+    4. "Department DB attachment access" is now "User Attachment
+       Access" (Admin menu, and the Users page). It lists every
+       user, not just dept admins, and the portal admin and
+       administrative permission users tick which users may upload
+       attachments on their own My records page. A user without the
+       tick is not offered the Attachment type. The same tick
+       still lets a dept admin create attachment columns in the
+       Department Database — that rule is unchanged — and the old
+       page address redirects to the new one. An attachment file
+       on a record is shown by its file name (never as stored
+       text) on the Mine tab, the record page, in exports and in
+       the record PDF, and it downloads from the record page. A
+       file is scanned and size-checked the same way as a
+       Department Database attachment, and it is erased for good
+       when the record is erased from the Recycle Bin.
+    5. Small safety fix found while this was built: the table
+       upgrade that adds the new column type commits first and
+       only then turns foreign keys off, because turning them off
+       inside an open transaction does nothing — without the
+       commit, rebuilding the columns table would have deleted
+       every record value and Mine-tab column choice through the
+       cascade. The same commit was added to the older Department
+       Database attachment upgrade, which had the same latent
+       risk. No data was lost anywhere: the upgrade was tested by
+       starting the new code on a build-60 database holding
+       records, values and hidden-column choices, and they all
+       survived.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There IS a database change in
+    this build: the columns table gains a user_id column, accepts
+    the 'attachment' type, and gets a per-user unique index.
+    It is added automatically when the portal starts — there is
+    nothing to run by hand, and an older database upgrades
+    cleanly (tested by starting the new code on a build-60
+    database). Back up first and keep your live .env untouched,
+    as before. Apply only this latest zip, not the older ones in
+    order.
