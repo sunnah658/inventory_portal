@@ -5,7 +5,7 @@
 {% block head %}<style>@media print{@page{size:A4 landscape;margin:0}}</style>{% endblock %}
 {% block content %}
 <div class="hd">
-  <div><h1>{% if admin_view %}{{ view_user['full_name'] }}'s records{% else %}My records{% endif %}</h1><p class="hint">{% if admin_view %}This user's own rows in the Department Database. Nothing here can be edited — use Locate to open a row in the Department Database.{% else %}Your own rows in the Department Database. Nothing here can be edited — use Locate to open a row in the Department Database.{% endif %}</p></div>
+  <div><h1>{% if admin_view %}{{ view_user['full_name'] }}'s records{% else %}My records{% endif %}</h1><p class="hint">{% if admin_view %}This user's own work in the Department Database — their rows, invoices and requests, and the ones sent to them. Nothing here can be edited — use Locate to open a row in the Department Database, or a document on its own page.{% else %}Your own work in the Department Database — your rows, invoices and requests, and the ones sent to you. Nothing here can be edited — use Locate to open a row in the Department Database, or a document on its own page.{% endif %}</p></div>
   {% if not admin_view %}<div class="acts">
     <a class="b" href="{{ url_for('ddb.index', dept=dept_id) }}">Open Department Database</a>
     <a class="b explink" href="{{ url_for('records.download', tab='department', q=q) }}">Download CSV</a>
@@ -27,12 +27,27 @@
 </div>
 <form method="get" action="{{ url_for(list_endpoint, **list_args) }}" class="tools">
   <input type="hidden" name="tab" value="department">
-  <input type="search" name="q" value="{{ q }}" placeholder="Search {% if admin_view %}this user's{% else %}your{% endif %} Department Database rows" aria-label="Search rows">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search {% if admin_view %}this user's{% else %}your{% endif %} Department Database rows, invoices and requests" aria-label="Search rows">
   <button class="b" type="submit">Apply</button>
 </form>
 {% if groups %}
   {% for g in groups %}
   <h2 style="margin-top:16px">{{ g.tab_name }}</h2>
+  {% if g.kind == 'invoices' %}
+  <div class="tb"><table>
+    <thead><tr><th>Share code</th><th>Invoice number</th><th>Format</th><th>Customer / title</th><th>Owner</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
+    <tbody>{% for r in g.rows %}
+      <tr class="r"><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['customer_name'] or '—' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept_id %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['invoice_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','approved') else 'a' if r['status'] in ('draft','pending') else 'r' }}">{{ r['status']|title }}</span></td>
+        <td class="actcell noprint"><a class="b sm" href="{{ url_for('invoices.detail', iid=r['id']) }}">Locate</a></td></tr>
+    {% endfor %}</tbody></table></div>
+  {% elif g.kind == 'requests' %}
+  <div class="tb"><table>
+    <thead><tr><th>Share code</th><th>Request number</th><th>Kind</th><th>Requested by</th><th>Requested to</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
+    <tbody>{% for r in g.rows %}
+      <tr class="r"><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or '—' }}</td><td>{{ r['kind_name'] or '' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept_id %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['recipient_name'] or '—' }}</td><td>{{ r['request_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','handovered','approved') else 'r' if r['status'] == 'rejected' else 'a' }}">{{ r['status']|title }}</span></td>
+        <td class="actcell noprint"><a class="b sm" href="{{ url_for('requests.detail', rid=r['id']) }}">Locate</a></td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}
   <div class="tb"><table>
     <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in g.cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %} style="width:{{ g.widths[loop.index0] }}%">{{ c['name'] }}</th>{% endfor %}<th class="noprint"></th></tr></thead>
     <tbody>{% for r in g.rows %}{% set v = g.vmap[r['id']] %}
@@ -40,17 +55,18 @@
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.index', dept=dept_id, tab=g.tab_id, page=locate_pages[r['id']]) }}#row-{{ r['id'] }}">Locate</a></td></tr>
     {% endfor %}</tbody></table>
     {% if g.cols|length > 7 %}<div class="nt">The first 7 columns are shown. Locate the row to see all fields.</div>{% endif %}</div>
+  {% endif %}
   {% endfor %}
   {% if not admin_view %}<p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>{% endif %}
   {{ pager(page, pages, list_endpoint, keep) }}
 {% else %}
-  <div class="tb"><div class="empty">{% if q %}Nothing matches your search.{% else %}{% if admin_view %}{{ view_user['full_name'] }} has no rows in the Department Database yet.{% else %}You have no rows in the Department Database yet. <a href="{{ url_for('ddb.index', dept=dept_id) }}">Open the Department Database</a> to add one.{% endif %}{% endif %}</div></div>
+  <div class="tb"><div class="empty">{% if q %}Nothing matches your search.{% else %}{% if admin_view %}{{ view_user['full_name'] }} has nothing in the Department Database yet.{% else %}You have nothing in the Department Database yet. <a href="{{ url_for('ddb.index', dept=dept_id) }}">Open the Department Database</a> to add a row, an invoice or a request.{% endif %}{% endif %}</div></div>
 {% endif %}
 </div>
 <div class="stack rail">
   <div class="card"><h2>About this tab</h2>
-    <p class="hint">Only {% if admin_view %}this user's{% else %}your{% endif %} own rows in {% if admin_view %}their{% else %}your{% endif %} own department's Department Database are shown here, grouped under the tab each row belongs to. Rows shared with you and invoices are not shown.</p>
-    <p class="hint">Nothing can be edited from this tab. <b>Locate</b> opens the row in the Department Database, on the exact page it sits on.</p></div>
+    <p class="hint">Only {% if admin_view %}this user's{% else %}your{% endif %} own work in {% if admin_view %}their{% else %}your{% endif %} own department's Department Database is shown here, grouped under the tab each item belongs to: {% if admin_view %}their{% else %}your{% endif %} rows, invoices and requests, and the invoices and requests sent to {% if admin_view %}them{% else %}you{% endif %} to decide. Rows shared with {% if admin_view %}them{% else %}you{% endif %} are not shown.</p>
+    <p class="hint">Nothing can be edited from this tab. <b>Locate</b> opens the row in the Department Database, on the exact page it sits on. For an invoice or a request, Locate opens the document itself.</p></div>
   {% if admin_view %}
   {{ quick_card([
     ("Users' records", url_for('admin.users_records'), True),

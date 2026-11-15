@@ -89,20 +89,72 @@ def list_options(db, user, args):
 
 # ---------------------------------------------------------------- "My department" tab
 # (2026-11-05) The "My department" tab on the My records page is on every
-# user's page and lists only that user's own rows in the Department
-# Database (their own ddb_rows in their own department, across the
-# department's tabs). Nothing here can be edited: each row has a Locate
-# button that opens the Department Database page on the row's own tab,
-# scrolled to and highlighting that exact row. Invoices are not listed
-# here; they stay in the Department Database Invoices tab.
+# user's page and lists that user's own work in the Department Database,
+# grouped under the tab each item belongs to: their own ddb_rows in their
+# own department, across the department's tabs, plus — since build 62 —
+# their own invoices and item requests, and the invoices and requests
+# sent to them as an approval step. Nothing here can be edited: a
+# Department Database row has a Locate button that opens the Department
+# Database page on the row's own tab, scrolled to and highlighting that
+# exact row; an invoice or a request opens on its own page, because the
+# Department Database lists for those are filtered to whoever is
+# looking, so a page link would land on the wrong person's list in the
+# admin's view of a user's records.
+def _department_docs(db, user, q=None):
+    """The user's invoices and item requests for the My department tab,
+    as four lists: (own invoices, invoices sent to them, own requests,
+    requests sent to them). The definitions mirror the Department
+    Database Invoices / Request items tabs: own = created by them in
+    their own department; sent = any approval step with their user id,
+    any department. Deleted items live in the Recycle Bin and are
+    excluded. q searches the same fields the Department Database search
+    does (invoice: customer, number, share code; request: owner,
+    recipient, kind, number, share code, department)."""
+    like3 = [like_pattern(q)] * 3 if q else []
+    inv_search = (" AND (i.customer_name LIKE ? ESCAPE '\\' OR i.number LIKE ? ESCAPE '\\' "
+                  "OR i.public_code LIKE ? ESCAPE '\\')") if q else ""
+    inv_base = ("SELECT i.*, t.name AS template_name, u.full_name AS owner_name, d.name AS dept_name "
+                "FROM invoices i LEFT JOIN invoice_templates t ON t.id=i.template_id "
+                "LEFT JOIN users u ON u.id=i.owner_id LEFT JOIN departments d ON d.id=i.department_id ")
+    own_inv = db.execute(inv_base + "WHERE i.deleted_at IS NULL AND i.department_id=? AND i.owner_id=?"
+                          + inv_search + " ORDER BY i.id DESC",
+                         [user["department_id"], user["id"]] + like3).fetchall()
+    sent_inv = db.execute(inv_base + "WHERE i.deleted_at IS NULL AND EXISTS "
+                          "(SELECT 1 FROM invoice_steps s WHERE s.invoice_id=i.id AND s.user_id=?)"
+                          + inv_search + " ORDER BY i.id DESC",
+                          [user["id"]] + like3).fetchall()
+    like6 = [like_pattern(q)] * 6 if q else []
+    req_search = (" AND (u.full_name LIKE ? ESCAPE '\\' OR ru.full_name LIKE ? ESCAPE '\\' "
+                  "OR k.name LIKE ? ESCAPE '\\' OR r.number LIKE ? ESCAPE '\\' "
+                  "OR r.public_code LIKE ? ESCAPE '\\' OR d.name LIKE ? ESCAPE '\\')") if q else ""
+    req_base = ("SELECT r.*, k.name AS kind_name, u.full_name AS owner_name, ru.full_name AS recipient_name, "
+                "d.name AS dept_name FROM item_requests r "
+                "LEFT JOIN item_request_kinds k ON k.id=r.kind_id "
+                "LEFT JOIN users u ON u.id=r.owner_id LEFT JOIN users ru ON ru.id=r.recipient_id "
+                "LEFT JOIN departments d ON d.id=r.department_id ")
+    own_req = db.execute(req_base + "WHERE r.deleted_at IS NULL AND r.department_id=? AND r.owner_id=?"
+                         + req_search + " ORDER BY r.id DESC",
+                         [user["department_id"], user["id"]] + like6).fetchall()
+    sent_req = db.execute(req_base + "WHERE r.deleted_at IS NULL AND EXISTS "
+                          "(SELECT 1 FROM item_request_steps s WHERE s.request_id=r.id AND s.user_id=?)"
+                          + req_search + " ORDER BY r.id DESC",
+                          [user["id"]] + like6).fetchall()
+    return own_inv, sent_inv, own_req, sent_req
+
+
 def _department_row_count(db, user):
-    """How many of the user's own Department Database rows exist."""
+    """How many of the user's own Department Database items exist: their
+    own rows plus their own invoices and requests and the ones sent to
+    them (build 62). This is the My department pill count; the tab
+    itself also filters by search."""
     if not user["department_id"]:
         return 0
-    return db.execute(
+    n = db.execute(
         "SELECT COUNT(*) FROM ddb_rows r JOIN ddb_tabs t ON t.id=r.tab_id "
         "WHERE r.department_id=? AND r.owner_id=? AND r.deleted_at IS NULL AND t.removed_at IS NULL",
         (user["department_id"], user["id"])).fetchone()[0]
+    own_inv, sent_inv, own_req, sent_req = _department_docs(db, user)
+    return n + len(own_inv) + len(sent_inv) + len(own_req) + len(sent_req)
 
 
 def _department_rows_where(user, q):
@@ -154,8 +206,8 @@ def _department_tab_view(db, user, tabs, counts, q, args, admin_view=False,
                          list_endpoint="records.list_records", list_args=None):
     dept_id = user["department_id"]
     where, params = _department_rows_where(user, q)
-    total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
-    page, pages, offset = page_info(total, args.get("page", 1, type=int), config.PER_PAGE)
+    ddb_total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
+    page, pages, offset = page_info(ddb_total, args.get("page", 1, type=int), config.PER_PAGE)
     rows = db.execute(
         "SELECT r.*, t.name AS tab_name, t.position AS tab_pos FROM ddb_rows r "
         "JOIN ddb_tabs t ON t.id=r.tab_id WHERE " + where +
@@ -164,7 +216,7 @@ def _department_tab_view(db, user, tabs, counts, q, args, admin_view=False,
     groups, by_tab = [], {}
     for r in rows:
         if r["tab_id"] not in by_tab:
-            by_tab[r["tab_id"]] = {"tab_id": r["tab_id"], "tab_name": r["tab_name"],
+            by_tab[r["tab_id"]] = {"tab_id": r["tab_id"], "tab_name": r["tab_name"], "kind": "ddb",
                                    "cols": ddb_columns(db, dept_id, tab_id=r["tab_id"]), "rows": []}
             groups.append(by_tab[r["tab_id"]])
         by_tab[r["tab_id"]]["rows"].append(r)
@@ -173,6 +225,19 @@ def _department_tab_view(db, user, tabs, counts, q, args, admin_view=False,
         # Print widths for this tab's columns (no trailing column here: the
         # rows are the user's own, so there is no Added by column).
         g["widths"] = print_col_widths([col_weight(c["col_type"]) for c in g["cols"]])
+    # Invoices and item requests (build 62): the user's own, and the ones
+    # sent to them as an approval step — the Department Database page's
+    # Invoices and Request items tabs, as groups on this tab. They are not
+    # paged with the rows (a user has only a handful of each); the pager
+    # still pages the Department Database rows alone.
+    own_inv, sent_inv, own_req, sent_req = _department_docs(db, user, q or None)
+    for tab_name, kind, items in (("Invoices", "invoices", own_inv),
+                                  ("Invoices sent to you", "invoices", sent_inv),
+                                  ("Request items", "requests", own_req),
+                                  ("Item requests sent to you", "requests", sent_req)):
+        if items:
+            groups.append({"tab_name": tab_name, "kind": kind, "rows": items})
+    total = ddb_total + len(own_inv) + len(sent_inv) + len(own_req) + len(sent_req)
     keep = {k: v for k, v in args.items() if k != "page"}
     return render_template("records_department.html", tabs=tabs, tab="department",
                            counts=counts, q=q, groups=groups, total=total,
@@ -259,16 +324,31 @@ def _mine_column_picker(db, user):
     """The columns offered on this user's Mine tab, grouped by department:
     the user's own department plus every department their records sit in.
     Each group lists the department's columns first, then the user's own
-    columns for that department (build 61). Returns [(dept_id, dept_name, [columns])]."""
+    columns for that department (build 61). Returns [(dept_id, dept_name, [columns])].
+    Each column is a dict; a column the user added also carries 'shown'
+    (its picker tick) and 'used' (how many of their live records have a
+    value in it), the two extra columns the admin's columns page shows
+    (build 62)."""
     dept_ids = [user["department_id"]] if user["department_id"] else []
     for (d,) in db.execute("SELECT DISTINCT department_id FROM records WHERE owner_id=? AND deleted_at IS NULL",
                            (user["id"],)):
         if d not in dept_ids:
             dept_ids.append(d)
+    hidden = hidden_mine_columns(db, user["id"])
     out = []
     for did in dept_ids:
         row = db.execute("SELECT name FROM departments WHERE id=?", (did,)).fetchone()
-        cols = record_columns(db, did, user["id"])
+        cols = []
+        for c in record_columns(db, did, user["id"]):
+            c = dict(c)
+            if c.get("user_id"):
+                c["shown"] = c["id"] not in hidden
+                c["used"] = db.execute(
+                    "SELECT COUNT(*) FROM record_values v JOIN records r ON r.id=v.record_id "
+                    "WHERE v.column_id=? AND r.owner_id=? AND r.deleted_at IS NULL "
+                    "AND v.value IS NOT NULL AND v.value != ''",
+                    (c["id"], user["id"])).fetchone()[0]
+            cols.append(c)
         if cols:
             out.append((did, row["name"] if row else "", cols))
     return out

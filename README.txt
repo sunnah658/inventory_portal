@@ -4109,3 +4109,61 @@
     database). Back up first and keep your live .env untouched,
     as before. Apply only this latest zip, not the older ones in
     order.
+
+81. YOUR COLUMNS AS THE ADMIN'S TABLE; MY DEPARTMENT TAB SHOWS INVOICES AND REQUESTS TOO (2026-11-15)
+
+    1. "Your columns" in the Mine tab's Columns box is now a table,
+       exactly like the portal admin's Departments -> record columns
+       page: one row per column you added, with Column (name, and the
+       dropdown options underneath when it is a dropdown), Type,
+       Required, Shown and Filled in, and the actions in the last
+       cell. The tick-box picker above it and the "Add a column" form
+       below it are unchanged.
+    2. The up and down arrows are now shown on EVERY row, like the
+       admin's page. Until now the up arrow was hidden on the first
+       column and the down arrow on the last one, so with only one
+       column of your own there was no arrow at all and it looked as
+       if the feature did not exist. Pressing up on the top column
+       or down on the bottom one does nothing, like the admin's.
+    3. Edit and Remove now open in the row itself, the way the
+       admin's Remove opens: Edit shows the name, the dropdown
+       options and the Required tick; Remove asks you to confirm in
+       the row and says the data is kept. The browser's own popup
+       is gone.
+    4. Shown says Yes when the column is ticked in the picker and
+       Hidden when it is unticked; Filled in counts how many of
+       your records have a value in the column.
+    5. The My department tab on the My records page now shows all
+       of a user's own work in the Department Database, grouped
+       under the tab each item belongs to — not just the rows in the
+       custom tabs. Your own invoices appear under "Invoices" and
+       your own requests under "Request items", showing the same
+       details the Department Database shows for them. The invoices
+       and requests sent to you as an approval step appear under
+       "Invoices sent to you" and "Item requests sent to you". Rows
+       shared with you are still not shown. The two counts at the
+       top count everything on the tab, and the search box searches
+       invoices and requests too (number, share code, customer,
+       kind, people). Nothing can be edited from the tab. Locate
+       on a row opens it in the Department Database, on the exact
+       page it sits on, as before; Locate on an invoice or a
+       request opens the document itself, because the Department
+       Database lists for those are filtered to whoever is looking,
+       so a page link would land on the wrong person's list when
+       the portal admin looks at a user's records. The admin's
+       Users' records view of a user shows the same groups. The
+       invoice and request groups are not part of Select, Export
+       or Print on this tab — those still work on the Department
+       Database rows, as before; use the document's own page for
+       its PDF. Download CSV on this tab still downloads the
+       Department Database rows only.
+    6. What is deliberately NOT in this build: rows shared with
+       you stay out of the My department tab — they belong to
+       someone else, and this tab is your own work. Say the word
+       if you want them in too.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There is NO database change in
+    this build. Back up first and keep your live .env untouched,
+    as before. Apply only this latest zip, not the older ones in
+    order.

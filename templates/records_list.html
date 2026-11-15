@@ -50,25 +50,28 @@
 {% set own = cols | selectattr('user_id') | list %}
 {% if own %}
 {% if picker|length > 1 %}<h3>{{ dname }}</h3>{% endif %}
+<div class="tb"><table><thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Shown</th><th>Filled in</th><th></th></tr></thead><tbody>
 {% for c in own %}
-<div style="margin-bottom:12px"><b>{{ c['name'] }}</b> <span class="sub">{{ type_label[c['col_type']] }}{% if c['required'] %} · required{% endif %}{% if c['col_type'] == 'dropdown' %} · {{ (c['options'] or '').replace('\n', ', ') }}{% endif %}</span>
-<span style="white-space:nowrap">
-{% if not loop.first %}<form method="post" action="{{ url_for('records.move_mine_column', cid=c['id']) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="up"><button class="b sm" type="submit" title="Move up">↑</button></form>{% endif %}
-{% if not loop.last %}<form method="post" action="{{ url_for('records.move_mine_column', cid=c['id']) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="down"><button class="b sm" type="submit" title="Move down">↓</button></form>{% endif %}
-<form method="post" action="{{ url_for('records.remove_mine_column', cid=c['id']) }}" style="display:inline" onsubmit="return confirm('Remove the column \'{{ c['name'] }}\' from your Mine tab? Its data is kept.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>
-</span>
-<details style="margin-top:6px"><summary class="b sm">Edit</summary>
-<form method="post" action="{{ url_for('records.edit_mine_column', cid=c['id']) }}" style="margin-top:8px">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="fm">
-<div class="fd"><label>Column name</label><input type="text" name="name" value="{{ c['name'] }}" maxlength="60" required></div>
-{% if c['col_type'] == 'dropdown' %}<div class="fd"><label>Dropdown options (one per line)</label><textarea name="options" style="min-height:70px">{{ c['options'] or '' }}</textarea></div>{% endif %}
-<label class="ck"><input type="checkbox" name="required" value="1" {{ 'checked' if c['required'] }}> Required</label>
-</div>
-<button class="b sm p" type="submit">Save</button>
-</form></details>
-</div>
+<tr class="r">
+  <td><b>{{ c['name'] }}</b>{% if c['col_type'] == 'dropdown' %}<div class="sub">{{ (c['options'] or '').replace('\n', ', ') }}</div>{% endif %}</td>
+  <td>{{ type_label[c['col_type']] }}</td><td>{{ 'Yes' if c['required'] else 'No' }}</td><td>{{ 'Yes' if c['shown'] else 'Hidden' }}</td><td>{{ c['used'] }}</td>
+  <td class="actcell">
+    <form method="post" action="{{ url_for('records.move_mine_column', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="up"><button class="b sm" type="submit" title="Move up" aria-label="Move up">&uarr;</button></form>
+    <form method="post" action="{{ url_for('records.move_mine_column', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="dir" value="down"><button class="b sm" type="submit" title="Move down" aria-label="Move down">&darr;</button></form>
+    <details class="dt"><summary class="b sm">Edit</summary>
+      <form class="pop" method="post" action="{{ url_for('records.edit_mine_column', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="fd"><label>Column name</label><input type="text" name="name" value="{{ c['name'] }}" maxlength="60" required></div>
+        {% if c['col_type'] == 'dropdown' %}<div class="fd"><label>Dropdown options (one per line)</label><textarea name="options" style="min-height:70px">{{ c['options'] or '' }}</textarea></div>{% endif %}
+        <label class="ck"><input type="checkbox" name="required" value="1" {{ 'checked' if c['required'] }}> Required</label>
+        <button class="b sm p" type="submit" style="margin-top:8px">Save</button></form></details>
+    <details class="dt"><summary class="b sm dg">Remove</summary>
+      <form class="pop" method="post" action="{{ url_for('records.remove_mine_column', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="sub" style="margin:0 0 8px">Remove the column '{{ c['name'] }}' from your Mine tab? Its data is kept.</div>
+        <button class="b sm dg" type="submit">Remove column</button></form></details>
+  </td>
+</tr>
 {% endfor %}
+</tbody></table></div>
 {% endif %}
 {% endfor %}
 {% endif %}

@@ -1,4 +1,25 @@
 ==============================================================================
+ UPDATE: YOUR COLUMNS AS THE ADMIN'S TABLE; MY DEPARTMENT TAB SHOWS INVOICES AND REQUESTS TOO (2026-11-15)
+==============================================================================
+ 1. "Your columns" in the Mine tab's Columns box is now a table, just
+    like the portal admin's Departments -> record columns page: one
+    row per column you added, with Column, Type, Required, Shown and
+    Filled in, and the actions in the last cell. The up and down
+    arrows are now shown on every row — with only one column of your
+    own there was no arrow at all before, which is why it looked as
+    if the feature did not exist. Edit and Remove open in the row
+    itself, like the admin's page does.
+ 2. The My department tab now shows all of your own work in the
+    Department Database, not just the rows in the custom tabs. Your
+    own invoices appear under "Invoices" and your own requests under
+    "Request items"; the ones sent to you to decide appear under
+    "Invoices sent to you" and "Item requests sent to you". The
+    counts at the top count everything, and the search box searches
+    invoices and requests too. Nothing can be edited from the tab.
+    Locate on a row opens it in the Department Database as before;
+    Locate on an invoice or a request opens the document itself.
+
+==============================================================================
  UPDATE: ADD YOUR OWN MINE-TAB COLUMNS; USER ATTACHMENT ACCESS (2026-11-15)
 ==============================================================================
  1. You can now add a column of your own to your Mine tab. Open
