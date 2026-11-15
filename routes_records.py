@@ -27,7 +27,8 @@ import scanner
 from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_history, ddb_is_tab_admin, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, external_url, first_text_value, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv,
                   column_names, col_weight, create_record, dept_member_ids, filter_clause, get_columns, get_record,
-                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_application, purge_ddb_row, purge_record, purge_user_account, rec_select, reminder_rows,
+                  hidden_mine_columns, set_hidden_mine_columns,
+                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_application, purge_ddb_row, purge_invoice, purge_record, purge_request, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context,
                   update_record, values_for, viewable_departments)
 from models import get_db, log
@@ -147,7 +148,8 @@ def _locate_pages(db, rows):
     return pages
 
 
-def _department_tab_view(db, user, tabs, counts, q, args):
+def _department_tab_view(db, user, tabs, counts, q, args, admin_view=False,
+                         list_endpoint="records.list_records", list_args=None):
     dept_id = user["department_id"]
     where, params = _department_rows_where(user, q)
     total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
@@ -173,6 +175,9 @@ def _department_tab_view(db, user, tabs, counts, q, args):
     return render_template("records_department.html", tabs=tabs, tab="department",
                            counts=counts, q=q, groups=groups, total=total,
                            page=page, pages=pages, keep=keep, dept_id=dept_id,
+                           admin_view=admin_view, view_user=user,
+                           list_endpoint=list_endpoint, list_args=list_args or {},
+                           bar_hidden=dict(list_args or {}, tab="department"),
                            locate_pages=_locate_pages(db, rows))
 
 
@@ -248,6 +253,70 @@ def home():
     return redirect(url_for("records.list_records"))
 
 
+def _mine_column_picker(db, user):
+    """The columns offered on this user's Mine tab, grouped by department:
+    the user's own department plus every department their records sit in.
+    Returns [(dept_id, dept_name, [columns])]."""
+    dept_ids = [user["department_id"]] if user["department_id"] else []
+    for (d,) in db.execute("SELECT DISTINCT department_id FROM records WHERE owner_id=? AND deleted_at IS NULL",
+                           (user["id"],)):
+        if d not in dept_ids:
+            dept_ids.append(d)
+    out = []
+    for did in dept_ids:
+        row = db.execute("SELECT name FROM departments WHERE id=?", (did,)).fetchone()
+        cols = get_columns(db, did)
+        if cols:
+            out.append((did, row["name"] if row else "", cols))
+    return out
+
+
+def _list_records_view(db, user, args, admin_view=False):
+    """The My records page of one user. admin_view=True renders it for a
+    portal admin / administrative permission user looking at that user's
+    page (build 60): view and delete only, no Add, Edit, Export or Print.
+    The Mine tab shows the page owner's own column choice, not the
+    viewer's."""
+    tabs = available_tabs(db, user)
+    tab = args.get("tab", "mine")
+    tab = tab if tab in tabs else "mine"
+    q = (args.get("q") or "").strip()
+    counts = {}
+    for t in tabs:
+        if t == "department":
+            counts[t] = _department_row_count(db, user)
+        else:
+            where, params = tab_clause(db, t, user)
+            counts[t] = db.execute("SELECT COUNT(*) FROM records r WHERE " + where, params).fetchone()[0]
+    list_endpoint = "admin.user_records" if admin_view else "records.list_records"
+    list_args = {"user": user["id"]} if admin_view else {}
+    if tab == "department":
+        # "My department" lists the user's own Department Database rows, not
+        # personal records (2026-11-05). Nothing can be edited from it.
+        return _department_tab_view(db, user, tabs, counts, q, args,
+                                    admin_view=admin_view, list_endpoint=list_endpoint,
+                                    list_args=list_args)
+    where, params = tab_clause(db, tab, user)
+    sq, sp = search_clause(q)
+    fq, order, fp, op, info = list_options(db, user, args)
+    total = db.execute("SELECT COUNT(*) FROM records r WHERE " + where + sq + fq, params + sp + fp).fetchone()[0]
+    page, pages, offset = page_info(total, args.get("page", 1, type=int), config.PER_PAGE)
+    rows = db.execute(rec_select() + " WHERE " + where + sq + fq + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+                      params + sp + fp + op + [config.PER_PAGE, offset]).fetchall()
+    keep = {k: v for k, v in args.items() if k != "page"}
+    hidden = hidden_mine_columns(db, user["id"]) if tab == "mine" else None
+    picker = _mine_column_picker(db, user) if tab == "mine" and not admin_view else []
+    return render_template("records_list.html", ctx=table_context(db, rows, user, hidden=hidden),
+                           tab=tab, tabs=tabs, q=q, counts=counts, total=total,
+                           page=page, pages=pages, info=info, names=column_names(db, user),
+                           keep=keep, admin_view=admin_view, view_user=user,
+                           list_endpoint=list_endpoint, list_args=list_args,
+                           bar_hidden=dict(list_args, tab=tab),
+                           admin_next=url_for(list_endpoint, tab=tab, **list_args) if admin_view else "",
+                           picker=picker, hidden=hidden or set(),
+                           departments=[] if admin_view else db.execute("SELECT id, name FROM departments ORDER BY name").fetchall())
+
+
 @bp.route("/records")
 @login_required
 def list_records():
@@ -255,33 +324,26 @@ def list_records():
     code_page = code_redirect(request.args.get("q"))          # typing HRC-12 opens that QR code
     if code_page:
         return code_page
-    tabs = available_tabs(db, g.user)
-    tab = request.args.get("tab", "mine")
-    tab = tab if tab in tabs else "mine"
-    q = (request.args.get("q") or "").strip()
-    counts = {}
-    for t in tabs:
-        if t == "department":
-            counts[t] = _department_row_count(db, g.user)
-        else:
-            where, params = tab_clause(db, t, g.user)
-            counts[t] = db.execute("SELECT COUNT(*) FROM records r WHERE " + where, params).fetchone()[0]
-    if tab == "department":
-        # "My department" lists the user's own Department Database rows, not
-        # personal records (2026-11-05). Nothing can be edited from it.
-        return _department_tab_view(db, g.user, tabs, counts, q, request.args)
-    where, params = tab_clause(db, tab, g.user)
-    sq, sp = search_clause(q)
-    fq, order, fp, op, info = list_options(db, g.user, request.args)
-    total = db.execute("SELECT COUNT(*) FROM records r WHERE " + where + sq + fq, params + sp + fp).fetchone()[0]
-    page, pages, offset = page_info(total, request.args.get("page", 1, type=int), config.PER_PAGE)
-    rows = db.execute(rec_select() + " WHERE " + where + sq + fq + " ORDER BY " + order + " LIMIT ? OFFSET ?",
-                      params + sp + fp + op + [config.PER_PAGE, offset]).fetchall()
-    keep = {k: v for k, v in request.args.items() if k != "page"}
-    return render_template("records_list.html", ctx=table_context(db, rows, g.user), tab=tab, tabs=tabs, q=q,
-                           counts=counts, total=total, page=page, pages=pages, info=info, names=column_names(db, g.user),
-                           keep=keep,
-                           departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall())
+    return _list_records_view(db, g.user, request.args)
+
+
+@bp.route("/records/columns", methods=["POST"])
+@login_required
+def save_mine_columns():
+    """Save this user's own Mine-tab column choice (build 60): tick a
+    column to show it on the Mine tab, untick to hide it. The choice is
+    personal — it changes nobody else's page — and the department admin
+    still makes the department's columns themselves."""
+    db = get_db()
+    picker = _mine_column_picker(db, g.user)
+    offered = [c["id"] for _d, _n, cols in picker for c in cols]
+    shown = {int(v[4:]) for v in request.form.getlist("col")
+             if v.startswith("col_") and v[4:].isdigit()}
+    hidden = {cid for cid in offered if cid not in shown}
+    set_hidden_mine_columns(db, g.user["id"], offered, hidden)
+    db.commit()
+    flash("Your Mine tab columns are saved.", "ok")
+    return redirect(url_for("records.list_records", tab="mine"))
 
 
 @bp.route("/records/download")
@@ -385,9 +447,20 @@ def delete_record(rid):
     db = get_db()
     soft_delete(db, g.user, rec)
     log(db, "record_delete", f"record {rid} moved to the recycle bin")
+    # When someone other than the owner deletes the record (a portal admin
+    # or an administrative permission user, from the user's own My records
+    # page or anywhere else), the owner is told (build 60).
+    if rec["owner_id"] != g.user["id"]:
+        summary = summaries_for(db, [rec]).get(rec["id"]) or "record"
+        notify(db, [rec["owner_id"]],
+               f"{g.user['full_name']} deleted your record {summary}.",
+               url_for("records.bin_page"))
     db.commit()
     flash("Moved to the recycle bin. You can restore it for "
           f"{config.BIN_DAYS} days.", "ok")
+    nxt = (request.form.get("next") or "").strip()
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
     return redirect(url_for("records.list_records"))
 
 
@@ -725,7 +798,8 @@ def bin_page():
     """Recycle bin. Portal admin / permission user: two tabs, Records and Users.
     Everyone else: only their own deleted records, no Users tab.
     The Records tab lists everything that was deleted and can be restored:
-    personal records, Department Database rows and application letters.
+    personal records, Department Database rows, application letters,
+    invoices and item requests.
     Before this fix it only listed personal records, so a deleted Department
     Database row never appeared here at all."""
     db = get_db()
@@ -807,6 +881,47 @@ def bin_page():
                           view_url=None,
                           restore_url=url_for("records.bin_app_restore", aid=r["id"]),
                           purge_url=url_for("records.bin_app_purge", aid=r["id"])))
+    # 4. Invoices. A deleted invoice is soft-deleted and is erased for good
+    # after 30 days (build 60). The owner sees it here; a portal admin or
+    # permission user sees them all. A draft has no number yet, so its
+    # summary says so.
+    where = "i.deleted_at IS NOT NULL" + ("" if portal else " AND i.owner_id=?")
+    params = [] if portal else [g.user["id"]]
+    irows = db.execute("SELECT i.*, t.name AS template_name, o.full_name AS owner_name, "
+                       "o.is_active AS owner_is_active, o.is_deleted AS owner_is_deleted, "
+                       "d.name AS department_name, "
+                       "(SELECT full_name FROM users WHERE id=i.deleted_by) AS deleted_by_name "
+                       "FROM invoices i LEFT JOIN invoice_templates t ON t.id=i.template_id "
+                       "JOIN users o ON o.id=i.owner_id "
+                       "JOIN departments d ON d.id=i.department_id "
+                       "WHERE " + where + " ORDER BY i.deleted_at DESC", params).fetchall()
+    for r in irows:
+        erase_on, days_left = _erase(r["deleted_at"])
+        items.append(dict(r, summary=(r["number"] or "Draft invoice") + (f" · {r['template_name']}" if r["template_name"] else ""),
+                          erase_on=erase_on, days_left=days_left,
+                          kind_label="Invoice",
+                          view_url=None,
+                          restore_url=url_for("records.bin_invoice_restore", iid=r["id"]),
+                          purge_url=url_for("records.bin_invoice_purge", iid=r["id"])))
+    # 5. Item requests. Same shape as invoices (build 60).
+    where = "r.deleted_at IS NOT NULL" + ("" if portal else " AND r.owner_id=?")
+    params = [] if portal else [g.user["id"]]
+    qrows = db.execute("SELECT r.*, k.name AS kind_name, o.full_name AS owner_name, "
+                       "o.is_active AS owner_is_active, o.is_deleted AS owner_is_deleted, "
+                       "d.name AS department_name, "
+                       "(SELECT full_name FROM users WHERE id=r.deleted_by) AS deleted_by_name "
+                       "FROM item_requests r LEFT JOIN item_request_kinds k ON k.id=r.kind_id "
+                       "JOIN users o ON o.id=r.owner_id "
+                       "JOIN departments d ON d.id=r.department_id "
+                       "WHERE " + where + " ORDER BY r.deleted_at DESC", params).fetchall()
+    for r in qrows:
+        erase_on, days_left = _erase(r["deleted_at"])
+        items.append(dict(r, summary=(r["number"] or "Item request") + (f" · {r['kind_name']}" if r["kind_name"] else ""),
+                          erase_on=erase_on, days_left=days_left,
+                          kind_label="Item request",
+                          view_url=None,
+                          restore_url=url_for("records.bin_request_restore", rid=r["id"]),
+                          purge_url=url_for("records.bin_request_purge", rid=r["id"])))
     items.sort(key=lambda it: it["deleted_at"] or "", reverse=True)
     return render_template("bin.html", items=items, users=[], tab=tab, portal=portal, days=config.BIN_DAYS)
 
@@ -904,6 +1019,90 @@ def bin_app_purge(aid):
     log(db, "application_erase", f"{app['number']} erased for good")
     db.commit()
     flash(f"Application {app['number']} erased for good.", "ok")
+    return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/invoices/<int:iid>/restore", methods=["POST"])
+@login_required
+def bin_invoice_restore(iid):
+    """Restore a deleted invoice from the Recycle Bin. The owner or a
+    portal admin can do it; the invoice comes back with its number and
+    its chain exactly as it was."""
+    db = get_db()
+    inv = db.execute("SELECT * FROM invoices WHERE id=?", (iid,)).fetchone()
+    if inv is None or not inv["deleted_at"]:
+        abort(404)
+    if not (is_portal_admin(g.user) or inv["owner_id"] == g.user["id"]):
+        abort(403)
+    db.execute("UPDATE invoices SET deleted_at=NULL, deleted_by=NULL, updated_at=datetime('now','localtime') WHERE id=?", (iid,))
+    log(db, "invoice_restore", inv["number"] or "draft")
+    db.commit()
+    flash(f"Invoice {inv['number'] or 'draft'} restored.", "ok")
+    return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/invoices/<int:iid>/purge", methods=["POST"])
+@login_required
+def bin_invoice_purge(iid):
+    """Erase a deleted invoice for good, from the Recycle Bin. The same
+    rule as for records: a permission user cannot erase an invoice he
+    deleted himself, one the portal admin deleted, or one another
+    permission user deleted — only the portal admin can erase those."""
+    db = get_db()
+    inv = db.execute("SELECT * FROM invoices WHERE id=?", (iid,)).fetchone()
+    if inv is None or not inv["deleted_at"]:
+        abort(404)
+    if not (is_portal_admin(g.user) or inv["owner_id"] == g.user["id"]):
+        abort(403)
+    if _bin_purge_blocked(db, inv["deleted_by"]):
+        flash("Only the portal admin can erase this invoice for good.", "error")
+        return redirect(url_for("records.bin_page"))
+    purge_invoice(db, iid)
+    log(db, "invoice_erase", f"{inv['number'] or 'draft'} erased for good")
+    db.commit()
+    flash(f"Invoice {inv['number'] or 'draft'} erased for good.", "ok")
+    return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/requests/<int:rid>/restore", methods=["POST"])
+@login_required
+def bin_request_restore(rid):
+    """Restore a deleted item request from the Recycle Bin. The owner or a
+    portal admin can do it; the request comes back with its number and
+    its chain exactly as it was."""
+    db = get_db()
+    req = db.execute("SELECT * FROM item_requests WHERE id=?", (rid,)).fetchone()
+    if req is None or not req["deleted_at"]:
+        abort(404)
+    if not (is_portal_admin(g.user) or req["owner_id"] == g.user["id"]):
+        abort(403)
+    db.execute("UPDATE item_requests SET deleted_at=NULL, deleted_by=NULL, updated_at=datetime('now','localtime') WHERE id=?", (rid,))
+    log(db, "item_request_restore", req["number"] or "request")
+    db.commit()
+    flash(f"Item request {req['number'] or 'request'} restored.", "ok")
+    return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/requests/<int:rid>/purge", methods=["POST"])
+@login_required
+def bin_request_purge(rid):
+    """Erase a deleted item request for good, from the Recycle Bin. The same
+    rule as for records: a permission user cannot erase a request he
+    deleted himself, one the portal admin deleted, or one another
+    permission user deleted — only the portal admin can erase those."""
+    db = get_db()
+    req = db.execute("SELECT * FROM item_requests WHERE id=?", (rid,)).fetchone()
+    if req is None or not req["deleted_at"]:
+        abort(404)
+    if not (is_portal_admin(g.user) or req["owner_id"] == g.user["id"]):
+        abort(403)
+    if _bin_purge_blocked(db, req["deleted_by"]):
+        flash("Only the portal admin can erase this request for good.", "error")
+        return redirect(url_for("records.bin_page"))
+    purge_request(db, rid)
+    log(db, "item_request_erase", f"{req['number'] or 'request'} erased for good")
+    db.commit()
+    flash(f"Item request {req['number'] or 'request'} erased for good.", "ok")
     return redirect(url_for("records.bin_page"))
 
 

@@ -211,14 +211,19 @@ def summary_of(columns, vals, n=2):
     return " · ".join(parts[:n]) or "(empty record)"
 
 
-def table_context(db, rows, user=None):
-    """Group records by department so each group is shown with its own columns."""
+def table_context(db, rows, user=None, hidden=None):
+    """Group records by department so each group is shown with its own columns.
+    hidden is an optional set of column ids to leave out of every group (a
+    user's own Mine-tab choice, build 60) — the print widths are computed
+    from the columns that remain, so they stay in step with the table."""
     ids = [r["id"] for r in rows]
     cols, groups, index = {}, [], {}
     for r in rows:
         d = r["department_id"]
         if d not in cols:
             cols[d] = get_columns(db, d)
+            if hidden:
+                cols[d] = [c for c in cols[d] if c["id"] not in hidden]
         if d not in index:
             index[d] = len(groups)
             groups.append({"dept_id": d, "dept_name": r["department_name"],
@@ -231,6 +236,25 @@ def table_context(db, rows, user=None):
     return {"groups": groups, "vmap": values_for(db, ids), "shares": shares_for(db, ids),
             "multi": len(groups) > 1,
             "levels": {r["id"]: access_level(db, user, r) for r in rows} if user else {}}
+
+
+def hidden_mine_columns(db, user_id):
+    """Column ids this user hid on their own My records Mine tab (build 60)."""
+    return {r[0] for r in db.execute(
+        "SELECT column_id FROM user_hidden_columns WHERE user_id=?", (user_id,))}
+
+
+def set_hidden_mine_columns(db, user_id, offered_ids, hidden_ids):
+    """Save a user's Mine-tab column choice: only the columns that were
+    offered are touched, so a column from a department the user no longer
+    has records in keeps whatever choice it had."""
+    if offered_ids:
+        qmarks = ",".join("?" * len(offered_ids))
+        db.execute(f"DELETE FROM user_hidden_columns WHERE user_id=? AND column_id IN ({qmarks})",
+                   [user_id] + list(offered_ids))
+    for cid in hidden_ids:
+        db.execute("INSERT OR IGNORE INTO user_hidden_columns(user_id, column_id) VALUES (?, ?)",
+                   (user_id, cid))
 
 
 # ---------------------------------------------------------------- records: writing
@@ -389,9 +413,45 @@ def purge_application(db, aid):
     db.execute("DELETE FROM applications WHERE id=?", (aid,))  # history and steps are deleted by CASCADE
 
 
+def purge_invoice(db, iid):
+    """Erase an invoice for good, including its chain steps' signature files
+    and its lines (build 60: invoice delete is a soft delete to the Recycle
+    Bin, and this is what the Bin's Delete forever and the 30-day erase do)."""
+    for _s in db.execute("SELECT signature_path FROM invoice_steps WHERE invoice_id=?", (iid,)):
+        if _s[0]:
+            try:
+                _f = os.path.join(config.UPLOAD_DIR, "inv_signatures", os.path.basename(_s[0]))
+                if os.path.exists(_f):
+                    os.remove(_f)
+            except Exception:
+                pass
+    db.execute("DELETE FROM invoice_lines WHERE invoice_id=?", (iid,))
+    db.execute("DELETE FROM invoices WHERE id=?", (iid,))  # steps go by CASCADE
+
+
+def purge_request(db, rid):
+    """Erase an item request for good, including its chain steps' signature
+    files, its lines and its edit history (build 60: request delete is a
+    soft delete to the Recycle Bin, and this is what the Bin's Delete
+    forever and the 30-day erase do)."""
+    for _s in db.execute("SELECT signature_path FROM item_request_steps WHERE request_id=?", (rid,)):
+        if _s[0]:
+            try:
+                _f = os.path.join(config.UPLOAD_DIR, "req_signatures", os.path.basename(_s[0]))
+                if os.path.exists(_f):
+                    os.remove(_f)
+            except Exception:
+                pass
+    db.execute("DELETE FROM item_request_lines WHERE request_id=?", (rid,))
+    db.execute("DELETE FROM item_request_history WHERE request_id=?", (rid,))
+    db.execute("DELETE FROM item_request_steps WHERE request_id=?", (rid,))
+    db.execute("DELETE FROM item_requests WHERE id=?", (rid,))
+
+
 def purge_user_work(db, uid):
     """Erase one user's work: his records (with attachment files), his Department
-    Database rows (with attachment files), his invoices and his public QR links.
+    Database rows (with attachment files), his invoices and his item requests
+    (with their chain signature files), and his public QR links.
     Used when a deleted user is erased for good and the admin chose 'yes, delete
     his work too', and when a deleted user reaches the end of his 30 days."""
     for rid in [r[0] for r in db.execute("SELECT id FROM records WHERE owner_id=?", (uid,))]:
@@ -400,7 +460,10 @@ def purge_user_work(db, uid):
         purge_ddb_row(db, _rid)
     for _aid in [r[0] for r in db.execute("SELECT id FROM applications WHERE owner_id=?", (uid,))]:
         purge_application(db, _aid)
-    db.execute("DELETE FROM invoices WHERE owner_id=?", (uid,))
+    for _iid in [r[0] for r in db.execute("SELECT id FROM invoices WHERE owner_id=?", (uid,))]:
+        purge_invoice(db, _iid)
+    for _qid in [r[0] for r in db.execute("SELECT id FROM item_requests WHERE owner_id=?", (uid,))]:
+        purge_request(db, _qid)
     db.execute("DELETE FROM public_links WHERE owner_id=?", (uid,))
 
 
@@ -417,6 +480,8 @@ def purge_user_account(db, uid, delete_work):
     db.execute("UPDATE records SET deleted_by=NULL WHERE deleted_by=?", (uid,))
     db.execute("UPDATE ddb_rows SET deleted_by=NULL WHERE deleted_by=?", (uid,))
     db.execute("UPDATE applications SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("UPDATE invoices SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("UPDATE item_requests SET deleted_by=NULL WHERE deleted_by=?", (uid,))
     db.execute("UPDATE applications SET recipient_id=NULL WHERE recipient_id=?", (uid,))
     db.execute("UPDATE applications SET checker_id=NULL WHERE checker_id=?", (uid,))
     db.execute("UPDATE applications SET approver_id=NULL WHERE approver_id=?", (uid,))
@@ -474,6 +539,17 @@ def purge_expired(db):
             "SELECT id FROM applications WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
             (f"-{config.BIN_DAYS} days",))]:
         purge_application(db, _aid)
+    # Deleted invoices and item requests: after 30 days the invoice or
+    # request and its lines and chain signatures are erased for good, the
+    # same as a deleted record, row or application letter (build 60).
+    for _iid in [r[0] for r in db.execute(
+            "SELECT id FROM invoices WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
+            (f"-{config.BIN_DAYS} days",))]:
+        purge_invoice(db, _iid)
+    for _rid in [r[0] for r in db.execute(
+            "SELECT id FROM item_requests WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','localtime',?)",
+            (f"-{config.BIN_DAYS} days",))]:
+        purge_request(db, _rid)
     # Deleted users: after 30 days the account AND all his work go, together.
     for _uid in [r[0] for r in db.execute(
             "SELECT id FROM users WHERE is_deleted=1 AND deleted_at IS NOT NULL "

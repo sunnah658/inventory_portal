@@ -430,10 +430,16 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     for _lab in ("INVOICE NO.", "REFERENCE"):
         if _lab in meta_d:
             left_rows.append([Paragraph(f"<font color='#506A7B'>{_pdf_text(_lab_map.get(_lab, _lab))} -</font> <font size='10'><b>{_pdf_text(meta_d[_lab])}</b></font>", meta_s)])
-    _bill = f"<font color='#506A7B'>Bill to -</font> <font size='10'><b>{_pdf_text(bill_to[0])}</b></font>"
-    if bill_to[1]:
-        _bill += f"<br/>{_pdf_text(bill_to[1])}"
-    left_rows.append([Paragraph(_bill, meta_s)])
+    # "Bill to" only appears when there is a customer to bill: a
+    # Conveyance, Admin Expense or Purchase Request invoice has no
+    # customer (its form has no customer field), so the line used to
+    # print empty. A Billing invoice still shows it, and a customer
+    # that exists but is hidden from strangers still shows the "—".
+    if bill_to and ((bill_to[0] or "").strip() or (bill_to[1] or "").strip()):
+        _bill = f"<font color='#506A7B'>Bill to -</font> <font size='10'><b>{_pdf_text(bill_to[0])}</b></font>"
+        if bill_to[1]:
+            _bill += f"<br/>{_pdf_text(bill_to[1])}"
+        left_rows.append([Paragraph(_bill, meta_s)])
     _left = Table(left_rows, colWidths=[9 * cm],
                   style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                          ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])

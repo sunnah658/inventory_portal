@@ -17,8 +17,11 @@
 {% endmacro %}
 
 {# Record tables grouped by department. mode: 'mine' (shows Shared with) or 'shared' (shows Owner). bulk adds tick boxes.
-   sel=True (My records) also shows every column in print, with print widths. #}
-{% macro groups_table(ctx, mode, bulk=False, sel=False) %}
+   sel=True (My records) also shows every column in print, with print widths.
+   admin_view=True (a portal admin / permission user looking at one user's
+   My records, build 60) shows Open + Delete only, never Edit; admin_next
+   is the page to come back to after a delete. #}
+{% macro groups_table(ctx, mode, bulk=False, sel=False, admin_view=False, admin_next="") %}
 {% for grp in ctx.groups %}
   {% if ctx.multi %}<h2 class="grp">{{ grp.dept_name }}</h2>{% endif %}
   {% set showcols = grp.columns if sel else grp.columns[:7] %}
@@ -36,7 +39,8 @@
       <td>{% if mode == 'shared' %}<span class="{{ user_name_class(r) }}">{{ r.owner_name }}</span>{% else %}{% for n in ctx.shares[r.id] %}<span class="dp">{{ n }}</span>{% endfor %}{% endif %}</td>
       <td class="actcell noprint">
         <a class="b sm" href="{{ url_for('records.detail', rid=r.id) }}">Open</a>
-        {% if lvl in ('admin', 'owner', 'shared') %}<a class="b sm" href="{{ url_for('records.edit_record', rid=r.id) }}">Edit</a>{% endif %}
+        {% if admin_view %}<form method="post" action="{{ url_for('records.delete_record', rid=r.id) }}" style="display:inline" onsubmit="return confirm('Move this record to the Recycle Bin? The owner will be told.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="next" value="{{ admin_next }}"><button class="b sm dg" type="submit">Delete</button></form>
+        {% elif lvl in ('admin', 'owner', 'shared') %}<a class="b sm" href="{{ url_for('records.edit_record', rid=r.id) }}">Edit</a>{% endif %}
       </td>
     </tr>
     {% endfor %}

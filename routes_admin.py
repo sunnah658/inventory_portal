@@ -3,7 +3,7 @@ routes_admin.py - everything only the admin can do.
 
 Used by: app.py (registers it).
 Uses:    auth.py, core.py, models.py, import_users.py, backup.py, branding.py, config.py
-Pages:   dashboard, all records, users, departments, record columns, import users,
+Pages:   dashboard, all records, users' records, users, departments, record columns, import users,
          activity log, settings (company name and logo).
 """
 import csv
@@ -25,7 +25,7 @@ from core import (COLUMN_TYPES, TYPE_LABEL, admin_ids, build_csv, column_names, 
                   reminder_rows, save_dashboard_settings, search_clause, summaries_for, table_context)
 from import_users import import_users
 from models import get_db, log, setting_get, setting_set
-from routes_records import code_redirect, list_options
+from routes_records import _list_records_view, code_redirect, list_options
 from security import password_problem, reauth_ok, revoke_session, revoke_user_sessions
 from templates_data import TEMPLATES
 from utils import csv_response, generate_password, like_pattern, page_info
@@ -209,6 +209,42 @@ def all_records_download():
     log(db, "download_csv", f"{len(rows)} records ({name})")
     db.commit()
     return csv_response(header, out, name)
+
+
+# ================================================================ users' records (build 60)
+@bp.route("/users-records")
+@admin_required
+def users_records():
+    """Users' records: every user, with how many records they have. Clicking
+    a name opens that user's whole My records page (view and delete only)."""
+    db = get_db()
+    q = (request.args.get("q") or "").strip()
+    sql = ("SELECT u.*, d.name AS department_name, (SELECT COUNT(*) FROM records r "
+           "WHERE r.owner_id=u.id AND r.deleted_at IS NULL) AS item_count "
+           "FROM users u LEFT JOIN departments d ON d.id=u.department_id")
+    where = ["u.is_deleted=0"]
+    params = []
+    if q:
+        where.append("(u.full_name LIKE ? ESCAPE '\\\\' OR u.username LIKE ? ESCAPE '\\\\'"
+                     " OR d.name LIKE ? ESCAPE '\\\\')")
+        params += [like_pattern(q)] * 3
+    rows = db.execute(sql + " WHERE " + " AND ".join(where) +
+                      " ORDER BY u.full_name COLLATE NOCASE", params).fetchall()
+    return render_template("admin_users_records.html", rows=rows, q=q, total=len(rows))
+
+
+@bp.route("/user-records")
+@admin_required
+def user_records():
+    """One user's whole My records page, for the portal admin or an
+    administrative permission user (build 60): view and delete only.
+    Deleting a record from here tells the owner (see records.delete_record)."""
+    db = get_db()
+    uid = request.args.get("user", type=int)
+    target = db.execute("SELECT * FROM users WHERE id=? AND is_deleted=0", (uid,)).fetchone() if uid else None
+    if target is None:
+        abort(404)
+    return _list_records_view(db, target, request.args, admin_view=True)
 
 
 @bp.route("/users")

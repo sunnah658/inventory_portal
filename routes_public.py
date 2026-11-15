@@ -166,16 +166,18 @@ def search_qr():
             # opens its own page.
             link = db.execute("SELECT * FROM public_links WHERE code_text=?", (_wanted,)).fetchone()
             if link is None:
-                # invoice public code: HRC-##### -> invoice code page
+                # invoice public code: HRC-##### -> invoice code page. A
+                # deleted invoice never matches (build 60).
                 try:
-                    _inv = db.execute("SELECT public_code FROM invoices WHERE public_code=?", (_wanted,)).fetchone()
+                    _inv = db.execute("SELECT public_code FROM invoices WHERE public_code=? AND deleted_at IS NULL", (_wanted,)).fetchone()
                 except Exception:
                     _inv = None
                 if _inv is not None:
                     return redirect(url_for("invoices.code_page", code=_inv["public_code"]))
-                # item request public code: HRC-##### -> request code page
+                # item request public code: HRC-##### -> request code page.
+                # A deleted request never matches (build 60).
                 try:
-                    _req = db.execute("SELECT public_code FROM item_requests WHERE public_code=?", (_wanted,)).fetchone()
+                    _req = db.execute("SELECT public_code FROM item_requests WHERE public_code=? AND deleted_at IS NULL", (_wanted,)).fetchone()
                 except Exception:
                     _req = None
                 if _req is not None:
