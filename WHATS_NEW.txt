@@ -1,4 +1,33 @@
 ==============================================================================
+ UPDATE: SALES PIPELINE TAB AND REPORT FROM SELECTED RECORDS (2026-11-15)
+==============================================================================
+ 1. The Department Database for Sales & Marketing now has a new
+    default tab, "Sales Pipeline". It has 12 columns: Client name,
+    Contact person, Phone number, Email, Assigned to, Follow-up
+    method, Follow-up date, Deal stage, MRC (BDT), Referred by,
+    Phone reason and Notes. Only Client name must be filled in.
+    The tab is created automatically when you apply this build.
+    Any department admin can also add the same tab from the Tabs
+    page.
+ 2. To the right of "Select all" on the Department Database page
+    there is now a Report button. Tick the rows you want (Select
+    all ticks them all), then click Report — the "Client follow-up
+    & sales pipeline report" downloads as a PDF, in the style of
+    the report you showed me. The report is made from the selected
+    rows only. If nothing is ticked, it says "Please select the
+    data row first." The button does not appear on the Invoices or
+    Request items pages.
+ 3. The report is one page: how many clients were visited and how
+    many were reached by phone, a bar per Account Manager, the
+    pipeline (prospects, potential MRC, Done and Open), the top
+    referrer, pipeline MRC per Account Manager, the Top 5 open
+    prospects, and a Key Message at the bottom. A row marked
+    Terminated counts in the follow-up but not in the pipeline.
+ 4. Not in this build: the two annexes from your photos (Annex A,
+    the Head of Sales 3-month performance report, and Annex B, the
+    termination customer list). Say the word and I will add them.
+
+==============================================================================
  UPDATE: DASHBOARD SETTINGS PANEL FIXED (2026-11-15)
 ==============================================================================
  1. The Dashboard settings panel is fixed. When you open "Dashboard

@@ -4344,3 +4344,105 @@
     this build. Back up first and keep your live .env untouched,
     as before. Apply only this latest zip, not the older ones in
     order.
+
+85. SALES PIPELINE TAB AND REPORT FROM SELECTED RECORDS (2026-11-15)
+    What this is: a new default tab in the Department Database for
+    the Sales & Marketing department, called "Sales Pipeline", and a
+    Report button on it that makes the "Client follow-up & sales
+    pipeline report" — the report you showed me in the four photos —
+    from the rows you select, and downloads it as a PDF. It is built
+    from the data in the tab, not from a fixed list.
+    The tab: Sales & Marketing gets the tab automatically, on the
+    first start after you apply this build (and on any later start
+    if the tab was removed). A department that is created later with
+    "Sales" and "Marketing" in its name gets it too. Any department
+    admin can also add the tab from the Tabs page — it is offered
+    there as the "Sales Pipeline" template. The tab has 12 columns,
+    in this order: Client name (text, required — the only required
+    one), Contact person (text), Phone number (text), Email (text),
+    Assigned to (dropdown: Mohaiminul, Syful, Shanjid, Prince,
+    Imtiaz), Follow-up method (dropdown: Physical visit, Phone
+    call), Follow-up date (date), Deal stage (dropdown: Open, Done,
+    Terminated), MRC (BDT) (number), Referred by (text), Phone
+    reason (dropdown: Outside Dhaka, Busy), Notes (long text). The
+    tab works like any other Department Database tab: add, edit,
+    share and delete rows, and the usual Export / Print.
+    The Report button: on the Department Database page, to the right
+    of "Select all", there is now a Report button. Tick the rows you
+    want in the report (Select all ticks them all), then click
+    Report — the PDF downloads. The report is made from the selected
+    rows only; untick a row and it leaves the report. If you click
+    Report with nothing ticked, it says "Please select the data row
+    first." and nothing downloads.
+    The button only appears where the report can be made: on a
+    Department Database tab that has all four columns the report
+    needs (Assigned to, Follow-up method, Deal stage, MRC (BDT)).
+    The Sales Pipeline tab has them, so it always shows the button.
+    Another tab shows it too if it has those four columns. It does
+    NOT appear on the Invoices tab or the Request items tab — those
+    are separate pages, not Department Database tabs, and they never
+    show it.
+    What the report contains (one landscape A4 page, in the style of
+    your photos): a dark-blue title band — "CLIENT FOLLOW-UP &
+    SALES PIPELINE REPORT", "Prepared for: Managing Director",
+    today's date, "Amounts in BDT", and which tab and department it
+    came from and how many rows were selected. Then two sections
+    side by side. (1) EXISTING CLIENT FOLLOW-UP: how many were
+    reached by physical visit and how many by phone call, with the
+    share of the selected rows; a stacked bar per Account Manager
+    (blue = physical visit, orange = phone call) and the share
+    reached; and, when any client was reached by phone, a box
+    "Why some clients were contacted by phone" listing how many
+    were outside Dhaka and how many were busy. (2) SALES PIPELINE:
+    how many prospects (Open + Done), the potential MRC, how many
+    are Done and how many are Open, with their MRC; the top
+    referrer in an orange box (how many prospects, how much MRC,
+    what share of the pipeline MRC, and by which Account Managers);
+    a bar per Account Manager of pipeline MRC (purple = Open, blue
+    = Done); and the Top 5 open prospects by MRC. At the bottom, a
+    KEY MESSAGE band with two sentences summing up the visits and
+    the pipeline.
+    How the numbers are worked out: the follow-up counts use every
+    selected row. The pipeline counts use only rows whose Deal stage
+    is Open or Done. A row marked Terminated counts in the follow-up
+    (it was visited or phoned) but NOT in the pipeline, and the
+    report says how many were terminated. A row with no stage or a
+    stage other than Open / Done / Terminated counts in the
+    follow-up only. "Reached" means visited or phoned, so the
+    reached share is (visits + phone calls) out of the selected
+    rows. The referred-by box shows the person who referred the
+    most pipeline MRC; it is left out when no selected row has a
+    Referred by value. The Top 5 list shows only Open prospects.
+    The report is logged in the Activity log as an export ("sales
+    pipeline report <department> / <tab>: N rows"). Who can download
+    it follows the usual Department Database rules: a regular user
+    only for their own department, a portal admin or an
+    administrative permission user for any department; a user from
+    another department gets 404.
+    Still open (not built in this build): your photos also had two
+    annexes — Annex A, the Head of Sales 3-month performance report,
+    and Annex B, the termination customer list. You did not say
+    whether you want them in the same PDF, so they are NOT in this
+    build; the report is the main page only. Say the word and I will
+    add them. The tab is named "Sales Pipeline"; say if you want a
+    different name.
+    Tests: 869/869 checks pass (825 from builds up to 65 + 44 new).
+    The new checks cover the tab being created on startup and on
+    department creation (and not duplicated, and not created for a
+    plain Marketing department or for HR & Admin), the 12 columns
+    in order with only Client name required, the Report button
+    showing on the pipeline tab and on a tab with the four columns
+    but not on Client Info, Invoices or Request items, the guard
+    when nothing is ticked, the report's numbers for eight rows
+    (visits, phone calls, prospects, MRC, Done / Open, the referred
+    box, per-KAM bars and the Top 5), the one-page PDF, a
+    Terminated row counting in the follow-up but not the pipeline,
+    and the access rules for another department's user.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There is NO database change in
+    this build. The Sales Pipeline tab and its 12 columns are
+    created by the startup backfill the first time the new code
+    runs, so your existing Department Database rows are untouched.
+    Back up first and keep your live .env untouched, as before.
+    Apply only this latest zip, not the older ones in order.

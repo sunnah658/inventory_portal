@@ -1025,6 +1025,16 @@ def _upgrade_ddb_tabs(conn):
             continue
         conn.execute("UPDATE ddb_columns SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (first[0], dept_id))
         conn.execute("UPDATE ddb_rows SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (first[0], dept_id))
+    # The Sales Pipeline tab (2026-11-15, build 66): the Sales & Marketing
+    # department gets a default tab holding every column the follow-up &
+    # pipeline report needs. Only a department with no live tab by that
+    # name is touched, so this is safe to run on every startup. (A new
+    # Sales & Marketing department gets the same tab from
+    # core.create_department.)
+    from core import ensure_sales_pipeline_tab, sales_dept_id
+    _sales_id = sales_dept_id(conn)
+    if _sales_id is not None:
+        ensure_sales_pipeline_tab(conn, _sales_id)
 
 
 def _ensure_column(conn, table, column, ddl):

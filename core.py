@@ -129,7 +129,64 @@ def create_department(db, name, template_key=None, selected=None):
     # Every department has a Custom Application kind by default (2026-11-14).
     db.execute("INSERT INTO application_kinds(department_id,name,number_prefix,next_number,is_custom) "
                "VALUES (?,?,?,1,1)", (dept_id, "Custom Application", "CA"))
+    # A department named Sales & Marketing gets the default Sales Pipeline
+    # tab with its 12 columns (2026-11-15, build 66).
+    if "sales" in name.lower() and "marketing" in name.lower():
+        ensure_sales_pipeline_tab(db, dept_id)
     return dept_id
+
+
+# The Sales Pipeline tab (2026-11-15, build 66): the default tab for the
+# Sales & Marketing department, holding every column the follow-up &
+# pipeline report needs. Also offered as a template on the Tabs page
+# (routes_deptdb.TEMPLATE_TABS), so any department can add one.
+# (name, type, options, required, has_time). Dropdown options are joined
+# with a literal backslash-n, the same as every other template tab.
+SALES_PIPELINE_COLUMNS = [
+    ("Client name", "text", None, 1, 0),
+    ("Contact person", "text", None, 0, 0),
+    ("Phone number", "text", None, 0, 0),
+    ("Email", "text", None, 0, 0),
+    ("Assigned to", "dropdown", "Mohaiminul\nSyful\nShanjid\nPrince\nImtiaz", 0, 0),
+    ("Follow-up method", "dropdown", "Physical visit\nPhone call", 0, 0),
+    ("Follow-up date", "date", None, 0, 0),
+    ("Deal stage", "dropdown", "Open\nDone\nTerminated", 0, 0),
+    ("MRC (BDT)", "number", None, 0, 0),
+    ("Referred by", "text", None, 0, 0),
+    ("Phone reason", "dropdown", "Outside Dhaka\nBusy", 0, 0),
+    ("Notes", "longtext", None, 0, 0),
+]
+
+
+def sales_dept_id(db):
+    """The Sales & Marketing department id: exact name first, then a
+    like match, so a department spelled a little differently is still
+    found (the same pattern as hr_admin_dept_id)."""
+    row = db.execute("SELECT id FROM departments WHERE LOWER(name)='sales & marketing'").fetchone()
+    if row:
+        return row["id"]
+    row = db.execute("SELECT id FROM departments WHERE LOWER(name) LIKE '%sales%' "
+                     "AND LOWER(name) LIKE '%marketing%' ORDER BY id LIMIT 1").fetchone()
+    return row["id"] if row else None
+
+
+def ensure_sales_pipeline_tab(db, dept_id):
+    """Create the Sales Pipeline tab (with all 12 columns) for the given
+    department when it has no live tab by that name. Returns the new tab
+    id, or None when one already exists. Safe to run on every startup."""
+    if db.execute("SELECT 1 FROM ddb_tabs WHERE department_id=? AND LOWER(name)='sales pipeline' "
+                  "AND removed_at IS NULL", (dept_id,)).fetchone():
+        return None
+    pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM ddb_tabs WHERE department_id=?",
+                     (dept_id,)).fetchone()[0]
+    tab_id = db.execute("INSERT INTO ddb_tabs(department_id,name,template,meeting_notify,position,created_by) "
+                        "VALUES (?,?, 'pipeline', 0, ?, NULL)",
+                        (dept_id, "Sales Pipeline", pos)).lastrowid
+    for i, (cname, ctype, opts, req, has_time) in enumerate(SALES_PIPELINE_COLUMNS):
+        db.execute("INSERT INTO ddb_columns(department_id,tab_id,name,col_type,options,required,has_time,position) "
+                   "VALUES (?,?,?,?,?,?,?,?)",
+                   (dept_id, tab_id, cname, ctype, opts, req, has_time, i))
+    return tab_id
 
 
 # ---------------------------------------------------------------- records: reading
