@@ -4167,3 +4167,65 @@
     this build. Back up first and keep your live .env untouched,
     as before. Apply only this latest zip, not the older ones in
     order.
+
+82. "MY COLUMNS" IS A PAGE OF ITS OWN, LIKE THE ADMIN'S COLUMNS PAGE; PROTECT KEPT (2026-11-15)
+
+    1. Your columns now have a page of their own — "My columns" —
+       laid out exactly like the portal admin's Departments -> record
+       columns page: KPI cards on top (Columns, Removed, Protected),
+       the table on the left, and the "Add column" card in the right
+       rail. Open it from the Mine tab: the "Manage my columns"
+       button under the Columns picker, or the "My columns" action in
+       the Quick actions on the right. The Mine tab's Columns box
+       keeps only the tick-box picker for showing and hiding columns.
+    2. The table has the same columns as the admin's: Column (name,
+       and the dropdown options underneath), Type, Required, Shown,
+       Filled in, with up, down, Edit and Remove on every row. The up
+       and down arrows are shown on every row, as before.
+    3. Edit opens its own page, like the admin's Edit column page:
+       the name box shows the column's name — delete it and type a
+       new one to rename the column — plus the dropdown options, the
+       Required tick, the Shown tick and the Protect tick. The type
+       cannot be changed; add a new column instead. Shown is the
+       picker's tick, so unticking it hides the column on the Mine
+       tab without removing it.
+    4. The Protect tick is kept, on the Add column form and on the
+       Edit page, exactly like the admin's. A protected column shows
+       a lock beside its name and has no Remove button until you
+       click "Remove protection". Protection can be switched on in
+       the Add form or on the Edit page; switching it off needs the
+       separate "Remove protection" button, so it cannot happen by
+       accident. Reminders and "keep a time" are still admin-column
+       features only, and there is no Repair log or File attachments
+       card on this page — those are department settings.
+    5. Remove now asks you to type the column name to confirm, like
+       the admin's — a missing or wrong name removes nothing. No
+       password is asked, because it is your own column; the admin's
+       password is there because a department column affects the
+       whole department. A protected column cannot be removed until
+       its protection is removed.
+    6. A removed column is no longer gone for good. It goes to a
+       "Removed columns" page (the "Removed columns · N" button at
+       the top of the page and in the Quick actions), where it can be
+       restored with all its data, or erased for good — erasing
+       first saves an automatic backup, and also asks for the column
+       name typed out. Restoring is refused if you already have a
+       live column with the same name.
+    7. What is NOT in this build: the department's default columns
+       are still the department's — this page lists only the columns
+       you added yourself, and nothing here touches anyone else's
+       columns or the department's columns. One thing in your last
+       message I could not read with certainty — "users now can
+       delete the default column name" — I built it as the Edit page
+       letting you delete the name in the box and type a new one
+       (rename). If you meant users should be able to remove the
+       department's default columns from their own Mine tab, say so
+       in a word and I will add that next; I have not built it,
+       because deleting a department column for everyone would be
+       wrong and I did not want to guess.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There is NO database change in
+    this build. Back up first and keep your live .env untouched,
+    as before. Apply only this latest zip, not the older ones in
+    order.

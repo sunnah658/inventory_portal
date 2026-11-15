@@ -1,4 +1,24 @@
 ==============================================================================
+ UPDATE: "MY COLUMNS" IS A PAGE OF ITS OWN, LIKE THE ADMIN'S COLUMNS PAGE; PROTECT KEPT (2026-11-15)
+==============================================================================
+ 1. Your columns now have a page of their own — "My columns" — laid out
+    exactly like the portal admin's Departments -> record columns page:
+    KPI cards on top, the table on the left, and the "Add column" card
+    in the right rail. Open it from the Mine tab with "Manage my
+    columns" under the Columns picker, or from "My columns" in the
+    Quick actions. The Columns box keeps only the tick-box picker.
+ 2. Edit opens its own page, like the admin's: the name box shows the
+    column's name (delete it and type a new one to rename it), plus
+    the dropdown options, Required, Shown and Protect ticks.
+ 3. The Protect tick is kept, on the Add form and the Edit page. A
+    protected column shows a lock and has no Remove button until you
+    click "Remove protection".
+ 4. Remove asks you to type the column name to confirm, like the
+    admin's — no password, because it is your own column. A removed
+    column goes to a "Removed columns" page, where it can be restored
+    with its data or erased for good (a backup is saved first).
+
+==============================================================================
  UPDATE: YOUR COLUMNS AS THE ADMIN'S TABLE; MY DEPARTMENT TAB SHOWS INVOICES AND REQUESTS TOO (2026-11-15)
 ==============================================================================
  1. "Your columns" in the Mine tab's Columns box is now a table, just

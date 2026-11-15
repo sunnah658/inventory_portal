@@ -24,6 +24,7 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
 
 import config
 from auth import admin_required, login_required
+from backup import make_backup
 from utils import is_portal_admin, is_true_admin
 import scanner
 from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_history, ddb_is_tab_admin, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, display_record_value, external_url, first_text_value, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
@@ -364,6 +365,44 @@ def _own_column(db, cid, user):
     return col
 
 
+def _own_removed_column(db, cid, user):
+    """One of this user's own columns that was removed, or 404 (a live
+    column, a department column, another user's column and a missing one
+    all look the same)."""
+    col = db.execute("SELECT * FROM columns WHERE id=? AND user_id=? AND removed_at IS NOT NULL",
+                     (cid, user["id"])).fetchone()
+    if col is None:
+        abort(404)
+    return col
+
+
+def _my_columns_groups(db, user):
+    """All of this user's own columns (any department), grouped by
+    department like the Mine-tab picker does. Each column carries
+    'shown' (its picker tick) and 'used' (how many of the user's live
+    records have a value in it) — the two extra columns the admin's
+    columns page shows (build 62)."""
+    hidden = hidden_mine_columns(db, user["id"])
+    groups = []
+    for (did,) in db.execute("SELECT DISTINCT department_id FROM columns "
+                             "WHERE user_id=? AND removed_at IS NULL ORDER BY department_id",
+                             (user["id"],)):
+        row = db.execute("SELECT name FROM departments WHERE id=?", (did,)).fetchone()
+        cols = []
+        for c in db.execute("SELECT * FROM columns WHERE department_id=? AND user_id=? "
+                            "AND removed_at IS NULL ORDER BY position, id", (did, user["id"])):
+            c = dict(c)
+            c["shown"] = c["id"] not in hidden
+            c["used"] = db.execute(
+                "SELECT COUNT(*) FROM record_values v JOIN records r ON r.id=v.record_id "
+                "WHERE v.column_id=? AND r.owner_id=? AND r.deleted_at IS NULL "
+                "AND v.value IS NOT NULL AND v.value != ''",
+                (c["id"], user["id"])).fetchone()[0]
+            cols.append(c)
+        groups.append((did, row["name"] if row else "", cols))
+    return groups
+
+
 def _user_column_name_taken(db, dept_id, user_id, name, exclude=None):
     """Does this department already have a column with this name — a
     department column, or one of this user's own columns in it? (Two
@@ -473,13 +512,51 @@ def save_mine_columns():
     return redirect(url_for("records.list_records", tab="mine"))
 
 
+# ---------------------------------------------------------------- my columns page (build 63)
+@bp.route("/records/my-columns")
+@login_required
+def my_columns():
+    """My columns: this user's own columns on a page of their own, laid
+    out like the portal admin's Departments -> record columns page:
+    KPI cards on top, the table on the left, the Add column card in the
+    right rail. The Mine tab's Columns box keeps only the tick-box
+    picker, with a link here."""
+    db = get_db()
+    groups = _my_columns_groups(db, g.user)
+    removed = db.execute("SELECT COUNT(*) FROM columns WHERE user_id=? AND removed_at IS NOT NULL",
+                         (g.user["id"],)).fetchone()[0]
+    total = sum(len(cols) for _did, _dname, cols in groups)
+    protected = sum(1 for _did, _dname, cols in groups for c in cols if c["protected"])
+    can_attach = can_use_record_attachments(g.user)
+    return render_template("records_my_columns.html",
+                           groups=groups, removed=removed, total=total, protected=protected,
+                           col_types=[t for t in USER_COLUMN_TYPES if t[0] != "attachment" or can_attach],
+                           can_attach=can_attach, type_label=USER_TYPE_LABEL)
+
+
+@bp.route("/records/columns/removed")
+@login_required
+def removed_mine_columns():
+    """My removed columns, like the admin's Removed columns page: hidden
+    but their data is kept — restore one, or erase it for good."""
+    db = get_db()
+    cols = db.execute(
+        "SELECT c.*, (SELECT COUNT(*) FROM record_values v WHERE v.column_id=c.id) AS used "
+        "FROM columns c WHERE c.user_id=? AND c.removed_at IS NOT NULL ORDER BY c.removed_at DESC",
+        (g.user["id"],)).fetchall()
+    return render_template("records_removed_columns.html", cols=[dict(c) for c in cols],
+                           type_label=USER_TYPE_LABEL)
+
+
 # ---------------------------------------------------------------- my own columns (build 61)
 # A user adds columns to their OWN Mine tab, inside the Columns box:
 # name, type, dropdown options, required — the same fields the portal
 # admin fills in Departments → record columns, minus reminder/time (those
 # stay admin columns). The column shows only on that user's Mine tab
 # (and in the admin's Users' records view of them), never on anyone
-# else's page, and it is never a department column.
+# else's page, and it is never a department column. A column can be
+# protected from accidental delete (build 63): a protected column shows
+# a lock and has no Remove button until its protection is removed.
 @bp.route("/records/columns/add", methods=["POST"])
 @login_required
 def add_mine_column():
@@ -487,7 +564,7 @@ def add_mine_column():
     dept = g.user["department_id"]
     if not dept:
         flash("You have no department yet, so you cannot add a column.", "error")
-        return redirect(url_for("records.list_records", tab="mine"))
+        return redirect(url_for("records.my_columns"))
     name = " ".join((request.form.get("name") or "").split())[:60]
     ctype = request.form.get("col_type", "")
     options = _parse_column_options(request.form.get("options"))
@@ -505,47 +582,69 @@ def add_mine_column():
         error = f"There is already a column named '{name}'."
     if error:
         flash(error, "error")
-        return redirect(url_for("records.list_records", tab="mine"))
+        return redirect(url_for("records.my_columns"))
     pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM columns "
                      "WHERE department_id=? AND user_id=? AND removed_at IS NULL",
                      (dept, g.user["id"])).fetchone()[0]
     try:
-        db.execute("INSERT INTO columns(department_id,user_id,name,col_type,options,required,position) "
-                   "VALUES (?,?,?,?,?,?,?)",
+        db.execute("INSERT INTO columns(department_id,user_id,name,col_type,options,required,protected,position) "
+                   "VALUES (?,?,?,?,?,?,?,?)",
                    (dept, g.user["id"], name, ctype, options or None,
-                    1 if request.form.get("required") else 0, pos))
+                    1 if request.form.get("required") else 0,
+                    1 if request.form.get("protected") else 0, pos))
         log(db, "user_column_add", f"user {g.user['id']}: {name}")
         db.commit()
         flash(f"Column '{name}' added to your Mine tab.", "ok")
     except Exception:
         db.rollback()
         flash(f"There is already a column named '{name}'.", "error")
-    return redirect(url_for("records.list_records", tab="mine"))
+    return redirect(url_for("records.my_columns"))
 
 
-@bp.route("/records/columns/<int:cid>/edit", methods=["POST"])
+@bp.route("/records/columns/<int:cid>/edit", methods=["GET", "POST"])
 @login_required
 def edit_mine_column(cid):
-    """Rename one of my own columns, change its dropdown options or its
-    required tick. The type never changes, and nobody else's column —
-    department or another user's — can be touched here."""
+    """Edit one of my own columns on its own page, like the admin's Edit
+    column page (build 63): the name box shows the column's name —
+    delete it and type a new one to rename — plus the dropdown options,
+    the Required tick, the Shown tick and the Protect tick. The type
+    never changes, and nobody else's column — department or another
+    user's — can be touched here. Protection can be switched ON here;
+    switching it OFF needs the separate "Remove protection" button, so
+    it cannot happen by accident. Shown is the picker's tick: unticking
+    it hides the column on the Mine tab without removing it."""
     db = get_db()
     col = _own_column(db, cid, g.user)
-    name = " ".join((request.form.get("name") or "").split())[:60]
-    options = _parse_column_options(request.form.get("options")) if col["col_type"] == "dropdown" else None
-    if not name:
-        flash("Type a column name.", "error")
-    elif col["col_type"] == "dropdown" and not options:
-        flash("A dropdown column needs at least one option.", "error")
-    elif _user_column_name_taken(db, col["department_id"], g.user["id"], name, exclude=cid):
-        flash(f"There is already a column named '{name}'.", "error")
-    else:
-        db.execute("UPDATE columns SET name=?, options=?, required=? WHERE id=?",
-                   (name, options, 1 if request.form.get("required") else 0, cid))
-        log(db, "user_column_edit", f"user {g.user['id']}: {col['name']} -> {name}")
-        db.commit()
-        flash("Column saved.", "ok")
-    return redirect(url_for("records.list_records", tab="mine"))
+    if request.method == "POST":
+        name = " ".join((request.form.get("name") or "").split())[:60]
+        options = _parse_column_options(request.form.get("options")) if col["col_type"] == "dropdown" else None
+        # Protection can be switched ON here. Switching it OFF needs the
+        # separate "Remove protection" button, so it cannot happen by accident.
+        protected = 1 if (col["protected"] or request.form.get("protected")) else 0
+        if not name:
+            flash("Type a column name.", "error")
+        elif col["col_type"] == "dropdown" and not options:
+            flash("A dropdown column needs at least one option.", "error")
+        elif _user_column_name_taken(db, col["department_id"], g.user["id"], name, exclude=cid):
+            flash(f"There is already a column named '{name}'.", "error")
+        else:
+            db.execute("UPDATE columns SET name=?, options=?, required=?, protected=? WHERE id=?",
+                       (name, options, 1 if request.form.get("required") else 0, protected, cid))
+            if request.form.get("has_shown"):
+                if request.form.get("shown"):
+                    db.execute("DELETE FROM user_hidden_columns WHERE user_id=? AND column_id=?",
+                               (g.user["id"], cid))
+                else:
+                    db.execute("INSERT OR IGNORE INTO user_hidden_columns(user_id, column_id) VALUES (?, ?)",
+                               (g.user["id"], cid))
+            log(db, "user_column_edit", f"user {g.user['id']}: {col['name']} -> {name}")
+            db.commit()
+            flash("Column saved.", "ok")
+            return redirect(url_for("records.my_columns"))
+    dept = db.execute("SELECT * FROM departments WHERE id=?", (col["department_id"],)).fetchone()
+    shown = cid not in hidden_mine_columns(db, g.user["id"])
+    return render_template("records_column_edit.html", col=col, dept=dept, shown=shown,
+                           type_label=USER_TYPE_LABEL)
 
 
 @bp.route("/records/columns/<int:cid>/move", methods=["POST"])
@@ -564,21 +663,83 @@ def move_mine_column(cid):
         for pos, one in enumerate(ids):
             db.execute("UPDATE columns SET position=? WHERE id=?", (pos, one))
         db.commit()
-    return redirect(url_for("records.list_records", tab="mine"))
+    return redirect(url_for("records.my_columns"))
+
+
+@bp.route("/records/columns/<int:cid>/unprotect", methods=["POST"])
+@login_required
+def unprotect_mine_column(cid):
+    """Remove accidental-delete protection from one of my own columns, so
+    it can be removed again (build 63). Like the admin's Remove
+    protection, but no password — it is the user's own column."""
+    db = get_db()
+    col = _own_column(db, cid, g.user)
+    db.execute("UPDATE columns SET protected=0 WHERE id=?", (cid,))
+    log(db, "user_column_unprotect", f"user {g.user['id']}: {col['name']}")
+    db.commit()
+    flash(f"Protection removed from '{col['name']}'. It can be removed now.", "ok")
+    return redirect(url_for("records.my_columns"))
 
 
 @bp.route("/records/columns/<int:cid>/remove", methods=["POST"])
 @login_required
 def remove_mine_column(cid):
-    """Hide one of my own columns. Its values stay in the database, like a
-    removed department column — nothing is lost."""
+    """Hide one of my own columns. Its values stay in the database, and
+    it can be restored from the Removed columns page (build 63). Like
+    the admin's Remove, the column name must be typed to confirm — but
+    no password, because it is the user's own column. A protected
+    column cannot be removed until its protection is removed."""
     db = get_db()
     col = _own_column(db, cid, g.user)
-    db.execute("UPDATE columns SET removed_at=datetime('now','localtime') WHERE id=?", (cid,))
-    log(db, "user_column_remove", f"user {g.user['id']}: {col['name']}")
-    db.commit()
-    flash(f"Column '{col['name']}' removed from your Mine tab. Its data is kept.", "ok")
-    return redirect(url_for("records.list_records", tab="mine"))
+    if col["protected"]:
+        flash(f"'{col['name']}' is protected. Remove the protection first.", "error")
+    elif (request.form.get("confirm_name") or "").strip().lower() != col["name"].lower():
+        flash("The name you typed does not match, so nothing was removed.", "error")
+    else:
+        db.execute("UPDATE columns SET removed_at=datetime('now','localtime') WHERE id=?", (cid,))
+        log(db, "user_column_remove", f"user {g.user['id']}: {col['name']}")
+        db.commit()
+        flash(f"Column '{col['name']}' removed. Its data is kept; you can restore it any time.", "ok")
+    return redirect(url_for("records.my_columns"))
+
+
+@bp.route("/records/columns/<int:cid>/restore", methods=["POST"])
+@login_required
+def restore_mine_column(cid):
+    """Bring a removed column of mine back with all its data (build 63),
+    like the admin's Restore with data."""
+    db = get_db()
+    col = _own_removed_column(db, cid, g.user)
+    if _user_column_name_taken(db, col["department_id"], g.user["id"], col["name"]):
+        flash(f"Cannot restore: you already have a column named '{col['name']}'. "
+              "Rename that one first.", "error")
+    else:
+        db.execute("UPDATE columns SET removed_at=NULL WHERE id=?", (cid,))
+        log(db, "user_column_restore", f"user {g.user['id']}: {col['name']}")
+        db.commit()
+        flash(f"Column '{col['name']}' is back with all its data.", "ok")
+    return redirect(url_for("records.removed_mine_columns"))
+
+
+@bp.route("/records/columns/<int:cid>/erase", methods=["POST"])
+@login_required
+def erase_mine_column(cid):
+    """Erase a removed column of mine and its data for good (build 63),
+    like the admin's Erase: an automatic backup is made first, and the
+    column name must be typed to confirm. No password — it is the
+    user's own column."""
+    db = get_db()
+    col = _own_removed_column(db, cid, g.user)
+    if (request.form.get("confirm_name") or "").strip().lower() != col["name"].lower():
+        flash("The name you typed does not match, so nothing was erased.", "error")
+    else:
+        backup_file = make_backup("before-erase_")
+        db.execute("DELETE FROM columns WHERE id=?", (cid,))   # its values go with it (CASCADE)
+        log(db, "user_column_erase", f"user {g.user['id']}: {col['name']} (backup {os.path.basename(backup_file)})")
+        db.commit()
+        flash(f"Column '{col['name']}' erased for good. A backup was saved first: "
+              f"{os.path.basename(backup_file)}.", "ok")
+    return redirect(url_for("records.removed_mine_columns"))
 
 
 # ---------------------------------------------------------------- my records' attachment files (build 61)
