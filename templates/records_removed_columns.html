@@ -2,7 +2,7 @@
 {% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Removed columns{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Removed columns</h1><p class="hint">Removed columns are hidden but their data is kept. Restore one, or erase it for good (an automatic backup is made first). <a href="{{ url_for('records.my_columns') }}">Back to My columns</a></p></div></div>
+<div class="hd"><div><h1>Removed columns</h1><p class="hint">Removed columns are hidden but their data is kept. Restore one, or erase it for good (an automatic backup is made first). <a href="{{ url_for('records.my_columns') }}">Back to Manage columns</a></p></div></div>
 <div class="kp">
   {{ kpi('Removed columns', cols|length) }}
   {{ kpi('Records with data', cols|sum(attribute='used')) }}
@@ -20,7 +20,7 @@
   <div class="card"><h2>About removed columns</h2>
     <p class="hint">Removed columns are hidden but their data is kept. Restore one to bring it back with its data, or erase it for good — an automatic backup is made first.</p></div>
   {{ quick_card([
-    ('Back to My columns', url_for('records.my_columns'), True),
+    ('Back to Manage columns', url_for('records.my_columns'), True),
     ('My records', url_for('records.list_records', tab='mine'), False),
   ]) }}
 </div></div>

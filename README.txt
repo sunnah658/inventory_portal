@@ -4229,3 +4229,118 @@
     this build. Back up first and keep your live .env untouched,
     as before. Apply only this latest zip, not the older ones in
     order.
+
+83. NO DEPARTMENT COLUMNS ON A USER'S PERSONAL RECORDS; THE PAGE IS NOW CALLED "MANAGE COLUMNS" (2026-11-15)
+
+    This build answers the question left open at the end of §82, in
+    your words: "There wont be any deparment wise predefine column
+    for users.. From now on user can create their own column and
+    manage them in my records page's mine tab". The plan from your
+    11:00 message (delete a predefined column from your own Mine tab
+    and reorder predefined + own columns together) is replaced by
+    this one — there are no predefined columns on the Mine tab at
+    all, so there is nothing there to delete or reorder.
+
+    1. The Mine tab shows only the columns you added yourself. The
+       department's columns (on your live Sales tab: Client or lead,
+       Contact person, Phone, Email, Campaign, Deal stage, Expected
+       value, Follow-up date, Meeting, Assigned to, Marketing
+       material, Remarks) no longer appear anywhere on your personal
+       records — not in the Columns picker, not in the table, not in
+       the Add record form, not on the record page, not in the CSV /
+       Excel / PDF exports, and not in the record PDF. The same goes
+       for the field picker on the record page (the "Choose the
+       fields to put in the PDF" boxes) and for the fields you can
+       put in a public QR link: only your own columns are offered.
+       A value stored in a department column would stay hidden
+       everywhere, even if one ever existed — you said there are no
+       existing records in them, so nothing is lost.
+    2. The button, the page and the Quick actions link are renamed
+       from "Manage my columns" / "My columns" to "Manage columns".
+       The page heading, the browser title, and the "Back to Manage
+       columns" links on the Edit and Removed columns pages all say
+       "Manage columns". The address stays /records/my-columns, so
+       bookmarks keep working. The picker no longer marks every
+       column "· yours" — every column it lists is yours now, so the
+       tag added nothing.
+    3. A user who has added no columns yet sees an empty Mine tab
+       with a prompt — "You have no columns yet. Add your first
+       column on the Manage columns page." — and clicking "+ Add
+       record" sends them to the Manage columns page instead of a
+       form with no fields. There is no starter set: each user starts
+       with no columns and adds the ones they want.
+    4. The department's columns are untouched for the Department
+       Database. The Client Info, Meeting and other DeptDB tabs, and
+       the admin's Departments -> record columns page, are exactly
+       as before — the department admin still makes those columns,
+       and they still work there. Copying a personal record into the
+       Department Database still works too: it now matches the
+       record's own columns by name instead of the department's.
+    5. What does NOT change: the admin's All records page still
+       shows department columns only (so it does not show a user's
+       own columns, as before); Shared with me / Viewing still show
+       department columns only; the admin's Users' records view shows
+       the viewed user's own columns, as before. Your own columns
+       still have no reminder tick and no "keep a time" — those are
+       still admin-column features only. That also means the
+       personal-record reminders, which were driven by the
+       department's date columns, will no longer fire — your own
+       columns cannot be a reminder column. The Department Database
+       meeting reminders are unchanged. If you want a reminder tick
+       on your own columns, say so and I will add it.
+    6. The columns themselves are only removed from the users' view,
+       not deleted from the database. The department's columns stay
+       in the database for the Department Database, and any value
+       ever entered in one on a personal record stays stored (it is
+       just never shown). Nothing was deleted in this build.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There is NO database change in
+    this build. Back up first and keep your live .env untouched,
+    as before. Apply only this latest zip, not the older ones in
+    order.
+
+84. DASHBOARD SETTINGS PANEL FIXED (2026-11-15)
+    What was wrong: on the Dashboard (portal admin and administrative
+    permission users), opening "Dashboard settings" showed a broken
+    panel — the heading, the "Choose what shows on your dashboard"
+    text and every tick-box row were squeezed side by side in one
+    horizontal row, and the panel ran off the right edge of the
+    screen. The Bar / Pie chart toggles were cut off.
+    The cause: the stylesheet had one rule, ".acts form{display:flex}",
+    meant for a form that IS a button in the header button row (for
+    example a Delete form, so its button sits on the same baseline as
+    the links beside it). But that rule also caught the Dashboard
+    settings form, which sits inside the settings panel nested under
+    the button row — so the form's heading, hint, tick-box rows and
+    Save / Cancel buttons were all laid out in a row, like buttons.
+    The fix: the rule is now scoped to a form that is a direct child
+    of the button row (".acts>form"). The settings form is nested
+    three levels down, so it is no longer caught, and it stays a
+    normal block form: its heading on top, the hint under it, then
+    one tick-box row per line (KPI cards, Records by department with
+    its Bar / Pie chart toggle, Department database with its Bar /
+    Pie chart toggle, Records by status, Logged in now, Reminders
+    coming up, Quick actions), and Save / Cancel side by side at the
+    bottom, all inside the panel.
+    Nothing else changes: the button-row forms that must stay a flex
+    row — the Delete forms and the notifications "Mark all as read" /
+    "Clear all" forms — are direct children of the button row, so
+    they still get the rule and still line up and still submit. The
+    Log out form in the user menu has its own rule and is untouched.
+    Saving settings works exactly as before, for the portal admin
+    and for administrative permission users, and the settings stay
+    per user (one admin's choices do not change another's). A regular
+    user still gets 403 on the Dashboard.
+    Tests: 825/825 checks pass (813 from builds up to 64 + 12 new).
+    The new checks cover the scoped stylesheet rule, the panel
+    opening for both roles with all seven rows, both chart toggles
+    and Save / Cancel, saving settings for both roles, the per-user
+    separation, the 403 for a regular user, and a button-row form
+    still submitting.
+
+    Upgrade: apply this zip the usual way (extract, then
+    docker compose up -d --build). There is NO database change in
+    this build. Back up first and keep your live .env untouched,
+    as before. Apply only this latest zip, not the older ones in
+    order.

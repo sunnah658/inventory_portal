@@ -64,13 +64,15 @@ def get_user_columns(db, user_id, dept_id, only_shown=True):
 
 
 def record_columns(db, dept_id, owner_id=None):
-    """Every column a record in this department is shown with: the
-    department's columns first, then the record owner's own columns
-    (build 61). With no owner, just the department's columns."""
-    cols = list(get_columns(db, dept_id))
+    """Every column a record in this department is shown with (build 64):
+    with an owner, ONLY that user's own columns — the department's
+    columns are no longer shown on a user's personal records (the user
+    said there are no existing personal records using them, so nothing
+    is lost). With no owner, just the department's columns (the admin's
+    All records and the shared-record lists, unchanged)."""
     if owner_id:
-        cols.extend(get_user_columns(db, owner_id, dept_id))
-    return cols
+        return list(get_user_columns(db, owner_id, dept_id))
+    return list(get_columns(db, dept_id))
 
 
 def display_record_value(col, value):
@@ -269,9 +271,9 @@ def table_context(db, rows, user=None, hidden=None, mine_user_id=None):
     hidden is an optional set of column ids to leave out of every group (a
     user's own Mine-tab choice, build 60) — the print widths are computed
     from the columns that remain, so they stay in step with the table.
-    mine_user_id (build 61): when set, each group also shows that user's
-    own columns for the department — the Mine tab and Shared by me only;
-    every other list shows department columns alone. Attachment values
+    mine_user_id (build 61, narrowed build 64): when set, each group shows
+    ONLY that user's own columns for the department — the Mine tab and
+    Shared by me only; every other list shows department columns alone. Attachment values
     are shown as the file name, with a download link in urls."""
     from flask import url_for
     ids = [r["id"] for r in rows]
@@ -674,9 +676,10 @@ def build_table(db, rows, with_owner):
     for r in rows:
         d = r["department_id"]
         depts_seen.add(d)
-        # Columns are per record owner: a department column plus the
-        # owner's own columns (build 61). Two records in one department
-        # can have different own columns, so the key is (department, owner).
+        # Columns are per record owner: the owner's own columns only
+        # (build 64; before that, a department column plus the owner's own
+        # columns). Two records in one department can have different own
+        # columns, so the key is (department, owner).
         key = (d, r["owner_id"])
         if key not in dept_cols:
             dept_cols[key] = record_columns(db, d, r["owner_id"])
@@ -1114,13 +1117,15 @@ def new_token():
 
 
 def names_for_records(db, record_ids):
-    """Distinct (lower-case key, display name) of the columns of the given records' departments."""
+    """Distinct (lower-case key, display name) of the columns of the given records' departments.
+    Only each record owner's own columns (build 64): the department's columns are no longer
+    shown on a user's personal records, so they are not offered as public fields either."""
     if not record_ids:
         return []
     q = ",".join("?" * len(record_ids))
     rows = db.execute(f"SELECT DISTINCT c.name FROM columns c JOIN records r ON r.department_id=c.department_id "
                       f"WHERE r.id IN ({q}) AND c.removed_at IS NULL AND c.shown=1 "
-                      f"AND (c.user_id IS NULL OR c.user_id=r.owner_id) "
+                      f"AND c.user_id=r.owner_id "
                       f"ORDER BY c.position, c.id", list(record_ids)).fetchall()
     seen, out = set(), []
     for r in rows:
@@ -1663,8 +1668,9 @@ def ddb_update_row(db, user, row, columns, new_values, version):
 
 def ddb_prefill_from_record(db, rec, dept_cols):
     """Values for a new department-database row, taken from a personal record: every
-    department-database column whose NAME matches a column of the record gets its value."""
-    by_name = {c["name"].lower(): c for c in get_columns(db, rec["department_id"], only_shown=False)}
+    department-database column whose NAME matches a column of the record gets its value.
+    The record's columns are its own columns (build 64), matched by name."""
+    by_name = {c["name"].lower(): c for c in get_user_columns(db, rec["owner_id"], rec["department_id"], only_shown=False)}
     vals = values_for(db, [rec["id"]])[rec["id"]]
     out = {}
     for c in dept_cols:

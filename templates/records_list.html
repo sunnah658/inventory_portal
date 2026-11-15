@@ -33,16 +33,18 @@
 {% if picker %}
 <form method="post" action="{{ url_for('records.save_mine_columns') }}" style="margin-top:10px">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<p class="hint">Tick the columns you want on your Mine tab. An unticked column stays hidden here only — nobody else's page changes, and your department's columns themselves are unchanged.</p>
+<p class="hint">Tick the columns you want on your Mine tab. An unticked column stays hidden here only — nobody else's page changes.</p>
 {% for did, dname, cols in picker %}
   {% if picker|length > 1 %}<h3>{{ dname }}</h3>{% endif %}
-  {% for c in cols %}<label style="display:block"><input type="checkbox" name="col" value="col_{{ c['id'] }}" {{ 'checked' if c['id'] not in hidden }}> {{ c['name'] }}{% if c['user_id'] %} <span class="sub">· yours</span>{% endif %}</label>{% endfor %}
+  {% for c in cols %}<label style="display:block"><input type="checkbox" name="col" value="col_{{ c['id'] }}" {{ 'checked' if c['id'] not in hidden }}> {{ c['name'] }}</label>{% endfor %}
 {% endfor %}
 <button class="b p" type="submit" style="margin-top:8px">Save columns</button>
 </form>
+{% else %}
+<p class="hint" style="margin-top:10px">You have no columns yet. <a href="{{ url_for('records.my_columns') }}">Add your first column</a> on the Manage columns page.</p>
 {% endif %}
-<a class="b" href="{{ url_for('records.my_columns') }}" style="margin-top:10px">Manage my columns</a>
-<p class="hint">Add, rename, move, protect and remove the columns you added yourself, on a page of their own.</p>
+<a class="b" href="{{ url_for('records.my_columns') }}" style="margin-top:10px">Manage columns</a>
+<p class="hint">Add, rename, move, protect and remove your own columns, on a page of their own.</p>
 </details>
 
 {% endif %}
@@ -65,7 +67,7 @@
   {% else %}
   {{ quick_card([
     ('+ Add record', url_for('records.new_record'), True),
-    ('My columns', url_for('records.my_columns'), False),
+    ('Manage columns', url_for('records.my_columns'), False),
     ('Export to Excel', url_for('bulk.export_list', fmt='xlsx', **keep), False),
     ('Print selected', 'print', False),
   ] | select) }}

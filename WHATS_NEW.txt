@@ -1,4 +1,46 @@
 ==============================================================================
+ UPDATE: DASHBOARD SETTINGS PANEL FIXED (2026-11-15)
+==============================================================================
+ 1. The Dashboard settings panel is fixed. When you open "Dashboard
+    settings" on the Dashboard, the panel now shows properly: the
+    heading on top, "Choose what shows on your dashboard" under it,
+    then one tick-box row per line — KPI cards, Records by
+    department (with its Bar / Pie chart switch), Department
+    database (with its Bar / Pie chart switch), Records by status,
+    Logged in now, Reminders coming up, Quick actions — and Save /
+    Cancel at the bottom. Before, everything was squeezed side by
+    side in one row and ran off the right edge of the screen.
+ 2. Nothing else changes. Saving your settings works as before, for
+    the portal admin and for administrative permission users, and
+    your choices are still saved for your own login only. The
+    Delete and "Mark all as read" buttons in the button rows still
+    line up and work as before.
+
+==============================================================================
+ UPDATE: NO DEPARTMENT COLUMNS ON YOUR PERSONAL RECORDS; "MANAGE COLUMNS" (2026-11-15)
+==============================================================================
+ 1. Your Mine tab now shows only the columns you added yourself. The
+    department's columns (Client or lead, Contact person, Phone and
+    the rest) no longer appear on your personal records — not in the
+    picker, the table, the Add record form, the record page, exports
+    or the PDF. You said there are no existing records in them, so
+    nothing is lost; the columns stay in the database for the
+    Department Database.
+ 2. The button and the page are renamed from "Manage my columns" /
+    "My columns" to "Manage columns". The address stays
+    /records/my-columns, so bookmarks keep working.
+ 3. A user who has added no columns yet sees an empty Mine tab with a
+    prompt to add their first column, and "+ Add record" sends them
+    to the Manage columns page instead of a form with no fields.
+ 4. The department's columns are untouched for the Department
+    Database — the Client Info, Meeting and other tabs, and the
+    admin's Departments -> record columns page, are exactly as
+    before. One thing to know: the personal-record reminders, which
+    were driven by the department's date columns, will no longer
+    fire, because your own columns have no reminder tick. The
+    Department Database meeting reminders are unchanged.
+
+==============================================================================
  UPDATE: "MY COLUMNS" IS A PAGE OF ITS OWN, LIKE THE ADMIN'S COLUMNS PAGE; PROTECT KEPT (2026-11-15)
 ==============================================================================
  1. Your columns now have a page of their own — "My columns" — laid out

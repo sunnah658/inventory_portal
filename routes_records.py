@@ -324,12 +324,12 @@ def home():
 def _mine_column_picker(db, user):
     """The columns offered on this user's Mine tab, grouped by department:
     the user's own department plus every department their records sit in.
-    Each group lists the department's columns first, then the user's own
-    columns for that department (build 61). Returns [(dept_id, dept_name, [columns])].
-    Each column is a dict; a column the user added also carries 'shown'
-    (its picker tick) and 'used' (how many of their live records have a
-    value in it), the two extra columns the admin's columns page shows
-    (build 62)."""
+    Each group lists the user's own columns for that department (build 64:
+    the department's columns are no longer shown on a user's personal
+    records). Returns [(dept_id, dept_name, [columns])]. Each column is a
+    dict; it also carries 'shown' (its picker tick) and 'used' (how many
+    of their live records have a value in it), the two extra columns the
+    admin's columns page shows (build 62)."""
     dept_ids = [user["department_id"]] if user["department_id"] else []
     for (d,) in db.execute("SELECT DISTINCT department_id FROM records WHERE owner_id=? AND deleted_at IS NULL",
                            (user["id"],)):
@@ -342,13 +342,12 @@ def _mine_column_picker(db, user):
         cols = []
         for c in record_columns(db, did, user["id"]):
             c = dict(c)
-            if c.get("user_id"):
-                c["shown"] = c["id"] not in hidden
-                c["used"] = db.execute(
-                    "SELECT COUNT(*) FROM record_values v JOIN records r ON r.id=v.record_id "
-                    "WHERE v.column_id=? AND r.owner_id=? AND r.deleted_at IS NULL "
-                    "AND v.value IS NOT NULL AND v.value != ''",
-                    (c["id"], user["id"])).fetchone()[0]
+            c["shown"] = c["id"] not in hidden
+            c["used"] = db.execute(
+                "SELECT COUNT(*) FROM record_values v JOIN records r ON r.id=v.record_id "
+                "WHERE v.column_id=? AND r.owner_id=? AND r.deleted_at IS NULL "
+                "AND v.value IS NOT NULL AND v.value != ''",
+                (c["id"], user["id"])).fetchone()[0]
             cols.append(c)
         if cols:
             out.append((did, row["name"] if row else "", cols))
@@ -516,7 +515,7 @@ def save_mine_columns():
 @bp.route("/records/my-columns")
 @login_required
 def my_columns():
-    """My columns: this user's own columns on a page of their own, laid
+    """Manage columns: this user's own columns on a page of their own, laid
     out like the portal admin's Departments -> record columns page:
     KPI cards on top, the table on the left, the Add column card in the
     right rail. The Mine tab's Columns box keeps only the tick-box
@@ -882,8 +881,8 @@ def new_record():
     dept = g.user["department_id"]
     cols = record_columns(db, dept, g.user["id"])
     if not cols:
-        flash("Your department has no record columns yet. Ask the admin to add them.", "error")
-        return redirect(url_for("records.list_records"))
+        flash("You have no columns yet. Add your first column on the Manage columns page.", "error")
+        return redirect(url_for("records.my_columns"))
     if request.method == "POST":
         values, errors = parse_form(cols, request.form)
         dept_row = db.execute("SELECT * FROM departments WHERE id=?", (dept,)).fetchone()
