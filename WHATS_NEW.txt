@@ -1,4 +1,30 @@
 ==============================================================================
+ UPDATE: THE PORTAL STILL WOULD NOT START ON REAL MYSQL 8.0 — FOREIGN KEY
+ ERROR 1215, PLUS A SECOND MYSQL 8.0 QUERY ERROR (2026-11-16)
+==============================================================================
+ 1. Build 70 fixed the login, and the next error was MySQL error
+    1215 "Cannot add foreign key constraint" while the portal
+    created its tables, at the `columns` table. MySQL 8.0 refuses
+    a foreign key on a column that a generated column's expression
+    refers to — the `columns` table had both — and MariaDB, the
+    test server here, allows it, so the checks never caught it.
+    The fix: the foreign key on columns.user_id is gone; a user's
+    own columns are deleted explicitly when the user is erased for
+    good instead, with their values and hidden-column rows going
+    with them as before.
+ 2. Testing the fix found a second MySQL 8.0 error: the record
+    detail page crashed (error 3065) because one query ordered a
+    DISTINCT list by columns it had not selected. That query now
+    selects them too, and the detail page works. Every other
+    DISTINCT and GROUP BY query was checked — this was the only one.
+ 3. From now on the test suite runs against real MySQL 8.0, not
+    MariaDB, so this kind of difference is caught here instead of
+    on your server. Apply with `docker compose up -d --build`.
+    Your live database already holds the first three tables from
+    the earlier failed starts; the new code skips those and
+    creates the rest, so no cleanup is needed.
+
+==============================================================================
  UPDATE: THE PORTAL WOULD NOT START ON REAL MYSQL 8.0 — MISSING cryptography
  PACKAGE (2026-11-15)
 ==============================================================================

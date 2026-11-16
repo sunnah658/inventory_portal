@@ -210,3 +210,11 @@ AUTOMATIC BACKUPS (optional, recommended):
     `docker compose up -d --build`, or the portal keeps crashing
     the same way. The db healthcheck now tests the TCP port
     (127.0.0.1) instead of the local socket.
+  - Build 71: the portal still would not start — MySQL 8.0 refused
+    a foreign key on columns.user_id (error 1215) because the
+    generated columns name_dept / name_user refer to user_id.
+    That foreign key is gone; a user's own columns are deleted
+    explicitly when the user is erased for good. The record
+    detail page also crashed on MySQL 8.0 (error 3065) and is
+    fixed. From build 71 the tests run against real MySQL 8.0,
+    not MariaDB.

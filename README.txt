@@ -4690,3 +4690,70 @@
     feature change. Apply only this latest zip, not the older
     ones in order. Back up first and keep your live .env
     untouched, as before.
+
+90. THE PORTAL STILL WOULD NOT START ON REAL MYSQL 8.0 — FOREIGN KEY
+    ERROR 1215, PLUS A SECOND MYSQL 8.0 QUERY ERROR (2026-11-16)
+    What happened: build 70 fixed the login (cryptography), and the
+    next error in the log was this one, while the portal created its
+    tables:
+        pymysql.err.IntegrityError: (1215, 'Cannot add foreign key constraint')
+    at models.init_db() -> conn.executescript(SCHEMA), at the
+    `columns` table. It passed all 901 checks here because the test
+    server is MariaDB, and MariaDB allows what MySQL 8.0 refuses.
+    Root cause, reproduced on real MySQL 8.0 (8.0.46) and bisected
+    statement by statement: MySQL 8.0 refuses a FOREIGN KEY on a
+    column that a generated column's expression refers to. The
+    `columns` table had both — FOREIGN KEY (user_id) REFERENCES
+    users(id), and the generated columns name_dept / name_user whose
+    CASE expressions refer to user_id (they implement the partial
+    unique indexes: a live department column's name is unique per
+    department, a live user column's name unique per user and
+    department). Adding the key afterwards fails the same way, in
+    both directions. This is the third MariaDB-vs-MySQL gap in this
+    migration, after CREATE INDEX IF NOT EXISTS (build 67) and the
+    cryptography login (build 70). From now on the test suite runs
+    against real MySQL 8.0, not MariaDB, so this class of bug is
+    caught here instead of on your server.
+    The fix (the smallest one that keeps both the foreign key on
+    department_id and the database-level name uniqueness): the
+    foreign key on columns.user_id is gone. A user's own columns
+    are deleted explicitly in core.purge_user_work instead, when
+    the user is erased for good; their values and hidden-column
+    rows still go with them through the ON DELETE CASCADE keys on
+    column_id. No other table was affected — columns was the only
+    table where a generated column referred to a foreign-key
+    column (checked). The upgrade helper that used to add that key
+    no longer does.
+    A second MySQL 8.0 error was found while testing the fix: the
+    record detail page crashed with error 3065, because
+    core.names_for_records ordered a DISTINCT query by columns
+    (position, id) that were not in its SELECT list. MariaDB
+    allowed that; MySQL 8.0 refuses it. The query now selects
+    position and id too, keeping the same rows in the same order,
+    and the detail page works. Every other DISTINCT and GROUP BY
+    query in the project was checked against the same rule — this
+    was the only one.
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    (the --build is still required — the image must include
+    cryptography from build 70). The portal then starts and
+    creates its tables. Your live database already holds the
+    first three tables (departments, users, user_view_departments)
+    from the earlier failed starts; the new code skips those and
+    creates the rest, so no cleanup is needed. If the portal
+    comes up with no data (only the seed admin account), the
+    migration from section 86 has not run yet: stop the portal,
+    run the migration script, and start again. If the migration
+    refuses because the portal already created its tables, run it
+    with --replace.
+    Tests: 909/909 checks pass on the work copy and on a fresh
+    extract (901 from builds up to 70 + 8 new). The new checks
+    cover the foreign-key/generated-column rule, the columns
+    table having no key on user_id, all 50 tables being created,
+    purging a user deleting his own columns with their values and
+    hidden-column rows, and names_for_records returning the
+    owner's columns in position order. The whole suite now runs
+    against real MySQL 8.0. No database change beyond the one
+    foreign key, and no screen or feature change. Apply only this
+    latest zip, not the older ones in order. Back up first and
+    keep your live .env untouched, as before.

@@ -112,8 +112,15 @@ CREATE TABLE IF NOT EXISTS columns (
                   (CASE WHEN removed_at IS NULL AND user_id IS NULL THEN name ELSE NULL END) STORED,
     name_user     VARCHAR(255) GENERATED ALWAYS AS
                   (CASE WHEN removed_at IS NULL AND user_id IS NOT NULL THEN name ELSE NULL END) STORED,
+    -- NOTE: there is deliberately NO foreign key on user_id. MySQL 8.0
+    -- refuses a foreign key on a column that a generated column's
+    -- expression refers to (error 1215), and name_dept / name_user
+    -- below both refer to user_id. MariaDB allows it; MySQL 8.0 does
+    -- not — that is what kept the live portal from starting. A
+    -- user's own columns are deleted explicitly instead, in
+    -- core.purge_user_work (their values and hidden-column rows go
+    -- with them through the ON DELETE CASCADE keys on column_id).
     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE KEY ux_column_name (department_id, name_dept),
     UNIQUE KEY ux_user_column_name (user_id, department_id, name_user)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1004,15 +1011,16 @@ def _upgrade_columns_user_columns(conn):
     """Old columns tables have no user_id and a CHECK(col_type IN (...))
     without 'attachment' (build 61: users add their own Mine-tab columns,
     including an Attachment type). On MySQL the column is added in place
-    (with its foreign key) and the CHECK is widened in place — no table
-    rebuild, so no data is ever at risk. The per-user and per-department
+    and the CHECK is widened in place — no table rebuild, so no data is
+    ever at risk. There is deliberately NO foreign key on user_id:
+    MySQL 8.0 refuses an FK on a column that a generated column's
+    expression refers to (error 1215); the per-user and per-department
     unique indexes live in SCHEMA as generated columns, so they need no
     ensuring here. (A fresh MySQL database already has all of this.)"""
     if not _table_exists(conn, "columns"):
         return
     if "user_id" not in _columns(conn, "columns"):
         conn.execute("ALTER TABLE columns ADD COLUMN user_id INT")
-        conn.execute("ALTER TABLE columns ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE")
     sql = _table_sql(conn, "columns")
     if sql is not None and "'attachment'" not in sql:
         conn.execute("ALTER TABLE columns MODIFY COLUMN col_type VARCHAR(255) NOT NULL "

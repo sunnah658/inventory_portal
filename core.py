@@ -612,6 +612,12 @@ def purge_user_work(db, uid):
         purge_invoice(db, _iid)
     for _qid in [r[0] for r in db.execute("SELECT id FROM item_requests WHERE owner_id=?", (uid,))]:
         purge_request(db, _qid)
+    # The user's own Mine-tab columns. There is deliberately no foreign
+    # key on columns.user_id (MySQL 8.0 refuses an FK on a column that
+    # a generated column's expression refers to — error 1215), so the
+    # columns are deleted here instead. Their values and hidden-column
+    # rows go with them through the ON DELETE CASCADE keys on column_id.
+    db.execute("DELETE FROM columns WHERE user_id=?", (uid,))
     db.execute("DELETE FROM public_links WHERE owner_id=?", (uid,))
 
 
@@ -1180,7 +1186,13 @@ def names_for_records(db, record_ids):
     if not record_ids:
         return []
     q = ",".join("?" * len(record_ids))
-    rows = db.execute(f"SELECT DISTINCT c.name FROM columns c JOIN records r ON r.department_id=c.department_id "
+    # MySQL 8.0 (ONLY_FULL_GROUP_BY) rejects ORDER BY on columns that
+    # are not in the SELECT list of a DISTINCT query — MariaDB allowed
+    # ORDER BY c.position, c.id here, MySQL 8.0 errors 3065. Selecting
+    # position and id too keeps the same rows in the same order (id is
+    # unique, so DISTINCT changes nothing); the Python dedup below
+    # still collapses same-name columns, first in position order.
+    rows = db.execute(f"SELECT DISTINCT c.name, c.position, c.id FROM columns c JOIN records r ON r.department_id=c.department_id "
                       f"WHERE r.id IN ({q}) AND c.removed_at IS NULL AND c.shown=1 "
                       f"AND c.user_id=r.owner_id "
                       f"ORDER BY c.position, c.id", list(record_ids)).fetchall()
