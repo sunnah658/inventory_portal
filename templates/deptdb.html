@@ -6,14 +6,14 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ dept['name'] }} database{% if tab %} · {{ tab['name'] }}{% endif %}</h1>
-    <p class="hint">Everyone in this department can see every row in a tab. Only the row's owner can edit it, unless the owner shared it with you.</p></div>
+    <p class="hint">{% if is_shared %}This tab belongs to {{ shared_owner }}. You can {{ 'view and edit its rows' if shared_access == 'edit' else 'view its rows' }}.{% else %}Everyone in this department can see every row in a tab. Only the row's owner can edit it.{% endif %}</p></div>
   <div class="acts">
     {% if tab and can_add %}<a class="b p" href="{{ url_for('ddb.new_row', dept=dept['id'], tab=tab['id']) }}">+ Add row</a>{% endif %}
     {% if tab %}<details class="dt"><summary class="b">Export</summary><div class="pop">
       <a class="b sm wide explink" href="{{ url_for('ddb.export', fmt='xlsx', **keep) }}">Excel (.xlsx)</a>
       <a class="b sm wide explink" style="margin-top:8px" href="{{ url_for('ddb.export', fmt='pdf', **keep) }}">PDF</a>
       <a class="b sm wide explink" style="margin-top:8px" href="{{ url_for('ddb.export', fmt='csv', **keep) }}">CSV</a></div></details>{% endif %}
-    {% if is_admin %}<a class="b" href="{{ url_for('ddb.tabs', dept=dept['id']) }}">Tabs</a><a class="b" href="{{ url_for('ddb.delegates', dept=dept['id']) }}">Delegates</a>{% if tab %}<a class="b" href="{{ url_for('ddb.columns', dept=dept['id'], tab=tab['id']) }}">Columns</a>{% endif %}{% endif %}
+    {% if is_admin and not is_shared %}<a class="b" href="{{ url_for('ddb.tabs', dept=dept['id']) }}">Tabs</a><a class="b" href="{{ url_for('ddb.delegates', dept=dept['id']) }}">Delegates</a>{% if tab %}<a class="b" href="{{ url_for('ddb.columns', dept=dept['id'], tab=tab['id']) }}">Columns</a>{% endif %}{% endif %}
     <button class="b printguard" type="button">Print</button>
   </div>
 </div>
@@ -22,9 +22,9 @@
 {% if tab %}
 <div class="kp">
   {{ kpi('Total rows', counts.all, '+' ~ (design.week|sum(attribute='n') if design and design.week else 0) ~ ' this week') }}
-  {{ kpi('My rows', counts.mine) }}
+  {% if not is_shared %}{{ kpi('My rows', counts.mine) }}{% endif %}
   {{ kpi('Follow-ups due', design.followups|length if design else 0, 'in the next 7 days') }}
-  {{ kpi('Deleted', counts.deleted) }}
+  {% if not is_shared %}{{ kpi('Deleted', counts.deleted) }}{% endif %}
 </div>
 <div class="tw"><div>
 {{ listbar('ddb.index', {'dept': dept['id'], 'tab': tab['id'], 'mine': 1 if mine else '', 'deleted': 1 if deleted else ''}, q, info, names) }}
@@ -36,10 +36,10 @@
 <div class="subtabs">
 <div class="tabs">
   <a class="tab {{ 'on' if not mine and not deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id']) }}">All rows · {{ counts.all }}</a>
-  {% if show_mine %}<a class="tab {{ 'on' if mine }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], mine=1) }}">My rows · {{ counts.mine }}</a>{% endif %}
-  {% if is_admin %}<a class="tab {{ 'on' if deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], deleted=1) }}">Deleted · {{ counts.deleted }}</a>{% endif %}
+  {% if show_mine and not is_shared %}<a class="tab {{ 'on' if mine }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], mine=1) }}">My rows · {{ counts.mine }}</a>{% endif %}
+  {% if is_admin and not is_shared %}<a class="tab {{ 'on' if deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], deleted=1) }}">Deleted · {{ counts.deleted }}</a>{% endif %}
 </div>
-<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if show_report %}<a class="b explink reportguard" href="{{ url_for('ddb.report', **keep) }}">Report</a>{% endif %}</div>
+<div class="selbtns">{% if can_manage_tab_sharing %}<a class="b" href="{{ url_for('ddb.tab_permissions', dept=dept['id'], tab=tab['id']) }}">Permission</a>{% endif %}<button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if show_report %}<a class="b explink reportguard" href="{{ url_for('ddb.report', **keep) }}">Report</a>{% endif %}</div>
 </div>
 <p class="msg error" id="printErr" hidden>Please select the data row first.</p>
 <p class="print-only">Selected rows · <span class="selprint-n">0</span> of {% if deleted %}{{ counts.deleted }}{% elif mine %}{{ counts.mine }}{% else %}{{ counts.all }}{% endif %}</p>

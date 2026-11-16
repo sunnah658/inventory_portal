@@ -5128,3 +5128,65 @@
     the HR step user editing and saving the note. The upgrade was
     also checked: this code starts on a build-76 database (52
     tables) and serves the login page.
+
+
+97. TAB SHARING BY THE DEPARTMENT ADMIN; ROW SHARING REMOVED (2026-11-16)
+    A department admin now shares a whole Department Database tab's
+    All rows with another department or one specific user. A normal
+    user can no longer share one record with anyone, and every row
+    share a user already made is gone.
+    (1) The Share box is gone from every row's detail page, and the
+    "Share this row" and "Shared with" parts are gone with it. The
+    old row-share web address answers 404. A row share that was
+    already in the database no longer lets anyone open or edit the
+    row, and the first start of this build deletes all of them.
+    The hint on a tab page now reads "Everyone in this department
+    can see every row in a tab. Only the row's owner can edit it."
+    and the same words are on the Add/Edit row form and in the
+    notifications help. A row's public QR is unchanged.
+    (2) On every Department Database tab except Invoices and Request
+    items, the department admin of the department that owns the tab
+    sees a Permission button on the left of the Select button. A
+    regular user never sees it, and it is not on the Invoices or
+    Request items tabs. The portal admin can also open it.
+    (3) Pressing Permission opens a full page for that tab, with two
+    parts: "Shared with departments" and "Shared with individual
+    users". Each part lists who already has access (with a Remove
+    button) and a form to add one: pick the department or the user,
+    pick View or Edit, and add. Only other departments are listed
+    (never the admin's own department) and only users from other
+    departments. Adding the same department or user again changes
+    their access instead of making a second grant. When a tab is
+    shared, the other side's department admins (for a department
+    grant) or that user (for a user grant) get a notification with a
+    link to the tab; removing a grant notifies them too.
+    (4) View means see all the rows in the tab and open them, and
+    change nothing. Edit means see all the rows and edit the
+    existing rows only: the user cannot add a new row, cannot delete
+    a row, and cannot change the tab's columns, settings or
+    permissions. When both a department grant and a personal grant
+    exist for the same person, the better one wins.
+    (5) The shared tab appears in the other side's Department
+    Database named exactly as the tab name followed by the owning
+    department's name in parentheses, with no space before the
+    parenthesis — for example Client Info(Sales & Marketing). A
+    department grant puts the tab in every user of that
+    department's Department Database. An individual user grant puts
+    it only in that one user's Department Database; other users in
+    that user's department do not see it.
+    (6) The granted side sees only the All rows view: no My rows,
+    no Deleted, no Permission button, no Add row, and no Tabs,
+    Delegates or Columns buttons. The tab page shows only the Total
+    rows and Follow-ups due cards. Export, Print and the Sales
+    Pipeline Report work on a shared tab the same as on an own tab.
+    (7) New table ddb_tab_shares (tab, department or user, access
+    view/edit, who made it, when) — 53 tables in total. The old
+    ddb_row_shares table is still there but is never read and its
+    rows are deleted on the first start of this build. When a user
+    account is erased for good, any tab share granted to that user
+    goes with it. Tested: 1086/1086 automated checks (1036 of build
+    77 plus 50 new) on the work copy and on a fresh extract of this
+    zip, against real MySQL 8.0. The upgrade was also checked: this
+    code starts on a build-77 database (52 tables), creates the new
+    table (53 tables) and deletes the old row shares, and serves the
+    login page.

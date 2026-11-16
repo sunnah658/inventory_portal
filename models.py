@@ -528,6 +528,27 @@ CREATE TABLE IF NOT EXISTS ddb_row_shares (
     FOREIGN KEY (created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Tab sharing (build 78): a whole Department Database tab's All rows, shared
+-- by its department admin with another department or one specific user, with
+-- view or edit permission. A grant is either a department grant
+-- (department_id set, user_id NULL) or a user grant (user_id set,
+-- department_id NULL). Row sharing above is no longer used.
+CREATE TABLE IF NOT EXISTS ddb_tab_shares (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    tab_id        INT NOT NULL,
+    department_id INT,
+    user_id       INT,
+    access        VARCHAR(10) NOT NULL DEFAULT 'view',
+    created_by    INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_tab_dept (tab_id, department_id),
+    UNIQUE KEY uq_tab_user (tab_id, user_id),
+    FOREIGN KEY (tab_id) REFERENCES ddb_tabs(id) ON DELETE CASCADE,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ======================= Invoices (dept-admin templates, employee invoices) =======================
 CREATE TABLE IF NOT EXISTS invoice_templates (
     id            INT AUTO_INCREMENT PRIMARY KEY,
@@ -1066,6 +1087,15 @@ def _upgrade_columns_user_columns(conn):
                      "CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment'))")
 
 
+def _upgrade_remove_row_shares(conn):
+    """Row sharing is gone (build 78): a normal user can no longer share one
+    Department Database row with anyone, and only the department admin
+    manages sharing, for a whole tab. Any row share a user already made
+    disappears, so delete them all. Safe to run on every startup: after the
+    first run the table is empty and the DELETE removes nothing."""
+    conn.execute("DELETE FROM ddb_row_shares")
+
+
 def _upgrade_invoice_tax_tick(conn):
     """Per-template tax tick (2026-11-05): invoice_templates.show_tax decides
     whether an invoice made from the template offers tax at all. Added only
@@ -1336,6 +1366,7 @@ def init_db():
         _upgrade_ddb_attachment_type(conn)
         _upgrade_columns_user_columns(conn)
         _upgrade_ddb_tabs(conn)
+        _upgrade_remove_row_shares(conn)
         _upgrade_invoice_tax_tick(conn)
         _upgrade_invoice_header(conn)
         _drop_index(conn, "ux_column_reminder", "columns")   # several reminder columns are allowed now

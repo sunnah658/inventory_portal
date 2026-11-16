@@ -24,7 +24,7 @@
 </div>
 <div class="stack rail">
   <div class="card"><h2>About this row</h2>
-    <p class="hint">Everyone in {{ dept['name'] }} can see this row once it is saved. Only the row's owner can edit it, unless the owner shares it. A date with a time on a meeting tab is a meeting schedule — the owner and the dept admins are notified before it.</p></div>
+    <p class="hint">Everyone in {{ dept['name'] }} can see this row once it is saved. Only the row's owner can edit it. A date with a time on a meeting tab is a meeting schedule — the owner and the dept admins are notified before it.</p></div>
   {{ quick_card([
     ('Back to the row', url_for('ddb.row_detail', rid=row['id']), True) if row else ('Back to the tab', url_for('ddb.index', dept=dept['id'], tab=tab['id']), True),
     ('Tabs', url_for('ddb.tabs', dept=dept['id']), False),

@@ -39,7 +39,7 @@ from auth import login_required
 from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, SALES_PIPELINE_COLUMNS, assignee_name_for, col_weight,
                   ddb_attachment_info, ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
-                  ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
+                  ddb_shared_tabs, ddb_tab_access, ddb_row_link, ddb_tabs, ddb_update_row, ddb_values,
                   display_code, external_url, is_assignee_column, new_random_code_text, notify, notify_ddb_task,
                   parse_code_text, parse_form, print_col_widths, show_when)
 from models import get_db, log, setting_get
@@ -148,6 +148,47 @@ def _get_tab(db, dept, tab_id=None):
                 return tb, tabs
         abort(404)
     return tabs[0], tabs
+
+
+def _resolve_tab(db, dept, tab_id=None):
+    """(tab, tabs, shared) for the list/export/report views. tab is the tab
+    being viewed — an own tab of this department, or a tab shared with this
+    user. tabs is the tabs row: this department's own tabs, then the tabs
+    shared with this user, each named TabName(DepartmentName). shared is None
+    for an own tab, or a dict with the access ('view'/'edit'), the owning
+    department row and the display name for a shared tab. A portal admin
+    never resolves a shared tab (he opens any department directly)."""
+    own = ddb_tabs(db, dept["id"])
+    shared_tabs = ddb_shared_tabs(db, g.user)
+    tabs = list(own)
+    for st in shared_tabs:
+        tabs.append({"id": st["tab_id"], "name": st["display_name"],
+                     "department_id": st["dept_id"], "shared": True,
+                     "access": st["access"]})
+    if tab_id is not None:
+        for tb in own:
+            if tb["id"] == tab_id:
+                return tb, tabs, None
+        for st in shared_tabs:
+            if st["tab_id"] == tab_id:
+                owner = db.execute("SELECT * FROM departments WHERE id=?", (st["dept_id"],)).fetchone()
+                tab = {"id": st["tab_id"], "name": st["display_name"],
+                       "department_id": st["dept_id"], "shared": True,
+                       "access": st["access"]}
+                return tab, tabs, {"access": st["access"], "owner_dept": owner,
+                                   "display_name": st["display_name"]}
+        abort(404)
+    if own:
+        return own[0], tabs, None
+    if shared_tabs:
+        st = shared_tabs[0]
+        owner = db.execute("SELECT * FROM departments WHERE id=?", (st["dept_id"],)).fetchone()
+        tab = {"id": st["tab_id"], "name": st["display_name"],
+               "department_id": st["dept_id"], "shared": True,
+               "access": st["access"]}
+        return tab, tabs, {"access": st["access"], "owner_dept": owner,
+                           "display_name": st["display_name"]}
+    return None, tabs, None
 
 
 def _back(dept, tab=None):
@@ -338,45 +379,64 @@ def index():
     args = request.args.copy()
     if not show_mine:
         args.pop("mine", None)   # a bookmarked mine=1 just shows All
-    tab, tabs = _get_tab(db, dept, args.get("tab", type=int))
+    tab, tabs, shared = _resolve_tab(db, dept, args.get("tab", type=int))
+    # The rows and columns live in the tab's own department: the viewer's
+    # own department for an own tab, the owning department for a shared tab.
+    row_dept = shared["owner_dept"] if shared else dept
+    if shared:
+        # A shared tab shows only its All rows — no My rows, no Deleted.
+        args.pop("mine", None)
+        args.pop("deleted", None)
+        show_mine = False
     if tab is None:
-        return render_template("deptdb.html", dept=dept, tab=None, tabs=[], level="manager" if is_admin else "own",
+        return render_template("deptdb.html", dept=dept, tab=None, tabs=tabs, level="manager" if is_admin else "own",
                                cols=[], rows=[], vmap={}, attach_urls={}, info={"sort": "updated", "dir": "desc", "fcol": "", "fval": ""},
                                q="", mine=False, deleted=False, total=0, page=1, pages=1,
                                counts={"all": 0, "mine": 0, "deleted": 0}, keep={}, can_add=False, names=[],
                                show_mine=show_mine, widths=[], show_report=False,
                                depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                                if is_portal_admin(g.user) else [],
-                               is_admin=is_admin, can_edit_row=lambda r: False, can_delete_row=lambda r: False)
-    where, params, order, op, info, q, mine, deleted = _filters(db, dept, tab, is_admin, args)
+                               is_admin=is_admin, is_shared=False, shared_access=None, shared_owner=None,
+                               can_manage_tab_sharing=False,
+                               can_edit_row=lambda r: False, can_delete_row=lambda r: False)
+    where, params, order, op, info, q, mine, deleted = _filters(db, row_dept, tab, is_admin, args)
     total = db.execute("SELECT COUNT(*) FROM ddb_rows r WHERE " + where, params).fetchone()[0]
     page, pages, offset = page_info(total, request.args.get("page", 1, type=int), config.PER_PAGE)
     rows = db.execute("SELECT r.*, u.full_name AS owner_name, u.is_active AS owner_is_active, u.is_deleted AS owner_is_deleted FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
                       "WHERE " + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
                       params + op + [config.PER_PAGE, offset]).fetchall()
-    cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
+    cols = ddb_columns(db, row_dept["id"], tab_id=tab["id"])
     show_report = _has_report_columns(cols)
     # Print widths for this tab's columns plus the trailing Added by column.
     widths = print_col_widths([col_weight(c["col_type"]) for c in cols] + [1.0])
     counts = {
         "all": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NULL",
-                          (dept["id"], tab["id"])).fetchone()[0],
-        "mine": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NULL "
-                           "AND owner_id=?", (dept["id"], tab["id"], g.user["id"])).fetchone()[0],
-        "deleted": db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NOT NULL",
-                              (dept["id"], tab["id"])).fetchone()[0] if is_admin else 0}
+                          (row_dept["id"], tab["id"])).fetchone()[0],
+        "mine": 0 if shared else db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NULL "
+                           "AND owner_id=?", (row_dept["id"], tab["id"], g.user["id"])).fetchone()[0],
+        "deleted": 0 if shared else (db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NOT NULL",
+                              (row_dept["id"], tab["id"])).fetchone()[0] if is_admin else 0)}
     keep = {k: v for k, v in args.items() if k not in ("page",)}
     if is_portal_admin(g.user):
         keep["dept"] = dept["id"]
     _vmap, _urls = _display_map(db, rows, cols)
-    can_add_here = bool(cols) and (is_portal_admin(g.user) or g.user["department_id"] == dept["id"])
+    # A shared tab never gets an Add row button: Edit means edit the
+    # existing rows only, never add one.
+    can_add_here = bool(cols) and not shared and (is_portal_admin(g.user) or g.user["department_id"] == dept["id"])
+    # Only the department admin of the department that owns the tab (or the
+    # portal admin) manages its sharing, with the Permission button.
+    can_manage_tab_sharing = (not shared) and (is_portal_admin(g.user)
+        or (g.user["department_id"] == dept["id"] and g.user["is_dept_admin"]))
     return render_template(
         "deptdb.html", dept=dept, tab=tab, tabs=tabs, level="manager" if is_admin else "own", cols=cols, rows=rows,
         vmap=_vmap, attach_urls=_urls, info=info, q=q, mine=mine, deleted=deleted,
         total=total, page=page, pages=pages, counts=counts, keep=keep, show_mine=show_mine,
         widths=widths,
         can_add=can_add_here, names=[c["name"] for c in cols], is_admin=is_admin,
-        show_report=show_report,
+        show_report=show_report, is_shared=bool(shared),
+        shared_access=shared["access"] if shared else None,
+        shared_owner=shared["owner_dept"]["name"] if shared else None,
+        can_manage_tab_sharing=can_manage_tab_sharing,
         depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
         if is_portal_admin(g.user) else [],
         can_edit_row=lambda r: ddb_can_edit_row(db, g.user, r) and not r["deleted_at"],
@@ -387,11 +447,12 @@ def index():
 @login_required
 def export():
     db, dept, is_admin = _dept()
-    tab, _tabs = _get_tab(db, dept, request.args.get("tab", type=int))
+    tab, _tabs, shared = _resolve_tab(db, dept, request.args.get("tab", type=int))
     if tab is None:
         flash("This department database has no tabs yet.", "error")
         return redirect(url_for("ddb.index", **_back(dept)))
-    where, params, order, op, _info, _q, _mine, _deleted = _filters(db, dept, tab, is_admin, request.args)
+    row_dept = shared["owner_dept"] if shared else dept
+    where, params, order, op, _info, _q, _mine, _deleted = _filters(db, row_dept, tab, is_admin, request.args)
     rows = db.execute("SELECT r.*, u.full_name AS owner_name FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
                       "WHERE " + where + " ORDER BY " + order, params + op).fetchall()
     # A selection (ids=1,2,3) exports only those rows; without it, everything
@@ -400,7 +461,7 @@ def export():
     if ids:
         idset = {x for x in ids.split(",") if x.isdigit()}
         rows = [r for r in rows if str(r["id"]) in idset]
-    cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
+    cols = ddb_columns(db, row_dept["id"], tab_id=tab["id"])
     vals = ddb_values(db, [r["id"] for r in rows])
     header = [c["name"] for c in cols] + ["Added by", "Last updated"]
     out = [[(ddb_display_value(c, vals[r["id"]].get(c["id"])) if c["col_type"] == "attachment"
@@ -408,10 +469,10 @@ def export():
             for c in cols] + [r["owner_name"], r["updated_at"]] for r in rows]
     kinds = ["number" if c["col_type"] == "number" else "text" for c in cols] + ["text", "text"]
     fmt = request.args.get("fmt", "xlsx")
-    log(db, "export", f"department database {dept['name']} / {tab['name']}: {fmt}, {len(rows)} rows")
+    log(db, "export", f"department database {row_dept['name']} / {tab['name']}: {fmt}, {len(rows)} rows")
     db.commit()
     if fmt == "csv":
-        return csv_response(header, out, "department_database_" + dept["name"] + "_" + tab["name"])
+        return csv_response(header, out, "department_database_" + row_dept["name"] + "_" + tab["name"])
     return exports.table_file("pdf" if fmt == "pdf" else "xlsx", f"{dept['name']} database — {tab['name']}", header, out, kinds,
                               f"{len(rows)} rows", setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
                               "department_database_" + dept["name"] + "_" + tab["name"])
@@ -529,11 +590,12 @@ def report():
     Only on the Department Database page — the Invoices and Request items
     tabs have their own views and never show the Report button."""
     db, dept, is_admin = _dept()
-    tab, _tabs = _get_tab(db, dept, request.args.get("tab", type=int))
+    tab, _tabs, shared = _resolve_tab(db, dept, request.args.get("tab", type=int))
     if tab is None:
         flash("This department database has no tabs yet.", "error")
         return redirect(url_for("ddb.index", **_back(dept)))
-    cols = ddb_columns(db, dept["id"], tab_id=tab["id"])
+    row_dept = shared["owner_dept"] if shared else dept
+    cols = ddb_columns(db, row_dept["id"], tab_id=tab["id"])
     if not _has_report_columns(cols):
         flash("This tab does not have the columns the report needs.", "error")
         return redirect(url_for("ddb.index", **_back(dept, tab)))
@@ -541,7 +603,7 @@ def report():
     if not ids:
         flash("Please select the data row first.", "error")
         return redirect(url_for("ddb.index", **_back(dept, tab)))
-    where, params, order, op, _info, _q, _mine, _deleted = _filters(db, dept, tab, is_admin, request.args)
+    where, params, order, op, _info, _q, _mine, _deleted = _filters(db, row_dept, tab, is_admin, request.args)
     rows = db.execute("SELECT r.*, u.full_name AS owner_name FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
                       "WHERE " + where + " ORDER BY " + order, params + op).fetchall()
     idset = {x for x in ids.split(",") if x.isdigit()}
@@ -552,13 +614,170 @@ def report():
     vals = ddb_values(db, [r["id"] for r in rows])
     data = _sales_pipeline_data(cols, rows, vals)
     pdf = exports.sales_pipeline_report_pdf(
-        dept["name"], tab["name"], data,
+        row_dept["name"], tab["name"], data,
         setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
-    log(db, "export", f"sales pipeline report {dept['name']} / {tab['name']}: {len(rows)} rows")
+    log(db, "export", f"sales pipeline report {row_dept['name']} / {tab['name']}: {len(rows)} rows")
     db.commit()
     resp = Response(pdf, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = 'attachment; filename="sales-pipeline-report.pdf"'
     return resp
+
+
+# ---------------------------------------------------------------- tab sharing (build 78)
+# A department admin shares a whole tab's All rows with another department
+# or one specific user, with View or Edit. Row sharing is gone: no one
+# shares one row with anyone any more.
+def _can_manage_tab_sharing(db, user, dept):
+    """Only the department admin of the department that owns the tab, or the
+    portal admin, manages its sharing."""
+    return is_portal_admin(user) or (user["department_id"] == dept["id"] and user["is_dept_admin"])
+
+
+@bp.route("/permissions")
+@login_required
+def tab_permissions():
+    """The full permission page for one tab, opened from the Permission button
+    (left of Select). Lists the departments and users already given access,
+    and the forms to add one. Only other departments are listed — the admin's
+    own department already has the tab."""
+    db, dept, _is_admin = _dept()
+    tab, _tabs = _get_tab(db, dept, request.args.get("tab", type=int))
+    if tab is None:
+        flash("Choose a tab first.", "error")
+        return redirect(url_for("ddb.index", **_back(dept)))
+    if not _can_manage_tab_sharing(db, g.user, dept):
+        abort(403)
+    dept_shares = db.execute(
+        "SELECT s.*, d.name AS dept_name FROM ddb_tab_shares s "
+        "JOIN departments d ON d.id=s.department_id WHERE s.tab_id=? ORDER BY d.name",
+        (tab["id"],)).fetchall()
+    user_shares = db.execute(
+        "SELECT s.*, u.full_name AS user_name, d.name AS dept_name FROM ddb_tab_shares s "
+        "JOIN users u ON u.id=s.user_id LEFT JOIN departments d ON d.id=u.department_id "
+        "WHERE s.tab_id=? ORDER BY d.name, u.full_name",
+        (tab["id"],)).fetchall()
+    other_depts = db.execute(
+        "SELECT id, name FROM departments WHERE id != ? ORDER BY name", (dept["id"],)).fetchall()
+    other_users = db.execute(
+        "SELECT u.id, u.full_name, d.name AS dept_name FROM users u "
+        "LEFT JOIN departments d ON d.id=u.department_id "
+        "WHERE u.is_active=1 AND u.department_id != ? ORDER BY d.name, u.full_name",
+        (dept["id"],)).fetchall()
+    row_count = db.execute("SELECT COUNT(*) FROM ddb_rows WHERE department_id=? AND tab_id=? AND deleted_at IS NULL",
+                           (dept["id"], tab["id"])).fetchone()[0]
+    return render_template("deptdb_tab_permissions.html", dept=dept, tab=tab,
+                           dept_shares=dept_shares, user_shares=user_shares,
+                           other_depts=other_depts, other_users=other_users,
+                           row_count=row_count)
+
+
+@bp.route("/permissions/department", methods=["POST"])
+@login_required
+def tab_permission_add_dept():
+    db, dept, _is_admin = _dept()
+    tab, _tabs = _get_tab(db, dept, request.form.get("tab", type=int))
+    if tab is None or not _can_manage_tab_sharing(db, g.user, dept):
+        abort(403)
+    did = request.form.get("department_id", type=int)
+    access = request.form.get("access", "view")
+    if access not in ("view", "edit"):
+        access = "view"
+    target = db.execute("SELECT * FROM departments WHERE id=?", (did,)).fetchone() if did else None
+    if target is None or did == dept["id"]:
+        flash("Choose another department.", "error")
+    else:
+        # Adding a department that already has access changes the access
+        # (upsert) — it never makes a second grant.
+        db.execute("DELETE FROM ddb_tab_shares WHERE tab_id=? AND department_id=?", (tab["id"], did))
+        db.execute("INSERT INTO ddb_tab_shares(tab_id,department_id,access,created_by) VALUES (?,?,?,?)",
+                   (tab["id"], did, access, g.user["id"]))
+        log(db, "ddb_tab_share", f"{dept['name']} / {tab['name']} shared with {target['name']} ({access})")
+        # Tell that department's admins the tab is now in their database.
+        admins = db.execute("SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+                            (did,)).fetchall()
+        notify(db, [a["id"] for a in admins],
+               f"{dept['name']} shared the tab '{tab['name']}' with your department "
+               f"({'Can edit' if access == 'edit' else 'View only'}).",
+               url_for("ddb.index", tab=tab["id"]), skip=g.user["id"])
+        db.commit()
+        flash(f"Shared with {target['name']} ({'Can edit' if access == 'edit' else 'View only'}).", "ok")
+    return redirect(url_for("ddb.tab_permissions", dept=dept["id"], tab=tab["id"]))
+
+
+@bp.route("/permissions/user", methods=["POST"])
+@login_required
+def tab_permission_add_user():
+    db, dept, _is_admin = _dept()
+    tab, _tabs = _get_tab(db, dept, request.form.get("tab", type=int))
+    if tab is None or not _can_manage_tab_sharing(db, g.user, dept):
+        abort(403)
+    uid = request.form.get("user_id", type=int)
+    access = request.form.get("access", "view")
+    if access not in ("view", "edit"):
+        access = "view"
+    target = db.execute("SELECT * FROM users WHERE id=? AND is_active=1", (uid,)).fetchone() if uid else None
+    if target is None or target["department_id"] == dept["id"]:
+        flash("Choose a user from another department.", "error")
+    else:
+        db.execute("DELETE FROM ddb_tab_shares WHERE tab_id=? AND user_id=?", (tab["id"], uid))
+        db.execute("INSERT INTO ddb_tab_shares(tab_id,user_id,access,created_by) VALUES (?,?,?,?)",
+                   (tab["id"], uid, access, g.user["id"]))
+        log(db, "ddb_tab_share", f"{dept['name']} / {tab['name']} shared with {target['full_name']} ({access})")
+        notify(db, [uid],
+               f"{dept['name']} shared the tab '{tab['name']}' with you "
+               f"({'Can edit' if access == 'edit' else 'View only'}).",
+               url_for("ddb.index", tab=tab["id"]), skip=g.user["id"])
+        db.commit()
+        flash(f"Shared with {target['full_name']} ({'Can edit' if access == 'edit' else 'View only'}).", "ok")
+    return redirect(url_for("ddb.tab_permissions", dept=dept["id"], tab=tab["id"]))
+
+
+@bp.route("/permissions/department/<int:sid>/delete", methods=["POST"])
+@login_required
+def tab_permission_delete_dept(sid):
+    db, dept, _is_admin = _dept()
+    tab, _tabs = _get_tab(db, dept, request.form.get("tab", type=int))
+    if tab is None or not _can_manage_tab_sharing(db, g.user, dept):
+        abort(403)
+    share = db.execute("SELECT s.*, d.name AS dept_name FROM ddb_tab_shares s "
+                       "JOIN departments d ON d.id=s.department_id WHERE s.id=? AND s.tab_id=?",
+                       (sid, tab["id"])).fetchone()
+    if share is None:
+        flash("That share is already gone.", "error")
+    else:
+        db.execute("DELETE FROM ddb_tab_shares WHERE id=?", (sid,))
+        log(db, "ddb_tab_unshare", f"{dept['name']} / {tab['name']} no longer shared with {share['dept_name']}")
+        admins = db.execute("SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+                            (share["department_id"],)).fetchall()
+        notify(db, [a["id"] for a in admins],
+               f"{dept['name']} stopped sharing the tab '{tab['name']}' with your department.",
+               url_for("ddb.index"), skip=g.user["id"])
+        db.commit()
+        flash(f"No longer shared with {share['dept_name']}.", "ok")
+    return redirect(url_for("ddb.tab_permissions", dept=dept["id"], tab=tab["id"]))
+
+
+@bp.route("/permissions/user/<int:sid>/delete", methods=["POST"])
+@login_required
+def tab_permission_delete_user(sid):
+    db, dept, _is_admin = _dept()
+    tab, _tabs = _get_tab(db, dept, request.form.get("tab", type=int))
+    if tab is None or not _can_manage_tab_sharing(db, g.user, dept):
+        abort(403)
+    share = db.execute("SELECT s.*, u.full_name AS user_name FROM ddb_tab_shares s "
+                       "JOIN users u ON u.id=s.user_id WHERE s.id=? AND s.tab_id=?",
+                       (sid, tab["id"])).fetchone()
+    if share is None:
+        flash("That share is already gone.", "error")
+    else:
+        db.execute("DELETE FROM ddb_tab_shares WHERE id=?", (sid,))
+        log(db, "ddb_tab_unshare", f"{dept['name']} / {tab['name']} no longer shared with {share['user_name']}")
+        notify(db, [share["user_id"]],
+               f"{dept['name']} stopped sharing the tab '{tab['name']}' with you.",
+               url_for("ddb.index"), skip=g.user["id"])
+        db.commit()
+        flash(f"No longer shared with {share['user_name']}.", "ok")
+    return redirect(url_for("ddb.tab_permissions", dept=dept["id"], tab=tab["id"]))
 
 
 # ---------------------------------------------------------------- Invoices tab (default tab inside Department Database)
@@ -965,20 +1184,18 @@ def row_detail(rid):
     cols = ddb_columns(db, row["department_id"], tab_id=row["tab_id"]) if row["tab_id"] else []
     _vmap, _urls = _display_map(db, [row], cols)
     is_admin = ddb_is_tab_admin(db, g.user, row["department_id"])
-    can_share = (row["owner_id"] == g.user["id"] or is_admin) and not row["deleted_at"]
-    shares = db.execute("SELECT s.*, d.name AS dept_name, u.full_name AS user_name FROM ddb_row_shares s "
-                        "LEFT JOIN departments d ON d.id=s.department_id LEFT JOIN users u ON u.id=s.user_id "
-                        "WHERE s.row_id=? ORDER BY s.id", (rid,)).fetchall()
+    # Row sharing is gone (build 78): no one shares one row with anyone.
+    # Only the department admin shares a whole tab, from the tab's
+    # Permission button. The tab this row is in, and what the viewer may do
+    # with it, are shown so the page can say so.
+    tab_access = ddb_tab_access(db, g.user, row["tab_id"]) if row["tab_id"] else None
     return render_template(
         "deptdb_row.html", row=row, tab=tab, cols=cols, vals=_vmap[rid], attach_urls=_urls[rid],
         history=db.execute("SELECT * FROM ddb_history WHERE row_id=? ORDER BY id DESC LIMIT 100", (rid,)).fetchall(),
         can_edit=ddb_can_edit_row(db, g.user, row) and not row["deleted_at"],
         can_delete=ddb_can_delete_row(db, g.user, row) and not row["deleted_at"],
         can_restore=is_admin and bool(row["deleted_at"]),
-        can_share=can_share, shares=shares, is_admin=is_admin,
-        departments=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_share else [],
-        users=db.execute("SELECT u.id, u.full_name, d.name AS dept_name FROM users u LEFT JOIN departments d "
-                         "ON d.id=u.department_id WHERE u.is_active=1 ORDER BY d.name, u.full_name").fetchall() if can_share else [],
+        is_admin=is_admin, tab_access=tab_access,
         can_manage_public=_can_manage_row_public(db, g.user, row),
         qr_svg=_qr_svg(external_url(db, "ddb.row_code_page", code=row["public_code"])) if row["public_code"] else None)
 
@@ -1105,82 +1322,6 @@ def row_code_pdf(code):
     resp = Response(data, mimetype="application/pdf")
     resp.headers["Content-Disposition"] = f'attachment; filename="{row["public_code"]}.pdf"'
     return resp
-
-
-@bp.route("/row/<int:rid>/share", methods=["POST"])
-@login_required
-def row_share(rid):
-    db, row = _row(rid)
-    is_admin = ddb_is_tab_admin(db, g.user, row["department_id"])
-    if row["deleted_at"] or not (row["owner_id"] == g.user["id"] or is_admin):
-        abort(403)
-    dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
-    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
-    tab_name = tab["name"] if tab else ""
-    row_dept = dept
-    kind = request.form.get("kind")
-    perm = request.form.get("permission", "view")
-    if perm not in ("view", "edit"):
-        perm = "view"
-    if kind == "department":
-        did = request.form.get("department_id", type=int)
-        dept = db.execute("SELECT * FROM departments WHERE id=?", (did,)).fetchone() if did else None
-        if dept is None:
-            flash("Choose a department.", "error")
-        elif did == row["department_id"]:
-            flash("That department can already see this row.", "error")
-        else:
-            db.execute("DELETE FROM ddb_row_shares WHERE row_id=? AND department_id=?", (rid, did))
-            db.execute("INSERT INTO ddb_row_shares(row_id,department_id,permission,created_by) VALUES (?,?,?,?)",
-                       (rid, did, perm, g.user["id"]))
-            ddb_history(db, rid, g.user, "shared", new=f"{dept['name']} ({'Can edit' if perm == 'edit' else 'View only'})")
-            log(db, "ddb_share", f"row {rid} shared with {dept['name']} ({perm})")
-            notify_ddb_task(db, g.user, row_dept,
-                            f"{g.user['full_name']} shared a row in the tab '{tab_name}' in {row_dept['name']} with {dept['name']}.",
-                            ddb_row_link(db, rid))
-            db.commit()
-            flash(f"Shared with {dept['name']} ({'Can edit' if perm == 'edit' else 'View only'}).", "ok")
-    elif kind == "user":
-        uid = request.form.get("user_id", type=int)
-        user = db.execute("SELECT * FROM users WHERE id=? AND is_active=1", (uid,)).fetchone() if uid else None
-        if user is None:
-            flash("Choose a user.", "error")
-        else:
-            db.execute("DELETE FROM ddb_row_shares WHERE row_id=? AND user_id=?", (rid, uid))
-            db.execute("INSERT INTO ddb_row_shares(row_id,user_id,permission,created_by) VALUES (?,?,?,?)",
-                       (rid, uid, perm, g.user["id"]))
-            notify(db, [uid], f"A department-database row was shared with you ({'Can edit' if perm == 'edit' else 'View only'}).",
-                   ddb_row_link(db, rid), skip=g.user["id"])
-            ddb_history(db, rid, g.user, "shared", new=f"{user['full_name']} ({'Can edit' if perm == 'edit' else 'View only'})")
-            log(db, "ddb_share", f"row {rid} shared with {user['username']} ({perm})")
-            notify_ddb_task(db, g.user, row_dept,
-                            f"{g.user['full_name']} shared a row in the tab '{tab_name}' in {row_dept['name']} with {user['full_name']}.",
-                            ddb_row_link(db, rid))
-            db.commit()
-            flash(f"Shared with {user['full_name']} ({'Can edit' if perm == 'edit' else 'View only'}).", "ok")
-    else:
-        flash("Choose whether to share with a department or a user.", "error")
-    return redirect(url_for("ddb.row_detail", rid=rid))
-
-
-@bp.route("/row/<int:rid>/share/<int:sid>/delete", methods=["POST"])
-@login_required
-def row_share_delete(rid, sid):
-    db, row = _row(rid)
-    is_admin = ddb_is_tab_admin(db, g.user, row["department_id"])
-    if not (row["owner_id"] == g.user["id"] or is_admin):
-        abort(403)
-    db.execute("DELETE FROM ddb_row_shares WHERE id=? AND row_id=?", (sid, rid))
-    ddb_history(db, rid, g.user, "unshared")
-    log(db, "ddb_unshare", f"row {rid} share {sid} removed")
-    dept = db.execute("SELECT * FROM departments WHERE id=?", (row["department_id"],)).fetchone()
-    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (row["tab_id"],)).fetchone() if row["tab_id"] else None
-    notify_ddb_task(db, g.user, dept,
-                    f"{g.user['full_name']} stopped sharing a row in the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
-                    ddb_row_link(db, rid))
-    db.commit()
-    flash("Share removed.", "ok")
-    return redirect(url_for("ddb.row_detail", rid=rid))
 
 
 def _form(dept, tab, cols, values, row=None, version=None, conflict=None, source=None):

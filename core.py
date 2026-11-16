@@ -681,6 +681,10 @@ def purge_user_account(db, uid, delete_work):
     db.execute("UPDATE invoice_template_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
     db.execute("UPDATE invoice_dept_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
     db.execute("UPDATE ddb_row_shares SET created_by=NULL WHERE created_by=?", (uid,))
+    # Tab shares granted to this user go with the account; grants he made
+    # keep working, with no creator named.
+    db.execute("DELETE FROM ddb_tab_shares WHERE user_id=?", (uid,))
+    db.execute("UPDATE ddb_tab_shares SET created_by=NULL WHERE created_by=?", (uid,))
     db.execute("UPDATE invoice_templates SET created_by=NULL WHERE created_by=?", (uid,))
     db.execute("UPDATE ddb_tabs SET created_by=NULL WHERE created_by=?", (uid,))
     db.execute("UPDATE ddb_delegates SET granted_by=NULL WHERE granted_by=?", (uid,))
@@ -1428,6 +1432,63 @@ def ddb_tabs(db, dept_id):
                       (dept_id,)).fetchall()
 
 
+def ddb_shared_tab_name(tab_name, dept_name):
+    """How a shared tab is named in the other side's Department Database:
+    the tab name, then the owning department's name in parentheses, with no
+    space before the parenthesis (build 78)."""
+    return "%s(%s)" % (tab_name, dept_name)
+
+
+def ddb_tab_access(db, user, tab_id):
+    """'edit' or 'view' when this tab was shared with the user — either with
+    his whole department, or with him personally — else None. When both a
+    department grant and a personal grant exist, the better one wins (a
+    personal Edit beats a department View, and a department Edit beats a
+    personal View). A portal admin and a user in the tab's own department
+    are not 'shared' users, so this returns None for them."""
+    if is_portal_admin(user):
+        return None
+    tab = db.execute("SELECT department_id FROM ddb_tabs WHERE id=? AND removed_at IS NULL",
+                     (tab_id,)).fetchone()
+    if tab is None or user["department_id"] == tab["department_id"]:
+        return None
+    best = None
+    for r in db.execute(
+            "SELECT access FROM ddb_tab_shares WHERE tab_id=? "
+            "AND (department_id=? OR user_id=?)",
+            (tab_id, user["department_id"], user["id"])).fetchall():
+        if r["access"] == "edit":
+            return "edit"
+        best = "view"
+    return best
+
+
+def ddb_shared_tabs(db, user):
+    """The tabs shared with this user, each as a dict with the tab's id and
+    name, the owning department's id and name, and the access ('view' or
+    'edit'). A department grant reaches everyone in that department; a user
+    grant reaches only that one person. Ordered by department, then tab."""
+    if is_portal_admin(user):
+        return []
+    rows = db.execute(
+        "SELECT t.id AS tab_id, t.name AS tab_name, t.department_id AS dept_id, "
+        "d.name AS dept_name, "
+        "MAX(CASE WHEN s.access='edit' THEN 1 ELSE 0 END) AS has_edit "
+        "FROM ddb_tab_shares s JOIN ddb_tabs t ON t.id=s.tab_id AND t.removed_at IS NULL "
+        "JOIN departments d ON d.id=t.department_id "
+        "WHERE s.department_id=? OR s.user_id=? "
+        "GROUP BY t.id, t.name, t.department_id, d.name "
+        "ORDER BY d.name, t.name",
+        (user["department_id"], user["id"])).fetchall()
+    out = []
+    for r in rows:
+        out.append({"tab_id": r["tab_id"], "tab_name": r["tab_name"],
+                    "dept_id": r["dept_id"], "dept_name": r["dept_name"],
+                    "access": "edit" if r["has_edit"] else "view",
+                    "display_name": ddb_shared_tab_name(r["tab_name"], r["dept_name"])})
+    return out
+
+
 def first_text_value(db, row_id):
     """The value of a row's first text/longtext column (its display name)."""
     row = db.execute(
@@ -1446,7 +1507,18 @@ def design_rail(db, user, dept_id=None, tab_id=None):
     if user is None:
         return {}
     dept = None
-    if dept_id:
+    if tab_id:
+        # The tab being viewed decides the department: its own department
+        # when the user is in it (or is a portal admin), or the owning
+        # department when the tab was shared with him (build 78) — the rail
+        # then shows that tab's follow-ups and recent rows, not his own
+        # department's.
+        t = db.execute("SELECT department_id FROM ddb_tabs WHERE id=? AND removed_at IS NULL",
+                       (tab_id,)).fetchone()
+        if t and (is_portal_admin(user) or user["department_id"] == t["department_id"]
+                 or ddb_tab_access(db, user, tab_id)):
+            dept = t["department_id"]
+    if dept is None and dept_id:
         row = db.execute("SELECT id FROM departments WHERE id=?", (dept_id,)).fetchone()
         if row and (is_portal_admin(user) or user["department_id"] == dept_id):
             dept = row["id"]
@@ -1649,24 +1721,17 @@ def ddb_is_tab_admin(db, user, dept_id):
 
 
 def ddb_can_view_row(db, user, row):
-    """Every user in the same department can see every row in a tab. A row
-    shared with another department or a specific user is also visible there."""
+    """Every user in the same department can see every row in a tab. A row in
+    a tab shared with the user's department, or with the user personally, is
+    also visible there (build 78). Row sharing is gone: ddb_row_shares is no
+    longer read."""
     if is_portal_admin(user):
         return True
     if user["department_id"] == row["department_id"]:
         return True
-    if db.execute("SELECT 1 FROM ddb_row_shares WHERE row_id=? AND (user_id=? OR department_id=?)",
-                  (row["id"], user["id"], user["department_id"])).fetchone():
+    if row["tab_id"] and ddb_tab_access(db, user, row["tab_id"]):
         return True
     return False
-
-
-def ddb_share_permission(db, user, row):
-    """'edit' if this user (or his department) was shared the row with edit rights, else None."""
-    r = db.execute("SELECT permission FROM ddb_row_shares WHERE row_id=? AND (user_id=? OR department_id=?) "
-                   "ORDER BY CASE WHEN user_id IS NOT NULL THEN 0 ELSE 1 END LIMIT 1",
-                   (row["id"], user["id"], user["department_id"])).fetchone()
-    return r["permission"] if r else None
 
 
 def ddb_can_add(db, user):
@@ -1680,12 +1745,14 @@ def ddb_can_add(db, user):
 
 def ddb_can_edit_row(db, user, row):
     """Only the owner may edit a row — unless a dept admin / delegate (who may
-    edit every row in the department) or a share with edit permission says otherwise."""
+    edit every row in the department) or a tab shared with edit permission
+    says otherwise (build 78: edit means edit the existing rows only). Row
+    sharing is gone."""
     if ddb_is_tab_admin(db, user, row["department_id"]):
         return True
     if row["owner_id"] == user["id"]:
         return True
-    return ddb_share_permission(db, user, row) == "edit"
+    return bool(row["tab_id"]) and ddb_tab_access(db, user, row["tab_id"]) == "edit"
 
 
 def ddb_can_delete_row(db, user, row):

@@ -1,4 +1,23 @@
 ==============================================================================
+ TAB SHARING BY THE DEPARTMENT ADMIN; ROW SHARING REMOVED (2026-11-16)
+==============================================================================
+ 1. A normal user can no longer share one Department Database record
+    with anyone. The Share box is gone from every row's detail page,
+    and every row share a user already made is gone.
+ 2. The department admin of the department that owns a tab now sees a
+    Permission button on the left of the Select button, on every tab
+    except Invoices and Request items. From it he shares the whole
+    tab's All rows with another department or one specific user, with
+    View or Edit. Only other departments and their users are listed.
+ 3. View means see the rows. Edit means edit the existing rows only
+    — no adding a row, no deleting one, no changing the tab.
+ 4. The shared tab appears in the other side's Department Database
+    named like Client Info(Sales & Marketing), showing only All rows:
+    no My rows, no Deleted, no Permission button, no Add row. A
+    department grant reaches everyone in that department; a user
+    grant reaches only that one person.
+
+==============================================================================
  LEAVES TOTAL ROW, DATE-CHANGE NOTE, NO EDITING AFTER SENDING, SUBJECT ON
  THE CREATE FORM (2026-11-16)
 ==============================================================================

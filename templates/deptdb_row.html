@@ -4,7 +4,8 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ row['department_name'] }} database{% if tab %} · {{ tab['name'] }}{% endif %} · row #{{ row['id'] }}</h1>
-    <p class="hint keepprint">Added by {{ row['owner_name'] }} on {{ row['created_at'] }} · last changed {{ row['updated_at'] }}{% if row['source_record_id'] %} · copied from record #{{ row['source_record_id'] }}{% endif %}</p></div>
+    <p class="hint keepprint">Added by {{ row['owner_name'] }} on {{ row['created_at'] }} · last changed {{ row['updated_at'] }}{% if row['source_record_id'] %} · copied from record #{{ row['source_record_id'] }}{% endif %}</p>
+    {% if tab_access %}<p class="hint keepprint">This tab was shared with you — {{ 'you can edit its rows' if tab_access == 'edit' else 'view only' }}.</p>{% endif %}</div>
   <div class="acts noprint">
     {% if can_edit %}<a class="b p" href="{{ url_for('ddb.edit_row', rid=row['id']) }}">Edit</a>{% endif %}
     <a class="b" href="{{ url_for('ddb.index', dept=row['department_id'], tab=row['tab_id']) }}">Back to the list</a>
@@ -16,29 +17,14 @@
 {% if row['deleted_at'] %}<div class="alert">This row was deleted on {{ row['deleted_at'] }}.</div>{% endif %}
 <div class="kp">
   {{ kpi('Fields', cols|length) }}
-  {{ kpi('Shared with', shares|length) }}
   {{ kpi('Changes', history|length) }}
 </div>
 <div class="tw"><div class="stack">
   <div class="card"><h2>Details</h2><div class="ig">
     {% for c in cols %}<div {% if c['col_type'] == 'longtext' %}class="full"{% endif %}><span class="k">{{ c['name'] }}</span>{% if c['col_type'] == 'attachment' %}{% if attach_urls and attach_urls.get(c['id']) %}<a href="{{ attach_urls[c['id']] }}">Download {{ vals.get(c['id']) }}</a>{% else %}{{ vals.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (vals.get(c['id']) or '')|showdt }}{% else %}{{ vals.get(c['id']) or '' }}{% endif %}</div>{% endfor %}
   </div></div>
-  {% if can_share %}<div class="card noprint"><h2>Share this row</h2>
-    <p class="hint">Everyone in this department can already see this row. Share it with another department or a specific user, and set what they may do.</p>
-    <form method="post" action="{{ url_for('ddb.row_share', rid=row['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fd"><label>Share with a department</label><select name="department_id">{% for d in departments %}<option value="{{ d['id'] }}">{{ d['name'] }}</option>{% endfor %}</select></div>
-      <div class="fd"><label>Permission</label><select name="permission"><option value="view">View only</option><option value="edit">Can edit</option></select></div>
-      <button class="b" type="submit" name="kind" value="department">Share with department</button></form>
-    <form method="post" action="{{ url_for('ddb.row_share', rid=row['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fd"><label>Share with a specific user</label><select name="user_id">{% for u in users %}<option value="{{ u['id'] }}">{{ u['full_name'] }} ({{ u['dept_name'] or 'no department' }})</option>{% endfor %}</select></div>
-      <div class="fd"><label>Permission</label><select name="permission"><option value="view">View only</option><option value="edit">Can edit</option></select></div>
-      <button class="b" type="submit" name="kind" value="user">Share with user</button></form>
-  </div>{% endif %}
   </div>
   <div class="stack rail noprint">
-  {% if shares %}<div class="card"><h2>Shared with</h2>
-      {% for s in shares %}<div class="ck" style="gap:8px"><span style="flex:1"><b>{{ s['dept_name'] or s['user_name'] }}</b> <span class="sub">{{ 'Can edit' if s['permission'] == 'edit' else 'View only' }}</span></span>
-        {% if can_share %}<form method="post" action="{{ url_for('ddb.row_share_delete', rid=row['id'], sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove</button></form>{% endif %}</div>{% endfor %}</div>{% endif %}
   <div class="card" id="public"><h2>Public QR</h2>
   <p class="hint">Generate a public QR to share this row. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the row number. Searching the share code, viewing it and downloading its PDF all need a login.</p>
   {% if row['public_code'] and row['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ row['public_views'] }} views · Share code: <b>{{ row['public_code'] }}</b> (not the row number)</div>
