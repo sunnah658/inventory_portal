@@ -4638,3 +4638,55 @@
     in this build, and no screen or feature change. Apply only
     this latest zip, not the older ones in order. Back up first
     and keep your live .env untouched, as before.
+
+89. THE PORTAL WOULD NOT START ON REAL MYSQL 8.0 — MISSING cryptography
+    PACKAGE (2026-11-15)
+    What happened: after applying the MySQL build, the live portal
+    kept restarting. The log showed two errors, and only the second
+    one is the bug.
+      * The first error (Connection refused on 'db') was the portal
+        trying while the database was still starting up. The db
+        healthcheck tested MySQL over its local socket, so it could
+        report healthy a moment before the network port was ready.
+        Those errors stopped on their own once the database was up.
+      * The error that kept the portal restarting was this one:
+        RuntimeError: 'cryptography' package is required for
+        sha256_password or caching_sha2_password auth methods.
+        MySQL 8.0 logs users in with caching_sha2_password by
+        default, and PyMySQL needs the `cryptography` package to
+        do that login. requirements.txt did not list it, so the
+        portal image had no cryptography and every connection
+        failed. This is my bug: the MariaDB test server logs users
+        in with mysql_native_password instead, so the 898 checks
+        never took the caching_sha2_password path and never caught
+        it — the same MariaDB-vs-MySQL trap as the CREATE INDEX IF
+        NOT EXISTS bug in build 67.
+    The fix:
+      * requirements.txt now pins cryptography==44.0.0. The
+        Dockerfile installs requirements.txt, so a rebuild of the
+        image picks it up.
+      * The db healthcheck now pings 127.0.0.1 (the TCP port) instead
+        of localhost (the local socket), so "healthy" means the port
+        the portal connects to is accepting connections.
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    The --build is REQUIRED — the image must be rebuilt to pick up
+    the new package; `up -d` on its own will not install it, and
+    the portal will keep crashing the same way. After the rebuild
+    the portal starts. If it comes up with no data (only the seed
+    admin account), the migration from section 86 has not run yet:
+    stop the portal, run the migration script, and start again.
+    If the migration refuses because the portal already created
+    its tables, run it with --replace (it empties the tables
+    first, then copies your old data in).
+    Tests: 901/901 checks pass on the work copy and on a fresh
+    extract (898 from builds up to 69 + 3 new). The new checks
+    cover requirements.txt pinning cryptography, the exact login
+    call that crashed live (sha2_rsa_encrypt with a real RSA key)
+    now working, and the healthcheck using 127.0.0.1. The live
+    error was also reproduced here first (the same RuntimeError
+    with cryptography missing) and then shown fixed with it
+    installed. No database change in this build, and no screen or
+    feature change. Apply only this latest zip, not the older
+    ones in order. Back up first and keep your live .env
+    untouched, as before.

@@ -1,4 +1,28 @@
 ==============================================================================
+ UPDATE: THE PORTAL WOULD NOT START ON REAL MYSQL 8.0 — MISSING cryptography
+ PACKAGE (2026-11-15)
+==============================================================================
+ 1. After applying the MySQL build, the live portal kept restarting.
+    The log showed two errors. The first (Connection refused) was
+    the portal trying while the database was still starting up. The
+    error that kept it restarting was this one: "'cryptography'
+    package is required for sha256_password or caching_sha2_password
+    auth methods". MySQL 8.0 logs users in with caching_sha2_password
+    by default, and PyMySQL needs the `cryptography` package to do
+    that login — and requirements.txt did not list it. This was my
+    bug: the MariaDB test server uses a different login method, so
+    the tests never caught it.
+ 2. The fix is in this build: requirements.txt now pins
+    cryptography==44.0.0, and the db healthcheck now tests the TCP
+    port (127.0.0.1) instead of the local socket. Apply it with
+        docker compose up -d --build
+    The --build is REQUIRED — without rebuilding the image, the
+    portal will keep crashing the same way. If the portal comes up
+    with no data, the migration from README section 86 has not run
+    yet; run it (with --replace if it refuses because the portal
+    already created its tables).
+
+==============================================================================
  UPDATE: THE MYSQL USER AND PASSWORDS ARE NOW IN THE .ENV FILE (2026-11-15)
 ==============================================================================
  1. The .env file now contains the MySQL user and both passwords

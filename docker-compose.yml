@@ -50,7 +50,10 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql    # the database itself lives here
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root",
+      # 127.0.0.1 (not localhost) so the check uses the TCP port, the
+      # same way the portal connects — "healthy" then means the
+      # database is actually accepting connections.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root",
              "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s

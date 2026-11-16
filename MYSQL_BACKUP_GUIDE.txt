@@ -203,3 +203,10 @@ AUTOMATIC BACKUPS (optional, recommended):
     zip's .env overwrite your live .env — it carries the DEFAULT
     values; copy the three lines into your live .env by hand if
     they are not there yet.
+  - Build 70: the portal would not start on real MySQL 8.0 because
+    the `cryptography` package was missing from requirements.txt
+    (MySQL 8.0 logs in with caching_sha2_password, which needs it).
+    requirements.txt now pins cryptography==44.0.0 — apply with
+    `docker compose up -d --build`, or the portal keeps crashing
+    the same way. The db healthcheck now tests the TCP port
+    (127.0.0.1) instead of the local socket.
