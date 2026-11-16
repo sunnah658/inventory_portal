@@ -1,4 +1,17 @@
 ==============================================================================
+ SALES PIPELINE REPORT FIXED WHEN NO ROW IS OPEN OR DONE (2026-11-16)
+==============================================================================
+ 1. The report no longer shows a 500 error when the rows you ticked
+    have no Open or Done deal stage (a blank deal stage, or every
+    row Terminated). It now makes the PDF, with "No open or done
+    prospects in the selected rows." where the pipeline chart would
+    be. The follow-up counts, KPIs and key message are still there.
+ 2. A normal selection with Open or Done rows is unchanged — the
+    chart comes back as before.
+ 3. This zip includes everything from build 74. Apply only this
+    one, with `docker compose up -d --build`. No database change.
+
+==============================================================================
  NO "ASSIGNED TO" DROPDOWN ON THE SALES PIPELINE ADD/EDIT ROW FORMS (2026-11-16)
 ==============================================================================
  1. The Sales Pipeline "Add row" form no longer has an "Assigned to"

@@ -4912,3 +4912,34 @@
     the auto-assigned rows, and a dept admin adding a row being
     assigned to themselves. Back up first and keep your live .env
     untouched, as before.
+94. SALES PIPELINE REPORT NO LONGER CRASHES WHEN NO ROW IS OPEN OR DONE (2026-11-16)
+    Live bug: on the Sales Pipeline tab, ticking one row and clicking
+    Report returned a 500 Internal Server Error instead of the PDF.
+    The cause: the report's "Pipeline MRC by KAM" bar chart is built
+    from the selected rows that are Open or Done. When the selection
+    had none of those — the row's Deal stage was blank, or every
+    selected row was Terminated — the chart was built from an empty
+    list, and ReportLab refuses an empty Table ("must have at least
+    a row and column"), so the whole report crashed. The report had
+    only ever been tested with rows that had an Open or Done stage,
+    so this was never caught. The fix (exports.py): when there is no
+    Open or Done row in the selection, the report shows "No open or
+    done prospects in the selected rows." where the chart would be,
+    and the rest of the report (follow-up counts, KPIs, key message)
+    is still made. The same guard is on the follow-up chart, and the
+    bar-table helper itself now refuses to build a Table from an
+    empty list, so no chart in the report can crash this way again.
+    A normal selection with Open/Done rows is unchanged — the chart
+    comes back as before.
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    This zip includes everything from build 74, so apply only this
+    one. If the portal comes up with no data (only the seed admin
+    account), the migration from section 86 has not run yet — see
+    section 90. No database change. Tests: 964/964 checks pass on
+    the work copy and on a fresh extract (958 from builds up to 74
+    + 6 new). The new checks cover a report from a single row with
+    no deal stage, from a single Terminated row, from several rows
+    with no prospects, and from a mix with one Open row (the chart
+    comes back and the note goes away). Back up first and keep your
+    live .env untouched, as before.

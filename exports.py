@@ -441,6 +441,10 @@ def _bar_table(rows, font, bar_width=250, height=13):
     """rows = [(label, drawing)] — a KAM name and its bar, one per row."""
     lab = ParagraphStyle("barlab", fontName=font["regular"], fontSize=9, leading=11,
                          textColor=colors.HexColor("#10283A"))
+    if not rows:
+        # An empty Table is refused by ReportLab ("must have at least a
+        # row and column"), so never build one from an empty list.
+        return Paragraph(_pdf_text("No data"), lab)
     data = [[Paragraph(_pdf_text(label), lab), drawing] for label, drawing in rows]
     t = Table(data, colWidths=[92, bar_width + 42])
     t.setStyle(TableStyle([
@@ -499,11 +503,17 @@ def sales_pipeline_report_pdf(dept_name, tab_name, data, company="", prepared_fo
         (str(phone), "Reached by phone", f"{100 * phone // total}% of clients" if total else "—", "F58220"),
     ], font, 185))
     left.append(Paragraph(_pdf_text("Follow-up status by Account Manager (no. of live clients)"), h3))
-    max_follow = max((t for _, _, _, t in data["kam_follow"]), default=0)
-    left.append(_bar_table([
-        (kam, _hbar([(v, "1F77C8", str(v) if v else ""), (p, "F58220", str(p) if p else "")],
-                    max_follow, 250, 10, font, str(t)))
-        for kam, v, p, t in data["kam_follow"]], font))
+    if data["kam_follow"]:
+        max_follow = max((t for _, _, _, t in data["kam_follow"]), default=0)
+        left.append(_bar_table([
+            (kam, _hbar([(v, "1F77C8", str(v) if v else ""), (p, "F58220", str(p) if p else "")],
+                        max_follow, 250, 10, font, str(t)))
+            for kam, v, p, t in data["kam_follow"]], font))
+    else:
+        # No rows at all were selected with a follow-up to show; a bar
+        # table with no rows would crash the PDF (an empty Table is
+        # refused), so say so instead.
+        left.append(Paragraph(_pdf_text("No follow-ups recorded for the selected rows."), small))
     left.append(Paragraph(_pdf_text(
         "Physical visit (blue)  |  Phone call (orange)  |  Clients reached (visit + phone): "
         f"{data['reached_pct']}%"), small))
@@ -576,11 +586,18 @@ def sales_pipeline_report_pdf(dept_name, tab_name, data, company="", prepared_fo
             ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
         right += [Spacer(1, 6), refbox]
     right.append(Paragraph(_pdf_text("Pipeline MRC by KAM (BDT thousand)"), h3))
-    max_mrc = max((t for _, _, _, t in data["kam_mrc"]), default=0)
-    right.append(_bar_table([
-        (kam, _hbar([(o, "6B3FA0", ""), (d, "1F77C8", "")], max_mrc, 250, 10, font, _fmt_k(t)))
-        for kam, o, d, t in data["kam_mrc"]], font))
-    right.append(Paragraph(_pdf_text("Open (purple)  |  Done (blue)"), small))
+    if data["kam_mrc"]:
+        max_mrc = max((t for _, _, _, t in data["kam_mrc"]), default=0)
+        right.append(_bar_table([
+            (kam, _hbar([(o, "6B3FA0", ""), (d, "1F77C8", "")], max_mrc, 250, 10, font, _fmt_k(t)))
+            for kam, o, d, t in data["kam_mrc"]], font))
+        right.append(Paragraph(_pdf_text("Open (purple)  |  Done (blue)"), small))
+    else:
+        # No selected row is Open or Done (blank deal stage, or every
+        # row Terminated): there is no pipeline MRC to chart. A bar
+        # table with no rows would crash the PDF (an empty Table is
+        # refused), so say so instead of building one.
+        right.append(Paragraph(_pdf_text("No open or done prospects in the selected rows."), small))
     if data["top5"]:
         right.append(Paragraph(_pdf_text("Top 5 open prospects by MRC"), h3))
         th = ParagraphStyle("th", fontName=font["bold"], fontSize=9, leading=11, textColor=colors.white)
