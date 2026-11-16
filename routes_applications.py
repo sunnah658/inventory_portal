@@ -263,18 +263,26 @@ def _can_view(db, user, app):
     return False
 
 def _can_edit(db, user, app):
-    """The owner (only while Pending), the person whose turn it is in the
-    chain, and the HR & Admin department admin can edit the application.
-    Nobody else can. (The old rules — checker while Pending, approver
-    while Checked — are the same thing for a two-step chain.)"""
-    if _is_hr_dept_admin(db, user):
-        return True
-    if app["owner_id"] == user["id"] and app["status"] == "pending":
-        return True
-    cur = _current_step(db, app["id"])
-    if cur and cur["user_id"] == user["id"] and app["status"] in ("pending", "checked"):
-        return True
+    """Nobody can edit an application once it has been sent (build 77).
+    The applicant, the step users and the HR & Admin department admin
+    alike: the Edit button is gone and the edit route refuses everyone.
+    The only things that change after sending are the HR note and the
+    leave dates, and only the HR & Admin step user may do those, when
+    it is their turn (see _can_hr_act). Approving and rejecting still
+    work — that is the chain deciding, not editing."""
     return False
+
+def _can_hr_act(db, user, app):
+    """It is this user's turn in the chain AND they are in the HR &
+    Admin department — the step HR & Admin user, when it is their
+    turn. Only they may use the HR note and change the leave dates
+    after the application is sent (build 77). A step user from any
+    other department never qualifies, and neither does the HR
+    department admin unless they are the step HR user in this chain."""
+    if not _can_act(db, user, app):
+        return False
+    _hr = hr_admin_dept_id(db)
+    return bool(_hr) and user["department_id"] == _hr
 
 def _can_act(db, user, app):
     """It is this user's turn in the chain: they are the first step that
@@ -299,11 +307,14 @@ def _can_manage(db, user, app):
     return _can_act(db, user, app)
 
 def _can_note(db, user, app):
-    """Who can set the HR note: the person whose turn it is, and the HR
-    & Admin department admin, while the application is undecided."""
+    """Who can set the HR note: the HR & Admin user who is a step in
+    this application's chain, when it is their turn, while the
+    application is undecided (build 77). A step user from any other
+    department never sees the note box, and neither does the HR
+    department admin unless they are the step HR user in this chain."""
     if app["status"] not in ("pending", "checked"):
         return False
-    return _can_act(db, user, app) or _is_hr_dept_admin(db, user)
+    return _can_hr_act(db, user, app)
 
 def _can_forward(db, user, app):
     """The old forward (checker forwards to HR & Admin) is kept only for
@@ -474,22 +485,35 @@ def _leave_balances(db, user_id):
             "WHERE a.owner_id=? AND k.name=? AND a.status IN ('pending','checked') "
             "AND a.deleted_at IS NULL LIMIT 1", (user_id, name)).fetchone() is not None
         rows.append({"name": name, "total": total, "uses": uses, "left": total - uses, "hot": hot})
+    # A Total row at the bottom, always last however many leave kinds
+    # are set up: the sums of the Total, Uses and Left columns
+    # (build 77). It is not a leave kind, so it is never red.
+    if rows:
+        rows.append({"name": "Total",
+                     "total": sum(r["total"] for r in rows),
+                     "uses": sum(r["uses"] for r in rows),
+                     "left": sum(r["left"] for r in rows),
+                     "hot": False, "is_total": True})
     return rows
 
-def _date_change_notes(db, aid):
-    """The leave-date changes for an application, as the note shown on
-    the detail page and on the PDF: who changed the dates, and the old
-    and new date ranges with their day counts."""
-    notes = []
-    for r in db.execute("SELECT c.*, u.full_name FROM application_date_changes c "
-                        "LEFT JOIN users u ON u.id=c.changed_by WHERE c.application_id=? ORDER BY c.id", (aid,)):
-        who = r["full_name"] or ""
-        old = f"{_long_date(r['old_from_date'])} \u2013 {_long_date(r['old_to_date'])}"
-        new = f"{_long_date(r['new_from_date'])} \u2013 {_long_date(r['new_to_date'])}"
-        notes.append(f"Leave dates changed by {who}: {old} \u2192 {new} "
-                     f"({r['old_days']} {'day' if r['old_days'] == 1 else 'days'} \u2192 "
-                     f"{r['new_days']} {'day' if r['new_days'] == 1 else 'days'}).")
-    return notes
+def _format_date_change_note(who, old_from, old_to, old_days, new_from, new_to, new_days):
+    """One leave-date-change note, in the user's words (build 77):
+    'Leave date change by the Hr Admin : from 17 November 2026 - 19
+    November 2026 to 17 November 2026 - 18 November 2026 ( from 3 days
+    to 2 days)'. The note is put into the HR note box when the dates
+    are changed, so the HR user can edit it there before saving it."""
+    return (f"Leave date change by the {who} : from {_long_date(old_from)} - {_long_date(old_to)} "
+            f"to {_long_date(new_from)} - {_long_date(new_to)} "
+            f"( from {old_days} {'day' if old_days == 1 else 'days'} "
+            f"to {new_days} {'day' if new_days == 1 else 'days'})")
+
+def _generated_subject(kind_name, days, from_iso, to_iso):
+    """The subject a leave kind builds from the kind, the days and the
+    dates — the same words the letter and the PDF show when no subject
+    of the user's own is stored (build 77)."""
+    day_word = "day" if days == 1 else "days"
+    return (f"{kind_name} for {days} {day_word} "
+            f"({_long_date(from_iso)} \u2013 {_long_date(to_iso)}).")
 
 def _qr_svg(url):
     return segno.make(url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
@@ -945,13 +969,11 @@ def application_new():
         reason = (request.form.get("reason") or "").strip()
         body = (request.form.get("letter_body") or "").strip()
         # A Custom Application has a subject the user writes themself
-        # (2026-11-14); any other kind builds its subject from the kind,
-        # the days and the dates.
+        # (2026-11-14). Any other kind shows a Subject box on the
+        # create form, pre-filled with the subject made from the kind,
+        # the days and the dates — the user may change the words while
+        # creating (build 77).
         subject = (request.form.get("subject") or "").strip()
-        if kind["is_custom"]:
-            subject = subject or ""
-        else:
-            subject = ""
         # The To box: the lines the user wrote for the letter's To section.
         # Nothing is filled in automatically — blank means nothing appears
         # under "To," (2026-11-14). Each row is one line; blank rows are
@@ -962,6 +984,14 @@ def application_new():
         # only the subject and the body.
         if kind["is_custom"]:
             from_date = ""; to_date = ""; reason = ""; days = 0
+            subject = subject or ""
+        else:
+            # If the user left the Subject box as filled in, store
+            # nothing, so the subject keeps being made from the current
+            # dates (it follows a date change). If they changed the
+            # words, store their subject.
+            _generated = _generated_subject(kind["name"], days, from_date, to_date)
+            subject = subject if subject and subject != _generated else ""
         if not error and not kind["is_custom"] and (not from_date or not to_date or days < 1):
             error = "Choose a from date and a to date, with the to date on or after the from date."
         elif not error and not kind["is_custom"] and not reason:
@@ -1144,12 +1174,16 @@ def detail(aid):
     _hr = hr_admin_dept_id(db)
     show_owner_leaves = bool(_viewer) and bool(_hr) and g.user["department_id"] == _hr
     owner_leaves = _leave_balances(db, app["owner_id"]) if show_owner_leaves else []
-    # The person whose turn it is may change the leave dates (a leave
-    # kind, not a Custom Application, which has no dates). The balance
-    # updates with the new day count, and the change is written as a
-    # note on this page and on the PDF.
-    can_change_dates = _can_act(db, g.user, app) and bool(kind) and not kind["is_custom"]
-    date_changes = _date_change_notes(db, aid)
+    # The HR & Admin step user may change the leave dates (a leave
+    # kind, not a Custom Application, which has no dates), when it is
+    # their turn. A step user from any other department may not — the
+    # dates are the HR step user's alone to change (build 77). The
+    # balance updates with the new day count, and the change is
+    # written as a note in the HR note box, which the HR step user
+    # can edit and save; the note then shows on this page and on the
+    # PDF. The letter body is the applicant's own words and is not
+    # rewritten.
+    can_change_dates = _can_hr_act(db, g.user, app) and bool(kind) and not kind["is_custom"]
     return render_template("application_detail.html", app=app, kind=kind,
                            owner=owner, recipient=recipient, checker=checker, approver=approver,
                            dept=dept, signer=signer, long_date=_long_date,
@@ -1169,7 +1203,7 @@ def detail(aid):
                            history=_app_history(db, aid),
                            statuses=STATUSES, labels=STATUS_LABELS,
                            show_owner_leaves=show_owner_leaves, owner_leaves=owner_leaves,
-                           can_change_dates=can_change_dates, date_changes=date_changes)
+                           can_change_dates=can_change_dates)
 
 @bp.route("/applications/<int:aid>/delete", methods=["POST"])
 @login_required
@@ -1462,16 +1496,19 @@ def set_note(aid):
 @bp.route("/applications/<int:aid>/dates", methods=["POST"])
 @login_required
 def application_dates(aid):
-    """Change the leave dates of an application. Only the person whose
-    turn it is in the chain, and only for a leave kind (a Custom
+    """Change the leave dates of an application. Only the HR & Admin
+    user who is a step in this application's chain, when it is their
+    turn — a step user from any other department may not change the
+    dates (build 77) — and only for a leave kind (a Custom
     Application has no dates). The new day count must fit in the
-    applicant's leave balance, the same rule as applying. The change is
-    written as a note on the detail page and on the PDF, and the owner
-    is told. The letter body is the applicant's own words and is not
-    rewritten; the new dates appear in the subject, the Details and the
-    note."""
+    applicant's leave balance, the same rule as applying. The change
+    is written as a note in the HR note box: the note is added there
+    automatically, the HR user can edit it, and when they save the
+    note it shows on the detail page and on the PDF. The letter body
+    is the applicant's own words and is not rewritten; the new dates
+    appear in the subject, the Details and the note."""
     db = get_db(); app = _app(db, aid)
-    if not _can_act(db, g.user, app):
+    if not _can_hr_act(db, g.user, app):
         abort(403)
     kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
     if not kind or kind["is_custom"]:
@@ -1510,6 +1547,14 @@ def application_dates(aid):
         _log_history(db, aid, g.user, "edit", "Days", str(old_days), str(days))
     db.execute("UPDATE applications SET from_date=?, to_date=?, days=?, updated_at=datetime('now','localtime') WHERE id=?",
                (from_date, to_date, days, aid))
+    # The note goes into the HR note box, after anything already
+    # written there, so nothing the HR user wrote before is lost. The
+    # HR user sees it in the box, can edit it, and saves it with Save
+    # note — it then shows on the detail page and on the PDF.
+    _note = _format_date_change_note(g.user["full_name"], old_from, old_to, old_days, from_date, to_date, days)
+    _hr_note = (app["hr_note"] or "").strip()
+    _hr_note = (_hr_note + "\n\n" + _note) if _hr_note else _note
+    db.execute("UPDATE applications SET hr_note=? WHERE id=?", (_hr_note, aid))
     log(db, "application_dates", f"{app['number']} {old_from}–{old_to} -> {from_date}–{to_date}")
     notify(db, [app["owner_id"]],
            f"{g.user['full_name']} changed the leave dates of your {kind['name']} {app['number']} to {_long_date(from_date)} – {_long_date(to_date)}.",
@@ -1747,7 +1792,6 @@ def _build_pdf(db, app):
         from_date=app["from_date"] or "", to_date=app["to_date"] or "", days=app["days"] or 0,
         reason=app["reason"] or "", letter_body=app["letter_body"] or "", hr_note=app["hr_note"] or "",
         subject=app["subject"] or "",
-        date_changes=_date_change_notes(db, app["id"]),
         signer_name=(signer["full_name"] if signer else "") or (approver["full_name"] if approver else ""),
         signer_designation=(signer["designation"] if signer else "") or (approver["designation"] if approver else ""),
         signature_path=_signature_path(app["signature_path"]), signature_date=app["signature_at"][:10] if app["signature_at"] else "",

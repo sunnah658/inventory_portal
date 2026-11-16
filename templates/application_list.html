@@ -76,7 +76,7 @@
   <div class="card"><h2>My leaves</h2>
     {% if my_leaves %}
     <table class="lv-table"><thead><tr><th>Leaves</th><th class="num">Total</th><th class="num">Uses</th><th class="num">Left</th></tr></thead>
-    <tbody>{% for l in my_leaves %}<tr><td>{{ l['name'] }}</td><td class="num">{{ l['total'] }}</td><td class="num{% if l['hot'] %} hot{% endif %}">{{ l['uses'] }}</td><td class="num left{% if l['hot'] %} hot{% endif %}">{{ l['left'] }}</td></tr>{% endfor %}</tbody></table>
+    <tbody>{% for l in my_leaves %}<tr{% if l.get('is_total') %} class="total-row"{% endif %}><td>{{ l['name'] }}</td><td class="num">{{ l['total'] }}</td><td class="num{% if l['hot'] %} hot{% endif %}">{{ l['uses'] }}</td><td class="num left{% if l['hot'] %} hot{% endif %}">{{ l['left'] }}</td></tr>{% endfor %}</tbody></table>
     <p class="hint" style="margin-top:10px">Set by HR &amp; Admin. Uses counts approved leave and requests still waiting for a decision. The leave you have applied for shows its Uses and Left in red. You cannot apply for a leave when the days you ask for are more than the days left.</p>
     {% else %}
     <p class="hint">No leave types set up yet. The HR &amp; Admin department admin sets the leave days in Leave setup.</p>

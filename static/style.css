@@ -101,6 +101,7 @@ td{padding:12px 15px;border-top:1px solid var(--line);vertical-align:top}tr.r{tr
 .lv-table td.num,.lv-table th.num{text-align:right}
 .lv-table td.left{font-weight:800}
 .lv-table td.hot{color:var(--danger);font-weight:700}
+.lv-table tr.total-row td{border-top:2px solid var(--ink);font-weight:700}
 /* Notifications page: no visible lines between the messages. (2026-11-08) */
 .tb.notif td{border:0}
 .tb.notif tr.r:nth-child(even){background:transparent}

@@ -1,4 +1,32 @@
 ==============================================================================
+ LEAVES TOTAL ROW, DATE-CHANGE NOTE, NO EDITING AFTER SENDING, SUBJECT ON
+ THE CREATE FORM (2026-11-16)
+==============================================================================
+ 1. Both Leaves tables now end with a Total row, always last, that
+    sums the Total, Uses and Left columns (for example, 10 + 14 +
+    21 = 45).
+ 2. When the HR & Admin step user changes the leave dates, the note
+    is written in your words — "Leave date change by the Hr Admin :
+    from 17 November 2026 - 19 November 2026 to 17 November 2026 -
+    18 November 2026 ( from 3 days to 2 days)" — and put into the
+    HR note box, so the HR user can edit it there before saving it.
+    Saving it shows it on the detail page and on the PDF.
+ 3. The note is shown as just the message on the detail page and on
+    the PDF, with no "HR note — Hr Admin:" in front of it.
+ 4. Once an application is sent, nobody can edit anything inside
+    it. The Edit button is gone for everyone. The only things that
+    change after sending are the HR note and the leave dates, and
+    only the HR & Admin user who is a step in the application's
+    chain may do those, when it is their turn.
+ 5. A step user from any other department sees no HR note box and
+    no Leave dates picker. The HR department admin also cannot use
+    them unless they are the step HR user in that chain.
+ 6. The Subject box is on the New application form only, where you
+    are creating the application. For a leave kind it is filled in
+    from the kind, days and dates, and you may change the words
+    there. It is not on the detail page for anyone.
+
+==============================================================================
  LEAVE BALANCES ON APPLICATION LETTERS (2026-11-16)
 ==============================================================================
  1. The Application Letters page now shows a "My leaves" table

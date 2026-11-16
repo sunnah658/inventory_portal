@@ -25,7 +25,8 @@
 {% if not kind['is_custom'] %}<div class="fd"><label>From date</label><input type="date" name="from_date" id="fromD" required></div>
 <div class="fd"><label>To date</label><input type="date" name="to_date" id="toD" required></div>
 <div class="fd"><label>Days</label><input type="text" id="daysT" readonly value="—"><div class="sub">Counted from the from date to the to date, both days included.</div></div>
-<div class="fd"><label>Reason</label><input type="text" name="reason" id="reasonT" required placeholder="Family visit outside Dhaka"></div>{% endif %}
+<div class="fd"><label>Reason</label><input type="text" name="reason" id="reasonT" required placeholder="Family visit outside Dhaka"></div>
+<div class="fd" style="grid-column:1 / 3"><label>Subject</label><input type="text" name="subject" id="subjectT"><div class="sub">The subject shown in the letter and on the PDF. It is filled in from the kind, the days and the dates once you pick them — change the words here if you want different ones.</div></div>{% endif %}
 {% if kind['is_custom'] %}<div class="fd" style="grid-column:1 / 3"><label>Subject</label><input type="text" name="subject" required placeholder="Request for a change of duty roster"></div>{% endif %}
 </div>
 <h2 style="margin-top:16px">The letter</h2>
@@ -44,7 +45,20 @@ function monthYear(iso){var p=iso.split("-"); if(p.length!==3) return iso; retur
 function daysBetween(a,b){var fa=new Date(a+"T00:00:00"), fb=new Date(b+"T00:00:00"); if(isNaN(fa)||isNaN(fb)) return 0; return Math.round((fb-fa)/86400000)+1;}
 var bodyTouched=false;
 document.getElementById('bodyT').addEventListener('input', function(){bodyTouched=true;});
+var subjectTouched=false;
+var _subjEl=document.getElementById('subjectT');
+if(_subjEl){_subjEl.addEventListener('input', function(){subjectTouched=true;});}
+function fillSubject(){
+  if(isCustom) return;
+  var f=document.getElementById('fromD').value, t=document.getElementById('toD').value;
+  var d=daysBetween(f,t);
+  if(subjectTouched || !f || !t || d<1) return;
+  var dayWord = d===1 ? "day" : "days";
+  document.getElementById('subjectT').value =
+    "{{ kind['name'] }} for "+d+" "+dayWord+" ("+longDate(f)+" – "+longDate(t)+").";
+}
 function fillBody(){
+  fillSubject();
   var f=document.getElementById('fromD').value, t=document.getElementById('toD').value, r=document.getElementById('reasonT').value.trim();
   var d=daysBetween(f,t);
   document.getElementById('daysT').value = (d>0 ? d + (d===1 ? " day" : " days") : "—");

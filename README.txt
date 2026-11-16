@@ -5046,3 +5046,85 @@
     leave setup. The upgrade was also checked: this code starts on a
     build-75 database (50 tables), creates the two new tables, and
     serves the login page.
+
+96. LEAVES TOTAL ROW, DATE-CHANGE NOTE IN THE HR NOTE, NO EDITING AFTER SENDING, SUBJECT ON THE CREATE FORM (2026-11-16)
+    Five changes to the leave application letters, all from the live
+    portal after build 76.
+    (1) Total row. Both Leaves tables — "My leaves" on the
+    Application Letters page and "Leaves — {applicant}" on the
+    application detail page — now end with a Total row, always the
+    last row however many leave kinds are set up. It sums the Total,
+    Uses and Left columns (for example, Casual 10 + Sick 14 +
+    Annual 21 = Total 45). It is bold with a line above it, and it
+    is never shown in red.
+    (2) The leave-date-change note. When the HR & Admin step user
+    changes the leave dates, the note is written in the user's own
+    words and put into the HR note box, so the HR user can edit it
+    there before saving it:
+        "Leave date change by the Hr Admin : from 17 November 2026 -
+        19 November 2026 to 17 November 2026 - 18 November 2026
+        ( from 3 days to 2 days)"
+    If there is already a note in the box, the new one is added
+    after it on a new line, so nothing the HR user wrote before is
+    lost. Saving the note (Save note) shows it on the detail page
+    and on the PDF. The separate "Leave date changes" block on the
+    detail page and the separate date-change paragraphs on the PDF
+    are gone — the note lives only in the HR note, which already
+    shows on the page and the PDF under "FOR OFFICE USE".
+    (3) No "HR note —" label. The note is shown as just the message
+    on the detail page (the letter) and on the PDF, with no
+    "HR note — Hr Admin:" in front of it. The label is gone from
+    both places.
+    (4) Frozen after sending. Once an application is sent, nobody
+    can edit anything inside it. The Edit button is gone from the
+    detail page for everyone — the applicant, the step users and
+    the HR & Admin department admin — and opening the Edit page or
+    saving an edit is refused (403). The only things that change
+    after sending are the HR note and the leave dates, and only the
+    HR & Admin user who is a step in this application's chain may
+    do those, when it is their turn. Approving and rejecting still
+    work as before — that is the chain deciding, not editing.
+    (5) The note box and the date change are for the step HR user
+    only. A step user from any other department (for example the
+    Sales Admin who checks first) sees no HR note box and no Leave
+    dates picker, and is refused (403) if they try either. The HR
+    & Admin department admin also cannot use the note or change
+    the dates unless they are themself the step HR user in that
+    application's chain. The HR step user can use them when it is
+    their turn, while the application is undecided.
+    (6) Subject on the create form, not on the detail page. The
+    Subject box is on the New application form only, where the
+    user is creating the application — it is not on the detail
+    page for anyone. For a leave kind it is filled in from the
+    kind, the days and the dates once the dates are picked, and
+    the user may change the words there. If the user leaves it as
+    filled in, nothing of their own is stored, so the subject
+    keeps being made from the current dates and follows a date
+    change. If they change the words, their subject is stored and
+    shown in the letter and on the PDF. For a Custom Application
+    the Subject box is unchanged (the user writes it themself).
+    No database change in this build. The two build-76 tables are
+    unchanged; application_date_changes still records each date
+    change, but nothing is read from it for display any more.
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    This zip includes everything from build 76, so apply only this
+    one. Back up first and keep your live .env untouched, as
+    before. Tests: 1036/1036 checks pass on the work copy and on a
+    fresh extract (994 from builds up to 76 + 42 new). The new
+    checks cover the Total row and that it is last, the Subject box
+    on the create form and that the detail page has none, leaving
+    the subject as filled in storing nothing and changing it
+    storing the user's words (shown in the letter and the PDF),
+    the Edit page and the edit being refused for the owner, the
+    current step user and the HR department admin (403) and the
+    Edit button being gone, a Sales step user and the HR
+    department admin seeing no note box or date picker and being
+    refused the date change (403), the HR step user seeing the
+    picker and the note box on their turn, the date change writing
+    the note in the user's words into the HR note and showing it
+    on the page and the PDF with no label, the subject following
+    the new dates, the balance following the new day count, and
+    the HR step user editing and saving the note. The upgrade was
+    also checked: this code starts on a build-76 database (52
+    tables) and serves the login page.

@@ -65,12 +65,6 @@
 {% if not can_act and not can_forward %}
 <p class="hint" style="margin-top:14px">{% if app['status'] in ('pending', 'checked') and current_step %}Waiting for {{ current_step['full_name'] or '' }}'s approval{% if current_step['role'] %} ({{ step_roles[current_step['role']] }}){% endif %}.{% if viewer_step %} You are Step {{ viewer_step['position'] }} — {{ step_roles[viewer_step['role']] }} — you cannot act until {{ current_step['full_name'] or '' }} has approved.{% endif %}{% elif app['status'] in ('approved', 'rejected') %}This application has been decided.{% endif %}{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
 {% endif %}
-{% if date_changes %}
-<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
-<p class="hint"><b>Leave date changes</b></p>
-{% for n in date_changes %}<p class="hint">{{ n }}</p>{% endfor %}
-</div>
-{% endif %}
 </div>
 <div class="card" style="margin-top:16px">
   <h2>The letter</h2>
@@ -92,7 +86,7 @@
     {% if app['hr_note'] or steps %}
     <div style="border-top:1.5px solid var(--ink); margin-top:28px; padding-top:12px">
       <p style="margin:0 0 8px; font-size:.85rem; letter-spacing:1px; color:var(--soft)"><b>FOR OFFICE USE</b></p>
-      {% if app['hr_note'] %}<p style="margin:0 0 10px"><b>HR note — {{ signer['full_name'] if signer else (recipient['full_name'] if recipient else '') }}:</b> {{ app['hr_note'] }}</p>{% endif %}
+      {% if app['hr_note'] %}<p style="margin:0 0 10px">{{ app['hr_note'] }}</p>{% endif %}
       <div style="display:flex; gap:24px; line-height:1.35">
         {% for s in steps %}<div style="width:{% if steps|length == 1 %}100%{% elif steps|length == 2 %}48%{% else %}32%{% endif %}; text-align:center">
           {% if s['signature_path'] %}<img src="{{ url_for('applications.signature_image', aid=app['id'], kind='step-' ~ s['position']) }}" alt="" style="height:68px">{% else %}<div style="height:68px"></div>{% endif %}
@@ -113,7 +107,7 @@
 <div class="card"><h2>Leaves — {{ owner['full_name'] if owner else '' }}</h2>
 {% if owner_leaves %}
 <table class="lv-table"><thead><tr><th>Leaves</th><th class="num">Total</th><th class="num">Uses</th><th class="num">Left</th></tr></thead>
-<tbody>{% for l in owner_leaves %}<tr><td>{{ l['name'] }}</td><td class="num">{{ l['total'] }}</td><td class="num{% if l['hot'] %} hot{% endif %}">{{ l['uses'] }}</td><td class="num left{% if l['hot'] %} hot{% endif %}">{{ l['left'] }}</td></tr>{% endfor %}</tbody></table>
+<tbody>{% for l in owner_leaves %}<tr{% if l.get('is_total') %} class="total-row"{% endif %}><td>{{ l['name'] }}</td><td class="num">{{ l['total'] }}</td><td class="num{% if l['hot'] %} hot{% endif %}">{{ l['uses'] }}</td><td class="num left{% if l['hot'] %} hot{% endif %}">{{ l['left'] }}</td></tr>{% endfor %}</tbody></table>
 <p class="hint" style="margin-top:10px">Includes the {{ app['days'] }} days of this request ({{ kind['name'] if kind else '' }}, {{ labels[app['status']] }}). The leave being asked for shows its Uses and Left in red. Uses counts approved leave and requests still waiting for a decision.</p>
 {% else %}
 <p class="hint">No leave types set up yet.</p>
