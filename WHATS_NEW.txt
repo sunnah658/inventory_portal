@@ -1,4 +1,36 @@
 ==============================================================================
+ LEAVE BALANCES ON APPLICATION LETTERS (2026-11-16)
+==============================================================================
+ 1. The Application Letters page now shows a "My leaves" table
+    (Leaves / Total / Uses / Left) where "How approval works" used
+    to be. It shows how many days of each leave you have, how many
+    you have used, and how many are left.
+ 2. The HR & Admin department admin has a "Leave setup" tab. From
+    it he chooses a leave type (Casual Leave, Sick Leave, Annual
+    Leave or Maternity Leave) and sets how many days every user can
+    take for it in a year. Setting a leave to 0 days hides it from
+    every user's table. The setup starts empty — the HR admin sets
+    the numbers himself.
+ 3. Uses counts approved leave and requests still waiting for a
+    decision. If a step user rejects an application, the days are
+    added back; if the last step user approves it, the days stay
+    deducted. You cannot apply for a leave when the days you ask
+    for are more than the days left.
+ 4. The leave you have applied for shows its Uses and Left in red,
+    in your own table and in the HR approver's view of your table,
+    so it is clear which kind of leave is being asked for.
+ 5. The HR user chosen in the approval chain sees your Leaves
+    table at the right side of the request.
+ 6. The person whose turn it is can change the leave dates on the
+    request (the dates are already filled with the ones you chose).
+    The balance updates, and the change is written as a note on the
+    page and on the PDF.
+ 7. This zip includes everything from build 75. Apply only this
+    one, with `docker compose up -d --build`. Two new tables are
+    added (leave setup and leave date changes). Back up first and
+    keep your live .env untouched, as before.
+
+==============================================================================
  SALES PIPELINE REPORT FIXED WHEN NO ROW IS OPEN OR DONE (2026-11-16)
 ==============================================================================
  1. The report no longer shows a 500 error when the rows you ticked

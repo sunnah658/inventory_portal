@@ -39,6 +39,15 @@
 {% else %}
 <p class="hint" style="margin-top:14px">You haven't uploaded a signature yet — <a href="{{ url_for('auth.my_settings') }}">upload one in My settings</a> first. You must use your signature before you can approve or reject the application.</p>
 {% endif %}
+{% if can_change_dates %}
+<form method="post" action="{{ url_for('applications.application_dates', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fd"><label>Leave dates</label>
+<div class="fm" style="display:flex;gap:12px;flex-wrap:wrap">
+<div class="fd" style="flex:1;min-width:140px"><label>From</label><input type="date" name="from_date" value="{{ app['from_date'] or '' }}"></div>
+<div class="fd" style="flex:1;min-width:140px"><label>To</label><input type="date" name="to_date" value="{{ app['to_date'] or '' }}"></div>
+<div class="fd" style="flex:0 0 auto;align-self:flex-end"><button class="b" type="submit">Save dates</button></div>
+</div><div class="sub">These are the dates the applicant chose. If you change them, the leave balance updates, and a note is added to this page and to the PDF.</div></div></form>
+{% endif %}
 <form method="post" action="{{ url_for('applications.decide', aid=app['id']) }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm"><div class="fd"><label>Change status (only you, {{ my_label }}, can decide now — the next person cannot act until you have approved)</label><select name="status"><option value="approved" {{ 'selected' if app['status']=='approved' }}>Approved</option><option value="rejected" {{ 'selected' if app['status']=='rejected' }}>Rejected</option></select></div></div>
 <button class="b p" type="submit" {{ 'disabled' if not my_sig }}>Save status</button>{% if not my_sig %} <span class="hint">Use your signature first.</span>{% endif %} <span class="hint">The applicant and the earlier approvers are notified of the change{% if my_step['position'] < steps|length %}; the next person is told it is now with them{% endif %}.</span></form>
@@ -55,6 +64,12 @@
 {% endif %}
 {% if not can_act and not can_forward %}
 <p class="hint" style="margin-top:14px">{% if app['status'] in ('pending', 'checked') and current_step %}Waiting for {{ current_step['full_name'] or '' }}'s approval{% if current_step['role'] %} ({{ step_roles[current_step['role']] }}){% endif %}.{% if viewer_step %} You are Step {{ viewer_step['position'] }} — {{ step_roles[viewer_step['role']] }} — you cannot act until {{ current_step['full_name'] or '' }} has approved.{% endif %}{% elif app['status'] in ('approved', 'rejected') %}This application has been decided.{% endif %}{% if can_edit %} You can edit this application — use the Edit button above.{% endif %} You can see it here and print or download the PDF.</p>
+{% endif %}
+{% if date_changes %}
+<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+<p class="hint"><b>Leave date changes</b></p>
+{% for n in date_changes %}<p class="hint">{{ n }}</p>{% endfor %}
+</div>
 {% endif %}
 </div>
 <div class="card" style="margin-top:16px">
@@ -94,6 +109,17 @@
 {% if history %}<div class="card" style="margin-top:16px"><h2>Edit history</h2><div class="tl">{% for h in history %}{{ history_line(h) }}{% endfor %}</div><p class="hint">Every edit is written here — who changed what and when — and in the portal Activity log. The other party is notified of each edit.</p></div>{% endif %}
 </div>
 <div class="stack rail">
+{% if show_owner_leaves %}
+<div class="card"><h2>Leaves — {{ owner['full_name'] if owner else '' }}</h2>
+{% if owner_leaves %}
+<table class="lv-table"><thead><tr><th>Leaves</th><th class="num">Total</th><th class="num">Uses</th><th class="num">Left</th></tr></thead>
+<tbody>{% for l in owner_leaves %}<tr><td>{{ l['name'] }}</td><td class="num">{{ l['total'] }}</td><td class="num{% if l['hot'] %} hot{% endif %}">{{ l['uses'] }}</td><td class="num left{% if l['hot'] %} hot{% endif %}">{{ l['left'] }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint" style="margin-top:10px">Includes the {{ app['days'] }} days of this request ({{ kind['name'] if kind else '' }}, {{ labels[app['status']] }}). The leave being asked for shows its Uses and Left in red. Uses counts approved leave and requests still waiting for a decision.</p>
+{% else %}
+<p class="hint">No leave types set up yet.</p>
+{% endif %}
+</div>
+{% endif %}
 <div class="card"><h2>Public QR</h2>
 <p class="hint">Generate a public QR to share this application. Public QR uses a share code: HRC- + random 5-digit code, for example HRC-48392. This share code is only for scanning and searching — it is not the application number. Quote the application number for records.</p>
 {% if app['public_code'] and app['public_enabled'] %}<div class="msg ok">Public QR is ON · {{ app['public_views'] }} views · Share code: <b>{{ app['public_code'] }}</b> (not the application number)</div>

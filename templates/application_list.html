@@ -31,7 +31,25 @@
   <a class="tab {{ 'on' if tab == 'my' }}" href="{{ url_for('applications.list_applications', apptab='my', status=fstatus, q=q, fdept=fdept) }}">My applications · {{ counts.my }}</a>
   {% if show_all %}<a class="tab {{ 'on' if tab == 'all' }}" href="{{ url_for('applications.list_applications', apptab='all', status=fstatus, q=q, fdept=fdept) }}">All applications</a>{% endif %}
   {% if show_received %}<a class="tab {{ 'on' if tab == 'received' }}" href="{{ url_for('applications.list_applications', apptab='received', status=fstatus, q=q, fdept=fdept) }}">Received</a>{% endif %}
+  {% if show_leave_setup %}<a class="tab {{ 'on' if tab == 'leave_setup' }}" href="{{ url_for('applications.list_applications', apptab='leave_setup') }}">Leave setup</a>{% endif %}
 </div>
+{% if tab == 'leave_setup' %}
+<div class="card"><h2>Leave setup</h2>
+<p class="hint">Choose a leave type and set how many days every user can take for it in a year. The leave appears in every user's Leaves table on Application Letters, with the days you set in the Total column. Set the days to 0 and that leave will not appear in any user's Leaves table.</p>
+<form method="post" action="{{ url_for('applications.leave_setup_save') }}" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="fm" style="display:flex;gap:12px;flex-wrap:wrap">
+<div class="fd" style="flex:1;min-width:200px"><label>Leave type</label>
+<select name="leave_type">{% for t in leave_types %}<option value="{{ t }}" {{ 'selected' if setup_edit == t }}>{{ t }}</option>{% endfor %}</select></div>
+<div class="fd" style="flex:0 0 160px"><label>Days per year</label><input type="number" name="days" value="{{ setup_days if setup_days is not none else '' }}" min="0" required></div>
+<div class="fd" style="flex:0 0 auto;align-self:flex-end"><button class="b p" type="submit">Save</button></div>
+</div></form>
+<div class="tb" style="margin-top:16px"><table><thead><tr><th>Leave</th><th class="num" style="text-align:right">Days per year</th><th class="noprint" style="text-align:right"></th></tr></thead>
+<tbody>{% for s in setup_rows %}<tr><td>{{ s['leave_name'] }}</td><td style="text-align:right">{{ s['days'] }}</td>
+<td class="actcell noprint" style="text-align:right"><a class="b sm" href="{{ url_for('applications.list_applications', apptab='leave_setup', setup_edit=s['leave_name']) }}">Edit</a>
+<form method="post" action="{{ url_for('applications.leave_setup_delete', sid=s['id']) }}" style="display:inline" onsubmit="return confirm('Delete this leave setup? The leave will no longer appear in any user\u2019s Leaves table.')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm" type="submit">Delete</button></form></td></tr>{% endfor %}</tbody></table></div>
+{% if not setup_rows %}<p class="hint" style="margin-top:10px">No leave types set up yet. Choose a leave type and set its days above.</p>{% endif %}
+</div>
+{% else %}
 {% if kinds %}
 <div class="kp">
 {% for t in kinds %}<div class="k1"><span>{% if t['is_custom'] %}custom{% else %}leave{% endif %}</span><b style="font-size:1.1rem">{{ t['name'] }}</b><small>{% if t['is_custom'] %}Write your own subject and body{% else %}Apply to an HR &amp; Admin user{% endif %}</small><div style="margin-top:10px"><a class="b p sm" href="{{ url_for('applications.application_new', kind=t['id']) }}">Create</a></div></div>{% endfor %}
@@ -46,7 +64,8 @@
 {% else %}
   <div class="tb"><div class="empty">{% if q or fstatus or fdept %}Nothing matches your filter.{% else %}No applications yet. Choose a kind above to create one.{% endif %}</div></div>
 {% endif %}
-<p class="hint" style="margin-top:10px">A new application starts as Pending, with the first person in its approval chain. Once they approve it, it is Checked and goes to the next person; the last person's approval or rejection decides it. The APPROVED seal or REJECTED stamp only appears on the PDF once the last person has decided. The application number (LV-0001) is the official number to quote. The share code (HRC-#####) is only for scanning and searching — it is not the application number.</p>
+<p class="hint" style="margin-top:10px">A new application starts as Pending, with the first person in its approval chain. Once they approve it, it is Checked and goes to the next person; the last person's approval or rejection decides it. The APPROVED seal or REJECTED stamp only appears on the PDF once the last person has decided. The application number (LV-0001) is the official number to quote. The share code (HRC-#####) is only for scanning and searching — it is not the application number. Only the applicant, the people in the approval chain, their department admin and the portal admin can open an application.</p>
+{% endif %}
 </div>
 <div class="stack rail">
   <div class="card"><h2>Applications by status</h2>
@@ -54,8 +73,15 @@
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Approved</b>{{ counts.approved }}</div>
     <div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="width:120px;flex:0 0 auto;color:var(--soft);font-weight:500">Rejected</b>{{ counts.rejected }}</div>
   </div>
-  <div class="card"><h2>How approval works</h2>
-    <p class="hint">Each person in the approval chain adds their signature — the signature they saved in My settings — which appears on the application and its PDF, under their step's role. Nobody can save a decision until their signature is on file, and nobody can act until the person before them has approved. Only the applicant, the people in the approval chain, their department admin and the portal admin can open an application.</p></div>
+  <div class="card"><h2>My leaves</h2>
+    {% if my_leaves %}
+    <table class="lv-table"><thead><tr><th>Leaves</th><th class="num">Total</th><th class="num">Uses</th><th class="num">Left</th></tr></thead>
+    <tbody>{% for l in my_leaves %}<tr><td>{{ l['name'] }}</td><td class="num">{{ l['total'] }}</td><td class="num{% if l['hot'] %} hot{% endif %}">{{ l['uses'] }}</td><td class="num left{% if l['hot'] %} hot{% endif %}">{{ l['left'] }}</td></tr>{% endfor %}</tbody></table>
+    <p class="hint" style="margin-top:10px">Set by HR &amp; Admin. Uses counts approved leave and requests still waiting for a decision. The leave you have applied for shows its Uses and Left in red. You cannot apply for a leave when the days you ask for are more than the days left.</p>
+    {% else %}
+    <p class="hint">No leave types set up yet. The HR &amp; Admin department admin sets the leave days in Leave setup.</p>
+    {% endif %}
+  </div>
   {{ quick_card([
     ('+ New application', url_for('applications.application_new', kind=kinds[0]['id']), True) if kinds else None,
     ('Application kinds', url_for('applications.kinds'), False) if g.user['is_dept_admin'] else None,

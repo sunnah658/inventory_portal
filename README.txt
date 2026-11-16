@@ -4943,3 +4943,106 @@
     with no prospects, and from a mix with one Open row (the chart
     comes back and the note goes away). Back up first and keep your
     live .env untouched, as before.
+95. LEAVE BALANCES ON APPLICATION LETTERS (2026-11-16)
+    The Application Letters page now shows each user how much leave
+    they have left, and the HR & Admin department admin sets the
+    allowance for everybody.
+    (1) Leaves table: the "How approval works" card on the
+    Application Letters page is replaced by a "My leaves" card — a
+    small table with the headings Leaves, Total, Uses, Left. Every
+    user sees their own table. The sentence that used to be in that
+    card — who can open an application — now sits at the bottom of
+    the page instead, so it is still there.
+    (2) Leave setup: the HR & Admin department admin has a "Leave
+    setup" tab on the Application Letters page (only he sees it).
+    From it he chooses a leave type and sets how many days every user
+    can take for it in a year. The leave type is a dropdown with
+    exactly four options, in this order: Casual Leave, Sick Leave,
+    Annual Leave, Maternity Leave. Saving a type that is already set
+    up updates its days; the Edit button on a row fills the form with
+    that leave; Delete removes it. The setup is company-wide — one
+    allowance per leave type for all users — and the leave name goes
+    in the Leaves column and the days in the Total column. A leave
+    set to 0 days does not appear in any user's Leaves table (it
+    stays in the setup table, so it can be set back). The setup
+    starts empty: the HR admin sets the numbers himself. The
+    example numbers in the preview pictures (Casual 7, Sick 10,
+    Annual 15, Maternity 180) were never confirmed as the real
+    numbers, so they are not pre-filled.
+    (3) Uses and Left: Uses counts the days of the user's
+    applications of that kind that are approved or still waiting for
+    a decision (Pending or Checked) — the days are deducted when the
+    application is sent. If any step user rejects it, the deducted
+    days are added back; if the last step user approves it, the days
+    stay deducted. Left is Total minus Uses. Only kinds that have a
+    leave setup are counted; the generic "Leave Application" kind
+    and the Custom Application kind have no balance and are never
+    blocked.
+    (4) Blocking: a user cannot apply for a leave kind when the days
+    asked for are more than the days left — the create form refuses
+    it and says how many days are left. Asking for exactly the days
+    left is allowed.
+    (5) Red: the leave the user has applied for shows its Uses and
+    Left in red, while the application is still waiting for a
+    decision. The red shows in the user's own table and in the HR
+    step user's view of the applicant's table, so it is clear which
+    kind of leave is being asked for. Once nothing is pending, the
+    red goes away.
+    (6) HR view: the HR & Admin step user — the HR user chosen in
+    the application's approval chain — sees the applicant's Leaves
+    table at the top of the right side of the application detail
+    page. A step user who is not in HR does not see it, and neither
+    does the applicant on the detail page (the applicant sees their
+    own table on the Application Letters page).
+    (7) Changing the leave dates: on the application detail page,
+    in the decision area, the person whose turn it is sees a Leave
+    dates picker (From and To), already filled with the dates the
+    applicant chose. Any step user can change the dates when it is
+    their turn. The leave balance updates with the new day count,
+    and the change is written as a note on the detail page and on
+    the PDF — for example, "Leave dates changed by HR Admin:
+    17 November 2026 – 19 November 2026 → 18 November 2026 –
+    20 November 2026 (3 days → 4 days)." The new dates must still
+    fit in the applicant's balance, the same rule as applying — the
+    application's own days are freed first, so the step user can set
+    up to the total less what the applicant uses on other
+    applications. The letter body is the applicant's own words and
+    is not rewritten when the dates change; the new dates appear in
+    the subject (which is made fresh each time), the Details and the
+    note. A Custom Application has no leave dates, so it has no
+    date picker. Only the person whose turn it is can change the
+    dates — a later step user and the applicant get a 403.
+    Two new tables: leave_setup (one row per leave type) and
+    application_date_changes (one row per date change, so the note
+    can be shown). The database now has 52 tables. The two table-
+    count checks (build 67 and build 71) were updated from 50 to 52.
+    Open point, not decided in this build: the allowance is counted
+    per year — Uses counts only the applications whose leave starts
+    in the current year, so the balance resets each January. The
+    preview pictures said "Days per year" and this was not corrected,
+    but if you want the balance to be a running total that never
+    resets, say so and it will be changed.
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    This zip includes everything from build 75, so apply only this
+    one. If the portal comes up with no data (only the seed admin
+    account), the migration from section 86 has not run yet — see
+    section 90. Back up first and keep your live .env untouched, as
+    before. Tests: 994/994 checks pass on the work copy and on a
+    fresh extract (964 from builds up to 75 + 30 new). The new checks
+    cover the HR admin setting up three leave types (including 0
+    days), a regular user being refused the setup (403) and having no
+    Leave setup tab, the Leaves table replacing How approval works,
+    a 0-day leave not appearing, Uses and the red after applying,
+    a 13-day application being refused when only 12 are left, exactly
+    12 days being allowed, a rejection giving the days back, an
+    approval keeping them deducted, the red going away with nothing
+    pending, the HR step user seeing the applicant's table (and a
+    non-HR step user and the applicant not seeing it), the date
+    picker being pre-filled for the current step user, a date change
+    updating the balance and appearing as a note on the page and the
+    PDF, a 20-day change being refused, a later step user and the
+    applicant being refused the date change (403), and deleting a
+    leave setup. The upgrade was also checked: this code starts on a
+    build-75 database (50 tables), creates the two new tables, and
+    serves the login page.

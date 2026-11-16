@@ -1033,7 +1033,8 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
                     checker_signature_path=None, recipient_name="", from_date="", to_date="",
                     days=0, reason="", letter_body="", hr_note="", signer_name="", signer_designation="",
                     signature_path=None, signature_date="", code="", company="", company_address="",
-                    qr_url="", logo_left=None, logo_right=None, to_lines="", sig_blocks=None, subject=""):
+                    qr_url="", logo_left=None, logo_right=None, to_lines="", sig_blocks=None, subject="",
+                    date_changes=None):
     """Application Letter PDF — a FORMAL application letter, not an invoice
     (approved in leave-application-pdf-formal.jpg). A plain centred
     letterhead (company name and address, one thin rule, no logos, no teal),
@@ -1175,6 +1176,10 @@ def application_pdf(number="", app_date="", kind_name="", status="", status_labe
     if hr_note:
         who = signer_name or recipient_name
         office.append([Paragraph(f"<b>HR note \u2014 {_times_text(who)}:</b> {_times_text(hr_note)}", note_s)])
+    # A step user who changed the leave dates is written here too, so
+    # the change is on the PDF as well as on the detail page (build 76).
+    for _note in (date_changes or []):
+        office.append([Paragraph(_times_text(_note), note_s)])
     # One block per step in the chain (sig_blocks, when given); without
     # them, the old two blocks — Checked By and Approved By.
     if sig_blocks is not None:

@@ -871,6 +871,45 @@ CREATE TABLE IF NOT EXISTS application_steps (
     KEY idx_app_steps (application_id, position)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Leave balances (build 76): the HR & Admin department admin sets, for
+-- each of the four leave types, how many days every user can take in a
+-- year. One row per leave type, company-wide. A leave set to 0 days is
+-- not offered — it does not appear in any user's Leaves table. The
+-- balances themselves are computed, not stored: Uses counts the days of
+-- a user's applications of that kind that are approved or still waiting
+-- for a decision (pending or checked) in the current year, so a
+-- rejection gives the days back automatically.
+CREATE TABLE IF NOT EXISTS leave_setup (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    leave_name    VARCHAR(255) NOT NULL UNIQUE,
+    days          INT NOT NULL DEFAULT 0,
+    updated_by    INT,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (updated_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Leave date changes (build 76): when a step user changes the leave
+-- dates of an application, the old and new dates are written here, so
+-- the change can be shown as a note on the application detail page and
+-- on its PDF. The application's own from_date/to_date/days are updated
+-- at the same time; the letter body is the applicant's own words and is
+-- not rewritten.
+CREATE TABLE IF NOT EXISTS application_date_changes (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    application_id INT NOT NULL,
+    changed_by    INT,
+    changed_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    old_from_date VARCHAR(255),
+    old_to_date   VARCHAR(255),
+    old_days      INT NOT NULL DEFAULT 0,
+    new_from_date VARCHAR(255),
+    new_to_date   VARCHAR(255),
+    new_days      INT NOT NULL DEFAULT 0,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by) REFERENCES users(id),
+    KEY idx_app_dates (application_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Dashboard settings (2026-11-06): one row per admin, JSON with which
 -- dashboard sections that admin wants to see and which chart type (bar/pie)
 -- each of the two department charts uses. No row = everything shown, bars.

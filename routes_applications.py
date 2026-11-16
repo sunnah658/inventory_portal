@@ -94,6 +94,11 @@ SIG_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 # kinds" button, so the two stay in step.
 KIND_TEMPLATES = [("Annual Leave", "AL"), ("Sick Leave", "SL"), ("Casual Leave", "CL"),
                   ("Maternity Leave", "ML"), ("Leave Application", "LV")]
+# The four leave types the HR & Admin department admin can set up in
+# Leave setup (build 76), in the order they appear in the dropdown and
+# in every user's Leaves table. The generic "Leave Application" kind and
+# the Custom Application kind are not leave types and have no balance.
+LEAVE_TYPES = ["Casual Leave", "Sick Leave", "Annual Leave", "Maternity Leave"]
 _MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
            "September", "October", "November", "December"]
 
@@ -425,6 +430,67 @@ def _default_body(kind_name, from_iso, to_iso, days, reason):
                  f"to {_long_date(to_iso)}, for {reason.strip()}. {handover}")
     return first + "\n\nI would be grateful if you would kindly approve my leave."
 
+# ---------------------------------------------------------------- leave balances (build 76)
+def _leave_setup(db):
+    """The HR & Admin department admin's leave setup: leave name ->
+    days per year, company-wide. A leave set to 0 days is not offered —
+    it does not appear in any user's Leaves table."""
+    return {r["leave_name"]: r["days"] for r in db.execute("SELECT leave_name, days FROM leave_setup").fetchall()}
+
+def _leave_used(db, user_id, leave_name, year=None):
+    """Days of this leave type the user has used in the given year (the
+    current year by default): the days of their applications of that kind
+    that are approved or still waiting for a decision (pending or
+    checked). A rejected application gives the days back — it is not
+    counted. An application counts in the year its leave starts
+    (from_date). The allowance is per year (2026-11-16, the reading the
+    approved pictures show — see README 95)."""
+    if year is None:
+        year = datetime.now().year
+    total = 0
+    for r in db.execute(
+            "SELECT a.days FROM applications a JOIN application_kinds k ON k.id=a.kind_id "
+            "WHERE a.owner_id=? AND k.name=? AND a.status IN ('pending','checked','approved') "
+            "AND a.deleted_at IS NULL AND a.from_date LIKE ?",
+            (user_id, leave_name, f"{year}-%")):
+        total += r["days"] or 0
+    return total
+
+def _leave_balances(db, user_id):
+    """One row per leave type the HR admin set up with more than 0 days,
+    in the leave-type order: the leave name, the total days, the days
+    used, the days left, and whether the row is the leave being asked
+    for (hot — its Uses and Left are shown in red). A row is hot when the
+    user has an application of that kind still waiting for a decision."""
+    setup = _leave_setup(db)
+    rows = []
+    for name in LEAVE_TYPES:
+        total = setup.get(name)
+        if not total:
+            continue
+        uses = _leave_used(db, user_id, name)
+        hot = db.execute(
+            "SELECT 1 FROM applications a JOIN application_kinds k ON k.id=a.kind_id "
+            "WHERE a.owner_id=? AND k.name=? AND a.status IN ('pending','checked') "
+            "AND a.deleted_at IS NULL LIMIT 1", (user_id, name)).fetchone() is not None
+        rows.append({"name": name, "total": total, "uses": uses, "left": total - uses, "hot": hot})
+    return rows
+
+def _date_change_notes(db, aid):
+    """The leave-date changes for an application, as the note shown on
+    the detail page and on the PDF: who changed the dates, and the old
+    and new date ranges with their day counts."""
+    notes = []
+    for r in db.execute("SELECT c.*, u.full_name FROM application_date_changes c "
+                        "LEFT JOIN users u ON u.id=c.changed_by WHERE c.application_id=? ORDER BY c.id", (aid,)):
+        who = r["full_name"] or ""
+        old = f"{_long_date(r['old_from_date'])} \u2013 {_long_date(r['old_to_date'])}"
+        new = f"{_long_date(r['new_from_date'])} \u2013 {_long_date(r['new_to_date'])}"
+        notes.append(f"Leave dates changed by {who}: {old} \u2192 {new} "
+                     f"({r['old_days']} {'day' if r['old_days'] == 1 else 'days'} \u2192 "
+                     f"{r['new_days']} {'day' if r['new_days'] == 1 else 'days'}).")
+    return notes
+
 def _qr_svg(url):
     return segno.make(url, error="m").svg_inline(scale=4, border=1, dark="#10283a", omitsize=True)
 
@@ -510,7 +576,12 @@ def _notify_dept_admins(db, app, text, link):
 def list_applications():
     db = get_db()
     tab = (request.args.get("apptab") or "my").strip()
-    if tab not in ("my", "all", "received"):
+    if tab not in ("my", "all", "received", "leave_setup"):
+        tab = "my"
+    # The Leave setup tab is only for the HR & Admin department admin:
+    # he sets, for each leave type, how many days every user can take.
+    show_leave_setup = _is_hr_dept_admin(db, g.user)
+    if tab == "leave_setup" and not show_leave_setup:
         tab = "my"
     is_hr = bool(hr_admin_dept_id(db)) and g.user["department_id"] == hr_admin_dept_id(db)
     # Who gets an All applications tab, and what it shows:
@@ -584,11 +655,84 @@ def list_applications():
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY a.id DESC"
-    rows = db.execute(sql, params).fetchall()
+    # The Leave setup tab shows the setup form and table, not the
+    # applications list, so there is no list query for it.
+    rows = db.execute(sql, params).fetchall() if tab != "leave_setup" else []
     depts = db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_all else []
+    # The user's own Leaves table (right rail) and, on the Leave setup
+    # tab, the setup rows in the leave-type order. The Edit button on a
+    # setup row reloads the tab with that leave pre-filled in the form.
+    my_leaves = _leave_balances(db, g.user["id"])
+    setup = _leave_setup(db)
+    setup_rows = [{"leave_name": n, "days": setup[n]} for n in LEAVE_TYPES if n in setup]
+    setup_ids = {r["leave_name"]: r["id"] for r in db.execute("SELECT id, leave_name FROM leave_setup").fetchall()}
+    for s in setup_rows:
+        s["id"] = setup_ids.get(s["leave_name"])
+    setup_edit = (request.args.get("setup_edit") or "").strip()
+    if setup_edit not in LEAVE_TYPES:
+        setup_edit = ""
+    setup_days = setup.get(setup_edit) if setup_edit else None
     return render_template("application_list.html", kinds=kinds, rows=rows, tab=tab, counts=counts,
                            can_all=can_all, show_all=all_scope != "none", depts=depts, fdept=fdept, fstatus=fstatus, q=q,
-                           is_hr=is_hr, show_received=show_received, statuses=STATUSES, labels=STATUS_LABELS)
+                           is_hr=is_hr, show_received=show_received, statuses=STATUSES, labels=STATUS_LABELS,
+                           my_leaves=my_leaves, show_leave_setup=show_leave_setup, setup_rows=setup_rows,
+                           setup_edit=setup_edit, setup_days=setup_days, leave_types=LEAVE_TYPES)
+
+# ---------------------------------------------------------------- leave setup (HR & Admin dept admin)
+@bp.route("/applications/leave-setup", methods=["POST"])
+@login_required
+def leave_setup_save():
+    """Save a leave type's days per year. Only the HR & Admin
+    department admin can set it; it applies to every user at once.
+    Saving a leave type that is already set up updates its days. A
+    leave set to 0 days is not offered — it does not appear in any
+    user's Leaves table."""
+    db = get_db()
+    if not _is_hr_dept_admin(db, g.user):
+        abort(403)
+    leave_type = (request.form.get("leave_type") or "").strip()
+    if leave_type not in LEAVE_TYPES:
+        flash("Choose a leave type: Casual Leave, Sick Leave, Annual Leave or Maternity Leave.", "error")
+        return redirect(url_for("applications.list_applications", apptab="leave_setup"))
+    try:
+        days = int(request.form.get("days") or 0)
+    except ValueError:
+        days = -1
+    if days < 0:
+        flash("The days must be 0 or more.", "error")
+        return redirect(url_for("applications.list_applications", apptab="leave_setup"))
+    row = db.execute("SELECT id FROM leave_setup WHERE leave_name=?", (leave_type,)).fetchone()
+    if row:
+        db.execute("UPDATE leave_setup SET days=?, updated_by=?, updated_at=datetime('now','localtime') WHERE id=?",
+                   (days, g.user["id"], row["id"]))
+    else:
+        db.execute("INSERT INTO leave_setup(leave_name, days, updated_by) VALUES (?,?,?)",
+                   (leave_type, days, g.user["id"]))
+    log(db, "leave_setup_save", f"{leave_type}={days}")
+    db.commit()
+    if days == 0:
+        flash(f"{leave_type} set to 0 days — it will not appear in any user's Leaves table.", "ok")
+    else:
+        flash(f"{leave_type} set to {days} days per year for every user.", "ok")
+    return redirect(url_for("applications.list_applications", apptab="leave_setup"))
+
+@bp.route("/applications/leave-setup/<int:sid>/delete", methods=["POST"])
+@login_required
+def leave_setup_delete(sid):
+    """Delete a leave setup row. Only the HR & Admin department admin.
+    The leave no longer appears in any user's Leaves table; applications
+    already made from that kind are not touched."""
+    db = get_db()
+    if not _is_hr_dept_admin(db, g.user):
+        abort(403)
+    row = db.execute("SELECT leave_name FROM leave_setup WHERE id=?", (sid,)).fetchone()
+    if row is None:
+        abort(404)
+    db.execute("DELETE FROM leave_setup WHERE id=?", (sid,))
+    log(db, "leave_setup_delete", row["leave_name"])
+    db.commit()
+    flash(f"{row['leave_name']} removed from the leave setup.", "ok")
+    return redirect(url_for("applications.list_applications", apptab="leave_setup"))
 
 # ---------------------------------------------------------------- kinds (dept admin)
 @bp.route("/applications/kinds")
@@ -822,6 +966,17 @@ def application_new():
             error = "Choose a from date and a to date, with the to date on or after the from date."
         elif not error and not kind["is_custom"] and not reason:
             error = "Write a reason for the leave."
+        elif not error and not kind["is_custom"]:
+            # A leave kind with a setup cannot be applied for beyond the
+            # days left: the days asked for must fit in the balance. A
+            # kind with no setup (the generic Leave Application kind, a
+            # custom kind, or a leave set to 0 days) is not blocked.
+            _total = _leave_setup(db).get(kind["name"])
+            if _total:
+                _left = _total - _leave_used(db, g.user["id"], kind["name"])
+                if days > _left:
+                    error = (f"You have only {_left} {'day' if _left == 1 else 'days'} of "
+                             f"{kind['name']} left. This application is for {days} days.")
         elif not error and kind["is_custom"] and not subject:
             error = "Write a subject for the application."
         elif not error and not body:
@@ -982,6 +1137,19 @@ def detail(aid):
     # shown as the person holding it.
     _cur = _current_step(db, aid) if app["status"] in ("pending", "checked") else None
     _viewer = next((s for s in _steps_list if s["user_id"] == g.user["id"]), None)
+    # The HR & Admin step user sees the applicant's Leaves table on the
+    # right side of the request, so it is clear which kind of leave is
+    # being asked for. Any step person in the HR & Admin department
+    # sees it, not only the person whose turn it is.
+    _hr = hr_admin_dept_id(db)
+    show_owner_leaves = bool(_viewer) and bool(_hr) and g.user["department_id"] == _hr
+    owner_leaves = _leave_balances(db, app["owner_id"]) if show_owner_leaves else []
+    # The person whose turn it is may change the leave dates (a leave
+    # kind, not a Custom Application, which has no dates). The balance
+    # updates with the new day count, and the change is written as a
+    # note on this page and on the PDF.
+    can_change_dates = _can_act(db, g.user, app) and bool(kind) and not kind["is_custom"]
+    date_changes = _date_change_notes(db, aid)
     return render_template("application_detail.html", app=app, kind=kind,
                            owner=owner, recipient=recipient, checker=checker, approver=approver,
                            dept=dept, signer=signer, long_date=_long_date,
@@ -999,7 +1167,9 @@ def detail(aid):
                            can_manage_public=_can_manage_public(db, g.user, app),
                            hr_users=hr_admin_users(db),
                            history=_app_history(db, aid),
-                           statuses=STATUSES, labels=STATUS_LABELS)
+                           statuses=STATUSES, labels=STATUS_LABELS,
+                           show_owner_leaves=show_owner_leaves, owner_leaves=owner_leaves,
+                           can_change_dates=can_change_dates, date_changes=date_changes)
 
 @bp.route("/applications/<int:aid>/delete", methods=["POST"])
 @login_required
@@ -1289,6 +1459,67 @@ def set_note(aid):
     flash("HR note saved.", "ok")
     return redirect(url_for("applications.detail", aid=aid))
 
+@bp.route("/applications/<int:aid>/dates", methods=["POST"])
+@login_required
+def application_dates(aid):
+    """Change the leave dates of an application. Only the person whose
+    turn it is in the chain, and only for a leave kind (a Custom
+    Application has no dates). The new day count must fit in the
+    applicant's leave balance, the same rule as applying. The change is
+    written as a note on the detail page and on the PDF, and the owner
+    is told. The letter body is the applicant's own words and is not
+    rewritten; the new dates appear in the subject, the Details and the
+    note."""
+    db = get_db(); app = _app(db, aid)
+    if not _can_act(db, g.user, app):
+        abort(403)
+    kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
+    if not kind or kind["is_custom"]:
+        flash("This application has no leave dates to change.", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    from_date = (request.form.get("from_date") or "").strip()
+    to_date = (request.form.get("to_date") or "").strip()
+    days = _days_between(from_date, to_date)
+    if not from_date or not to_date or days < 1:
+        flash("Choose a from date and a to date, with the to date on or after the from date.", "error")
+        return redirect(url_for("applications.detail", aid=aid))
+    if from_date == (app["from_date"] or "") and to_date == (app["to_date"] or ""):
+        flash("The leave dates are already those dates.", "ok")
+        return redirect(url_for("applications.detail", aid=aid))
+    # The new days must fit in the balance: the total, less the days
+    # the applicant already uses for this leave, not counting this
+    # application's own days (they are replaced by the new count).
+    # _can_act means the application is still waiting, so its days are
+    # counted in Uses and are taken out here.
+    total = _leave_setup(db).get(kind["name"])
+    if total:
+        used = _leave_used(db, app["owner_id"], kind["name"]) - (app["days"] or 0)
+        if days > total - used:
+            _left = total - used
+            flash(f"The applicant has only {_left} {'day' if _left == 1 else 'days'} of "
+                  f"{kind['name']} left. These dates are {days} days.", "error")
+            return redirect(url_for("applications.detail", aid=aid))
+    old_from, old_to, old_days = app["from_date"] or "", app["to_date"] or "", app["days"] or 0
+    db.execute("INSERT INTO application_date_changes(application_id, changed_by, old_from_date, old_to_date, old_days, new_from_date, new_to_date, new_days) VALUES (?,?,?,?,?,?,?,?)",
+               (aid, g.user["id"], old_from, old_to, old_days, from_date, to_date, days))
+    if old_from != from_date:
+        _log_history(db, aid, g.user, "edit", "From date", old_from, from_date)
+    if old_to != to_date:
+        _log_history(db, aid, g.user, "edit", "To date", old_to, to_date)
+    if old_days != days:
+        _log_history(db, aid, g.user, "edit", "Days", str(old_days), str(days))
+    db.execute("UPDATE applications SET from_date=?, to_date=?, days=?, updated_at=datetime('now','localtime') WHERE id=?",
+               (from_date, to_date, days, aid))
+    log(db, "application_dates", f"{app['number']} {old_from}–{old_to} -> {from_date}–{to_date}")
+    notify(db, [app["owner_id"]],
+           f"{g.user['full_name']} changed the leave dates of your {kind['name']} {app['number']} to {_long_date(from_date)} – {_long_date(to_date)}.",
+           url_for("applications.detail", aid=aid), skip=g.user["id"])
+    _notify_dept_admins(db, app, f"{g.user['full_name']} changed the leave dates of {app['number']}.",
+                        url_for("applications.detail", aid=aid))
+    db.commit()
+    flash(f"Leave dates changed to {_long_date(from_date)} – {_long_date(to_date)} ({days} {'day' if days == 1 else 'days'}). The leave balance has been updated.", "ok")
+    return redirect(url_for("applications.detail", aid=aid))
+
 def _step_signature_name(db, app, kind):
     """The signature file for a signature-image route: 'checker' is the
     Checked By step (or the first step), 'approver' is the last step,
@@ -1516,6 +1747,7 @@ def _build_pdf(db, app):
         from_date=app["from_date"] or "", to_date=app["to_date"] or "", days=app["days"] or 0,
         reason=app["reason"] or "", letter_body=app["letter_body"] or "", hr_note=app["hr_note"] or "",
         subject=app["subject"] or "",
+        date_changes=_date_change_notes(db, app["id"]),
         signer_name=(signer["full_name"] if signer else "") or (approver["full_name"] if approver else ""),
         signer_designation=(signer["designation"] if signer else "") or (approver["designation"] if approver else ""),
         signature_path=_signature_path(app["signature_path"]), signature_date=app["signature_at"][:10] if app["signature_at"] else "",
