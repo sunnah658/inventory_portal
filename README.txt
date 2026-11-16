@@ -4757,3 +4757,67 @@
     foreign key, and no screen or feature change. Apply only this
     latest zip, not the older ones in order. Back up first and
     keep your live .env untouched, as before.
+91. FIVE APPLICATION-LETTER FORMATS, AND LETTER DATES IN DAY-MONTH-YEAR (2026-11-16)
+    Two things the user asked for on the LV-0001 letter, plus the
+    formats. (1) The letter's dates now read day-month-year on
+    screen: the header date is "16 November 2026" and the subject
+    range is "(17 November 2026 – 19 November 2026)". The PDF
+    already wrote them that way; the detail page and the public
+    code page still showed 2026-11-16, so both now use the same
+    _long_date() the PDF uses. The small dates in the page header
+    and the From / To / Reason rows under the letter are unchanged
+    — they are page details, not the letter. (2) The first sentence
+    no longer says "request leave application": the kind is called
+    "Leave Application", so the old wording repeated it. Every
+    leave kind now has its own formal wording, used for new
+    applications (letters already sent keep the text they were
+    submitted with; the applicant can still change any word of
+    the pre-filled letter before sending):
+      Leave Application (kept, LV): "I am writing to request
+        leave for 3 days, from 17 November 2026 to 19 November
+        2026, for personal reason. ..."
+      Casual Leave (CL): "I am writing to request casual leave
+        for 2 days, ... for urgent personal work. ..."
+      Sick Leave (SL): "I am writing to request sick leave for
+        3 days, ... as I am unwell and under a doctor's care. A
+        medical certificate is attached for your reference. ..."
+      Annual Leave (AL): "I would like to avail my annual leave
+        for 10 days, ... for family trip. ..."
+      Maternity Leave (ML, new): "I am writing to request
+        maternity leave for 180 days, ... as I am expecting my
+        baby in December 2026. ..." — the month comes from the
+        from-date, and maternity leave is counted in days like
+        the other kinds. The reason the applicant types is used
+        for the generic, casual and annual wordings ("for ...");
+        sick and maternity use their own fixed phrasing, and the
+        typed reason is still stored and shown in the Reason row
+        under the letter.
+    The department admin adds the formats from the Application
+    kinds page: "Create starter kinds" now adds all five at once
+    (Maternity Leave and Leave Application are new there — the
+    button still skips kinds the department already has, so
+    running it again adds nothing twice), and "+ New kind" adds
+    more any time. Each kind appears as its own Create card on
+    the Application Letters page. The wording lives in two
+    places that must stay in step: _default_body() in
+    routes_applications.py (server) and fillBody() in
+    templates/application_form.html (the form's JavaScript,
+    which fills the letter in as the applicant picks dates and
+    a reason). A kind is matched by its name: "maternity",
+    "sick", "annual" or "casual" anywhere in the name picks that
+    wording; anything else gets the plain wording.
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    This zip includes everything from build 71, so apply only
+    this one. If the portal comes up with no data (only the seed
+    admin account), the migration from section 86 has not run
+    yet — see section 90. No database change. Tests: 926/926
+    checks pass on the work copy and on a fresh extract (909
+    from builds up to 71 + 17 new). The new checks cover the
+    starters creating all five formats with the right prefixes
+    and no duplicates on a second run, each kind's wording, the
+    form's JavaScript carrying the same branches, the detail
+    page and the public code page showing the letter dates in
+    day-month-year (and the PDF still doing so), and Maternity
+    Leave appearing as a Create card. Back up first and keep
+    your live .env untouched, as before.

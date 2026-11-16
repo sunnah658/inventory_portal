@@ -1,4 +1,29 @@
 ==============================================================================
+ FIVE APPLICATION-LETTER FORMATS, AND LETTER DATES IN DAY-MONTH-YEAR (2026-11-16)
+==============================================================================
+ 1. The letter's dates now read day-month-year on screen: "16
+    November 2026" at the top, and "(17 November 2026 – 19 November
+    2026)" in the subject. The PDF already wrote them that way;
+    the detail page and the public code page still showed
+    2026-11-16, so both now use the same form as the PDF.
+ 2. The first sentence no longer says "request leave application"
+    (the kind is called "Leave Application", so it repeated the
+    word). Each leave kind now has its own formal wording:
+    Leave Application (kept), Casual Leave, Sick Leave, Annual
+    Leave, and Maternity Leave (new, 180 days, "as I am expecting
+    my baby in December 2026" — the month comes from the
+    from-date). The wording is the pre-filled text for new
+    applications; the applicant can still change any word, and
+    letters already sent keep the text they were submitted with.
+ 3. The department admin adds the formats from the Application
+    kinds page: "Create starter kinds" now adds all five at once
+    (it still skips kinds the department already has), and each
+    kind appears as its own Create card on the Application
+    Letters page.
+ 4. This zip includes everything from build 71. Apply only this
+    one, with `docker compose up -d --build`. No database change.
+
+==============================================================================
  UPDATE: THE PORTAL STILL WOULD NOT START ON REAL MYSQL 8.0 — FOREIGN KEY
  ERROR 1215, PLUS A SECOND MYSQL 8.0 QUERY ERROR (2026-11-16)
 ==============================================================================

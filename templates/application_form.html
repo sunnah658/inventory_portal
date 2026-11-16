@@ -40,6 +40,7 @@
 var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 var isCustom={{ 'true' if kind['is_custom'] else 'false' }};
 function longDate(iso){var p=iso.split("-"); if(p.length!==3) return iso; return (parseInt(p[2],10))+" "+MONTHS[parseInt(p[1],10)-1]+" "+p[0];}
+function monthYear(iso){var p=iso.split("-"); if(p.length!==3) return iso; return MONTHS[parseInt(p[1],10)-1]+" "+p[0];}
 function daysBetween(a,b){var fa=new Date(a+"T00:00:00"), fb=new Date(b+"T00:00:00"); if(isNaN(fa)||isNaN(fb)) return 0; return Math.round((fb-fa)/86400000)+1;}
 var bodyTouched=false;
 document.getElementById('bodyT').addEventListener('input', function(){bodyTouched=true;});
@@ -48,10 +49,23 @@ function fillBody(){
   var d=daysBetween(f,t);
   document.getElementById('daysT').value = (d>0 ? d + (d===1 ? " day" : " days") : "—");
   if(isCustom || bodyTouched || !f || !t || d<1 || !r) return;
-  var noun="{{ kind['name'] }}".toLowerCase();
+  var kindName="{{ kind['name'] }}".toLowerCase();
   var dayWord = d===1 ? "day" : "days";
+  var handover="I have handed over my pending work to my colleague, and I will be reachable on my phone during the leave.";
+  var first;
+  if(kindName.indexOf("maternity")!==-1){
+    first="I am writing to request maternity leave for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", as I am expecting my baby in "+monthYear(f)+". "+handover;
+  } else if(kindName.indexOf("sick")!==-1){
+    first="I am writing to request sick leave for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", as I am unwell and under a doctor's care. A medical certificate is attached for your reference. "+handover;
+  } else if(kindName.indexOf("annual")!==-1){
+    first="I would like to avail my annual leave for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", for "+r+". "+handover;
+  } else if(kindName.indexOf("casual")!==-1){
+    first="I am writing to request casual leave for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", for "+r+". "+handover;
+  } else {
+    first="I am writing to request leave for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", for "+r+". "+handover;
+  }
   document.getElementById('bodyT').value =
-    "I am writing to request "+noun+" for "+d+" "+dayWord+", from "+longDate(f)+" to "+longDate(t)+", for "+r+". I have handed over my pending work to my colleague, and I will be reachable on my phone during the leave."+
+    first+
     "\n\nI would be grateful if you would kindly approve my leave."+
     "\n\nThanking you.\n\nYours faithfully,";
 }

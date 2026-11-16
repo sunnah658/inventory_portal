@@ -379,14 +379,43 @@ def _days_between(from_iso, to_iso):
     except Exception:
         return 0
 
+def _month_year(iso):
+    """YYYY-MM-DD -> 'December 2026' (for the maternity-leave wording)."""
+    try:
+        y, m, d = [int(p) for p in (iso or "").split("-")]
+        return f"{_MONTHS[m - 1]} {y}"
+    except Exception:
+        return iso or ""
+
 def _default_body(kind_name, from_iso, to_iso, days, reason):
     """The standard letter body, pre-filled on the form and editable by the
-    applicant. Paragraphs are separated by a blank line."""
-    noun = (kind_name or "leave").strip().lower()
+    applicant. Paragraphs are separated by a blank line. Each leave kind
+    has its own formal wording (build 72); any other kind — including the
+    generic 'Leave Application' kind — uses the plain wording, which says
+    'request leave', never 'request leave application' (the kind name
+    itself is 'Leave Application', so the old wording repeated it). The
+    form's JavaScript (fillBody in application_form.html) mirrors these
+    exact sentences, so the two must stay in step."""
+    name = (kind_name or "").strip().lower()
     day_word = "day" if days == 1 else "days"
-    first = (f"I am writing to request {noun} for {days} {day_word}, from {_long_date(from_iso)} "
-             f"to {_long_date(to_iso)}, for {reason.strip()}. I have handed over my pending work "
-             "to my colleague, and I will be reachable on my phone during the leave.")
+    handover = ("I have handed over my pending work to my colleague, and I will "
+                "be reachable on my phone during the leave.")
+    if "maternity" in name:
+        first = (f"I am writing to request maternity leave for {days} {day_word}, from {_long_date(from_iso)} "
+                 f"to {_long_date(to_iso)}, as I am expecting my baby in {_month_year(from_iso)}. {handover}")
+    elif "sick" in name:
+        first = (f"I am writing to request sick leave for {days} {day_word}, from {_long_date(from_iso)} "
+                 f"to {_long_date(to_iso)}, as I am unwell and under a doctor's care. "
+                 f"A medical certificate is attached for your reference. {handover}")
+    elif "annual" in name:
+        first = (f"I would like to avail my annual leave for {days} {day_word}, from {_long_date(from_iso)} "
+                 f"to {_long_date(to_iso)}, for {reason.strip()}. {handover}")
+    elif "casual" in name:
+        first = (f"I am writing to request casual leave for {days} {day_word}, from {_long_date(from_iso)} "
+                 f"to {_long_date(to_iso)}, for {reason.strip()}. {handover}")
+    else:
+        first = (f"I am writing to request leave for {days} {day_word}, from {_long_date(from_iso)} "
+                 f"to {_long_date(to_iso)}, for {reason.strip()}. {handover}")
     return first + "\n\nI would be grateful if you would kindly approve my leave."
 
 def _qr_svg(url):
@@ -568,12 +597,13 @@ def kinds():
 def kind_starters():
     _dept_admin_required()
     db = get_db()
-    starters = [("Annual Leave", "AL"), ("Sick Leave", "SL"), ("Casual Leave", "CL")]
+    starters = [("Annual Leave", "AL"), ("Sick Leave", "SL"), ("Casual Leave", "CL"),
+                ("Maternity Leave", "ML"), ("Leave Application", "LV")]
     for name, prefix in starters:
         if db.execute("SELECT 1 FROM application_kinds WHERE department_id=? AND name=?", (g.user["department_id"], name)).fetchone() is None:
             db.execute("INSERT INTO application_kinds(department_id,created_by,name,number_prefix,status) VALUES (?,?,?,?,?)",
                        (g.user["department_id"], g.user["id"], name, prefix, "active"))
-    log(db, "application_kind_starters", "Annual/Sick/Casual Leave")
+    log(db, "application_kind_starters", "Annual/Sick/Casual/Maternity/Leave Application")
     db.commit(); flash("Starter application kinds created for your department.", "ok")
     return redirect(url_for("applications.kinds"))
 
@@ -887,7 +917,7 @@ def detail(aid):
     _viewer = next((s for s in _steps_list if s["user_id"] == g.user["id"]), None)
     return render_template("application_detail.html", app=app, kind=kind,
                            owner=owner, recipient=recipient, checker=checker, approver=approver,
-                           dept=dept, signer=signer,
+                           dept=dept, signer=signer, long_date=_long_date,
                            qr_svg=qr_svg, qr_url=qr_url,
                            my_signature=g.user["signature_path"] if g.user is not None and "signature_path" in g.user.keys() else None,
                            steps=_steps_list, current_step=_cur, viewer_step=_viewer,
@@ -1343,9 +1373,9 @@ def code_page(code):
     db = get_db()
     app = db.execute("SELECT * FROM applications WHERE public_code=?", (code.strip().upper(),)).fetchone()
     if app is None or app["deleted_at"]:
-        return render_template("application_code.html", code=code, status="missing", app=None), 404
+        return render_template("application_code.html", code=code, status="missing", app=None, long_date=_long_date), 404
     if not _public_check(db, app):
-        return render_template("application_code.html", code=code, status="off", app=app), 410
+        return render_template("application_code.html", code=code, status="off", app=app, long_date=_long_date), 410
     db.execute("UPDATE applications SET public_views=public_views+1 WHERE id=?", (app["id"],)); db.commit()
     kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
     owner = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["owner_id"],)).fetchone()
@@ -1356,7 +1386,7 @@ def code_page(code):
     signer = db.execute("SELECT full_name, designation FROM users WHERE id=?", (app["signature_by"],)).fetchone() if app["signature_by"] else None
     return render_template("application_code.html", code=code, status="ok", app=app, kind=kind,
                            owner=owner, recipient=recipient, checker=checker, approver=approver,
-                           dept=dept, signer=signer,
+                           dept=dept, signer=signer, long_date=_long_date,
                            steps=_steps(db, app["id"]), step_roles=STEP_ROLES,
                            labels=STATUS_LABELS)
 
