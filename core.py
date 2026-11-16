@@ -108,6 +108,33 @@ def options_of(col):
     return [o.strip() for o in (col["options"] or "").split("\n") if o.strip()]
 
 
+def is_assignee_column(col):
+    """True for the "Assigned to" dropdown of a department-database tab
+    (build 74: the Sales Pipeline tab's column). A row belongs to the
+    user who adds it, so this column is never a form field — the
+    adder's name is set by the route, not picked from a dropdown."""
+    return (col["name"] or "").strip().lower() == "assigned to" and col["col_type"] == "dropdown"
+
+
+def assignee_name_for(user, column):
+    """The name a new row is assigned to: the adder's name, matched to
+    one of the column's options where possible, so the pipeline report
+    keeps grouping the person under the name already used there
+    (e.g. a user called "Syful Islam" is assigned to "Syful"). If no
+    option matches, the adder's full name is used as it stands."""
+    name = (user["full_name"] or "").strip()
+    if not name:
+        return name
+    for opt in options_of(column):
+        if opt.lower() == name.lower():
+            return opt
+    words = [w for w in name.lower().replace(".", " ").replace(",", " ").split() if w]
+    for opt in options_of(column):
+        if opt.strip().lower() in words:
+            return opt
+    return name
+
+
 def create_department_columns(db, dept_id, template_key, selected=None):
     """Insert the starter columns of a template (selected = list of positions to keep)."""
     for i, spec in enumerate(TEMPLATES.get(template_key, [])):

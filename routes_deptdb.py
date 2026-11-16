@@ -36,11 +36,11 @@ import config
 import exports
 import scanner
 from auth import login_required
-from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, SALES_PIPELINE_COLUMNS, col_weight, ddb_attachment_info,
-                  ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
+from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, SALES_PIPELINE_COLUMNS, assignee_name_for, col_weight,
+                  ddb_attachment_info, ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_row_link, ddb_share_permission, ddb_tabs, ddb_update_row, ddb_values,
-                  display_code, external_url, new_random_code_text, notify, notify_ddb_task,
+                  display_code, external_url, is_assignee_column, new_random_code_text, notify, notify_ddb_task,
                   parse_code_text, parse_form, print_col_widths, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
@@ -1188,7 +1188,12 @@ def _form(dept, tab, cols, values, row=None, version=None, conflict=None, source
     for c in cols:
         if c["col_type"] == "attachment":
             disp[c["id"]] = ddb_display_value(c, disp.get(c["id"]))
-    return render_template("deptdb_form.html", dept=dept, tab=tab, cols=cols, values=disp, row=row,
+    # The "Assigned to" column is never a form field (build 74): a row
+    # belongs to the user who adds it, so the adder's name is set by
+    # the route, not picked from a dropdown. The column still shows in
+    # the tab, the row detail and the report.
+    show = [c for c in cols if not is_assignee_column(c)]
+    return render_template("deptdb_form.html", dept=dept, tab=tab, cols=show, values=disp, row=row,
                            version=version, conflict=conflict, source=source)
 
 
@@ -1213,6 +1218,12 @@ def new_row():
         rec, _lvl = load_record(source, "view")
     if request.method == "POST":
         values, errors = parse_form(cols, request.form)
+        # The row belongs to the user who adds it (build 74): "Assigned
+        # to" is the adder's name, matched to the column's options, not
+        # a choice on the form.
+        for c in cols:
+            if is_assignee_column(c):
+                values[c["id"]] = assignee_name_for(g.user, c)
         ferr, saved, _td = _handle_ddb_files(dept, cols, values, {})
         errors += ferr
         if errors:
@@ -1243,6 +1254,12 @@ def edit_row(rid):
     old = ddb_values(db, [rid])[rid]
     if request.method == "POST":
         values, errors = parse_form(cols, request.form, old)
+        # "Assigned to" is fixed to the user who added the row (build
+        # 74): it is not a form field, so keep the stored value —
+        # otherwise the missing field would wipe it to blank.
+        for c in cols:
+            if is_assignee_column(c):
+                values[c["id"]] = old.get(c["id"])
         ferr, saved, to_delete = _handle_ddb_files(dept, cols, values, old)
         errors += ferr
         version = request.form.get("version", type=int) or 0

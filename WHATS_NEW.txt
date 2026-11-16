@@ -1,4 +1,44 @@
 ==============================================================================
+ NO "ASSIGNED TO" DROPDOWN ON THE SALES PIPELINE ADD/EDIT ROW FORMS (2026-11-16)
+==============================================================================
+ 1. The Sales Pipeline "Add row" form no longer has an "Assigned to"
+    dropdown, and neither does the Edit form. A row belongs to the
+    user who adds it: adding a row sets "Assigned to" to the
+    adder's name automatically, and editing can never reassign it
+    to someone else.
+ 2. The name is matched to the names already used in the pipeline,
+    so a user called "Syful Islam" is assigned to "Syful" and the
+    report keeps grouping them together. Whoever adds the row — a
+    KAM, a dept admin, anyone — is the one it is assigned to.
+ 3. The "Assigned to" column itself still shows in the tab, on the
+    row detail page and in the report, and rows added before this
+    build keep the value they already had.
+ 4. This zip includes everything from build 73. Apply only this
+    one, with `docker compose up -d --build`. No database change.
+
+==============================================================================
+ TEMPLATE DROPDOWN ON THE NEW KIND PAGE, AND DELETE FOR A KIND (2026-11-16)
+==============================================================================
+ 1. The New kind page now has a Template dropdown listing the five
+    ready-made leave formats — Annual Leave, Sick Leave, Casual
+    Leave, Maternity Leave and Leave Application. Picking one fills
+    in the kind name and the right number prefix (AL, SL, CL, ML,
+    LV). The kind name is the template name. Leaving it on "Custom
+    kind" keeps the old way: type any name and prefix.
+ 2. A kind name is unique per department now: adding a kind the
+    department already has is refused instead of making a second
+    kind with the same name.
+ 3. There is a Delete button next to Edit on every kind on the
+    Application kinds page. Deleting a kind removes it from the
+    kinds list and the Create cards at once, but never deletes the
+    applications already made from it. The kind can be brought
+    back by running "Create starter kinds" again or adding it
+    again by name, and its number counter keeps going, so a number
+    is never reused. The Custom Application kind cannot be deleted.
+ 4. This zip includes everything from build 72. Apply only this
+    one, with `docker compose up -d --build`. No database change.
+
+==============================================================================
  FIVE APPLICATION-LETTER FORMATS, AND LETTER DATES IN DAY-MONTH-YEAR (2026-11-16)
 ==============================================================================
  1. The letter's dates now read day-month-year on screen: "16

@@ -7,8 +7,9 @@
 <form method="post" class="card" enctype="multipart/form-data">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="fm">
-<div class="fd"><label>Kind name</label><input type="text" name="name" value="{{ kind['name'] if kind else '' }}" required placeholder="Annual Leave"></div>
-<div class="fd"><label>Application number prefix</label><input type="text" name="number_prefix" value="{{ kind['number_prefix'] if kind else 'LV' }}"><div class="sub">The number is per-kind, e.g. LV-0001, and never reused.</div></div>
+{% if not kind %}<div class="fd"><label>Template</label><select name="template" id="templateSel"><option value="">Custom kind — type the name below</option>{% for tname, tprefix in templates %}<option value="{{ tname }}|{{ tprefix }}">{{ tname }}</option>{% endfor %}</select><div class="sub">Pick one of the ready-made leave formats and the kind name and number prefix fill in for you. The kind name is the template name.</div></div>{% endif %}
+<div class="fd"><label>Kind name</label><input type="text" name="name" id="kindName" value="{{ kind['name'] if kind else '' }}" required placeholder="Annual Leave"></div>
+<div class="fd"><label>Application number prefix</label><input type="text" name="number_prefix" id="kindPrefix" value="{{ kind['number_prefix'] if kind else 'LV' }}"><div class="sub">The number is per-kind, e.g. LV-0001, and never reused.</div></div>
 <div class="fd"><label>Company name (letterhead)</label><input type="text" name="company_name" value="{{ kind['company_name'] if kind else '' }}" placeholder="HRC Technologies Limited"><div class="sub">Printed at the top of the letter for applications of this kind. Leave it blank to use the portal company name.</div></div>
 <div class="fd"><label>Company address (letterhead)</label><input type="text" name="company_address" value="{{ kind['company_address'] if kind else '' }}" placeholder="Level 5, Motijheel C/A, Dhaka-1000 · +880 2 9555 0100"><div class="sub">Printed under the company name on the letter. Leave it blank to use the portal default address.</div></div>
 <div class="fd"><label>Logo — top left corner</label><input type="file" name="logo_left" accept=".png,.jpg,.jpeg,.webp"><div class="sub">Printed at the top left corner of the letter for applications of this kind. If you leave it blank, that corner stays empty.</div>{% if kind and kind['logo_left'] %}<p class="hint" style="margin-top:6px"><img src="{{ url_for('applications.kind_logo', kid=kind['id'], side='left') }}" alt="" style="max-height:40px; vertical-align:middle; margin-right:8px">A logo is already set for this corner. <label style="display:inline"><input type="checkbox" name="remove_logo_left" value="1"> Remove it</label></p>{% endif %}</div>
@@ -25,4 +26,13 @@
     ('Back to kinds', url_for('applications.kinds'), True),
   ]) }}
 </div></div>
+{% if not kind %}<script>
+document.getElementById('templateSel').addEventListener('change', function(){
+  var v=this.value;
+  var nameEl=document.getElementById('kindName'), preEl=document.getElementById('kindPrefix');
+  if(!v){ nameEl.value=''; preEl.value='LV'; return; }
+  var p=v.split('|');
+  nameEl.value=p[0]; preEl.value=p[1]||'LV';
+});
+</script>{% endif %}
 {% endblock %}

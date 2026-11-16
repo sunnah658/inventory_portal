@@ -4821,3 +4821,94 @@
     day-month-year (and the PDF still doing so), and Maternity
     Leave appearing as a Create card. Back up first and keep
     your live .env untouched, as before.
+92. TEMPLATE DROPDOWN ON THE NEW KIND PAGE, AND DELETE FOR A KIND (2026-11-16)
+    The department admin was typing the kind name by hand on the
+    New kind page — and typing the wrong number prefix with it
+    ("Annual Leave" with LV). The page now has a Template dropdown
+    at the top listing the five ready-made leave formats: Annual
+    Leave, Sick Leave, Casual Leave, Maternity Leave and Leave
+    Application. Picking one fills in the kind name and the right
+    number prefix (AL, SL, CL, ML, LV) — the kind name IS the
+    template name. Leaving the dropdown on "Custom kind" keeps the
+    old way: type any name and prefix. The same five feed the
+    "Create starter kinds" button, so the two stay in step.
+    A kind name is unique per department now: adding a kind the
+    department already has is refused ("A kind called ... already
+    exists in your department.") instead of making a second kind
+    with the same name, and renaming a kind to a name another kind
+    has is refused the same way. A kind that was deleted does not
+    count — adding it again brings it back.
+    Deleting a kind is a new option on the Application kinds page:
+    a Delete button next to Edit on every kind row. The delete is
+    soft, like the invoice templates: the kind disappears from the
+    kinds list and from the Create cards at once and cannot be used
+    for a new application, but the applications already made from
+    it stay exactly as they are — the kind row is kept behind the
+    scenes for them. The kind can be brought back by running
+    "Create starter kinds" again or adding it again by name, and
+    bringing it back keeps its number counter, so an application
+    number is never reused. Only the department's own dept admin
+    can delete a kind (a regular user or a dept admin of another
+    department gets 403). The Custom Application kind cannot be
+    deleted: it is the department's default kind, and the startup
+    backfill would only put it back — so it has no Delete button.
+    The "How kinds work" card on the kinds page now lists all five
+    starters instead of only the first three.
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    This zip includes everything from build 72, so apply only this
+    one. If the portal comes up with no data (only the seed admin
+    account), the migration from section 86 has not run yet — see
+    section 90. No database change (the delete reuses the kind's
+    existing status column). Tests: 947/947 checks pass on the work
+    copy and on a fresh extract (926 from builds up to 72 + 21 new).
+    The new checks cover the dropdown listing all five formats and
+    the JavaScript that fills the name and prefix, the duplicate
+    guards on add and on rename, adding a kind from the filled-in
+    form and it appearing as a Create card, the soft delete leaving
+    the list and the Create cards and refusing new applications
+    from it, an application made from a deleted kind still opening
+    and its PDF still downloading, both ways of bringing a deleted
+    kind back (adding it again by name, and the starters button)
+    keeping one row and the number counter, the Custom kind having
+    no Delete button and refusing the delete, and the 403s for a
+    regular user and for a dept admin of another department. The
+    form's JavaScript was also syntax-checked with node --check.
+    Back up first and keep your live .env untouched, as before.
+93. NO "ASSIGNED TO" DROPDOWN ON THE SALES PIPELINE ADD/EDIT ROW FORMS (2026-11-16)
+    The Sales Pipeline "Add row" form had an "Assigned to" dropdown
+    (Mohaiminul / Syful / Shanjid / Prince / Imtiaz). A row belongs
+    to the user who adds it, so the dropdown is gone from both the
+    Add form and the Edit form. Adding a row sets "Assigned to" to
+    the adder's name automatically, and editing keeps the stored
+    value — the record can never be reassigned to someone else.
+    The name is matched to the column's options where possible, so
+    the pipeline report keeps grouping the person under the name
+    already used there: a user called "Syful Islam" is assigned to
+    "Syful". If no option matches the adder's name, their full name
+    is used as it stands. Whoever adds the row — a KAM, a dept
+    admin, anyone — is the one it is assigned to. The rule is
+    enforced on the server, not only by hiding the field: a value
+    sent for the missing field anyway is ignored, and the missing
+    field never wipes the stored value on edit. The "Assigned to"
+    column itself still shows in the tab, on the row detail page
+    and in the report; rows added before this build keep the value
+    they already had. The rule covers any dropdown column named
+    "Assigned to" on any department-database tab (today only the
+    Sales Pipeline tab has one).
+    How to apply: extract this zip, then run
+        docker compose up -d --build
+    This zip includes everything from build 73, so apply only this
+    one. If the portal comes up with no data (only the seed admin
+    account), the migration from section 86 has not run yet — see
+    section 90. No database change. Tests: 958/958 checks pass on
+    the work copy and on a fresh extract (947 from builds up to 73
+    + 11 new). The new checks cover both forms having no Assigned
+    to field while the other fields still show, a new row being
+    assigned to the adder, a submitted Assigned to value being
+    ignored, a KAM's full name being matched to the option already
+    used, editing keeping the stored assignee, the column still
+    showing on the tab, the pipeline report still downloading for
+    the auto-assigned rows, and a dept admin adding a row being
+    assigned to themselves. Back up first and keep your live .env
+    untouched, as before.

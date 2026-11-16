@@ -87,6 +87,13 @@ STEP_ROLES = {"checked": "Checked By", "approved": "Approved By", "authorised": 
 STEP_VERBS = {"checked": "check", "approved": "approve", "authorised": "authorise"}
 STEP_PAST = {"checked": "checked", "approved": "approved", "authorised": "authorised"}
 SIG_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+# The ready-made leave formats a department admin can add (build 72 made
+# them the starter kinds; build 73 lists them in a dropdown on the New
+# kind page). The kind name IS the template name, and the prefix is the
+# number prefix that kind uses. The same list feeds the "Create starter
+# kinds" button, so the two stay in step.
+KIND_TEMPLATES = [("Annual Leave", "AL"), ("Sick Leave", "SL"), ("Casual Leave", "CL"),
+                  ("Maternity Leave", "ML"), ("Leave Application", "LV")]
 _MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
            "September", "October", "November", "December"]
 
@@ -589,7 +596,7 @@ def list_applications():
 def kinds():
     _dept_admin_required()
     db = get_db()
-    rows = db.execute("SELECT * FROM application_kinds WHERE department_id=? ORDER BY id", (g.user["department_id"],)).fetchall()
+    rows = db.execute("SELECT * FROM application_kinds WHERE department_id=? AND status != 'deleted' ORDER BY id", (g.user["department_id"],)).fetchall()
     return render_template("application_kinds.html", rows=rows)
 
 @bp.route("/applications/kinds/starters", methods=["POST"])
@@ -597,12 +604,17 @@ def kinds():
 def kind_starters():
     _dept_admin_required()
     db = get_db()
-    starters = [("Annual Leave", "AL"), ("Sick Leave", "SL"), ("Casual Leave", "CL"),
-                ("Maternity Leave", "ML"), ("Leave Application", "LV")]
-    for name, prefix in starters:
-        if db.execute("SELECT 1 FROM application_kinds WHERE department_id=? AND name=?", (g.user["department_id"], name)).fetchone() is None:
+    for name, prefix in KIND_TEMPLATES:
+        row = db.execute("SELECT id, status FROM application_kinds WHERE department_id=? AND name=?",
+                         (g.user["department_id"], name)).fetchone()
+        if row is None:
             db.execute("INSERT INTO application_kinds(department_id,created_by,name,number_prefix,status) VALUES (?,?,?,?,?)",
                        (g.user["department_id"], g.user["id"], name, prefix, "active"))
+        elif row["status"] == "deleted":
+            # Bring a deleted kind back instead of making a second row
+            # with the same name: its number counter keeps going where
+            # it left off, so an application number is never reused.
+            db.execute("UPDATE application_kinds SET status='active' WHERE id=?", (row["id"],))
     log(db, "application_kind_starters", "Annual/Sick/Casual/Maternity/Leave Application")
     db.commit(); flash("Starter application kinds created for your department.", "ok")
     return redirect(url_for("applications.kinds"))
@@ -619,15 +631,38 @@ def kind_new():
         company_address = (request.form.get("company_address") or "").strip()
         if not name:
             flash("Write a kind name.", "error")
-            return render_template("application_kind_form.html", kind=None)
+            return render_template("application_kind_form.html", kind=None, templates=KIND_TEMPLATES)
+        # A kind name is unique per department (build 73): the template
+        # dropdown makes it easy to add a kind the department already
+        # has, so refuse it here instead of creating a second kind
+        # with the same name.
+        if db.execute("SELECT 1 FROM application_kinds WHERE department_id=? AND name=? AND status != 'deleted'",
+                      (g.user["department_id"], name)).fetchone() is not None:
+            flash(f"A kind called {name} already exists in your department.", "error")
+            return render_template("application_kind_form.html", kind=None, templates=KIND_TEMPLATES)
+        _gone = db.execute("SELECT * FROM application_kinds WHERE department_id=? AND name=? AND status='deleted'",
+                           (g.user["department_id"], name)).fetchone()
         logo_left = _save_kind_logo(request.files.get("logo_left"))
         logo_right = _save_kind_logo(request.files.get("logo_right"))
+        if _gone is not None:
+            # Adding a kind that was deleted brings it back (its number
+            # counter keeps going, so a number is never reused) instead
+            # of making a second kind with the same name. Logos stay
+            # as they were unless new ones were uploaded.
+            db.execute("UPDATE application_kinds SET number_prefix=?,company_name=?,company_address=?,logo_left=?,logo_right=?,status='active' WHERE id=?",
+                       (prefix, company_name, company_address,
+                        logo_left if logo_left else _gone["logo_left"],
+                        logo_right if logo_right else _gone["logo_right"],
+                        _gone["id"]))
+            log(db, "application_kind_restored", name)
+            db.commit(); flash("Application kind restored.", "ok")
+            return redirect(url_for("applications.kinds"))
         db.execute("INSERT INTO application_kinds(department_id,created_by,name,number_prefix,company_name,company_address,logo_left,logo_right,status) VALUES (?,?,?,?,?,?,?,?,?)",
                    (g.user["department_id"], g.user["id"], name, prefix, company_name, company_address, logo_left, logo_right, "active"))
         log(db, "application_kind_new", name)
         db.commit(); flash("Application kind saved.", "ok")
         return redirect(url_for("applications.kinds"))
-    return render_template("application_kind_form.html", kind=None)
+    return render_template("application_kind_form.html", kind=None, templates=KIND_TEMPLATES)
 
 @bp.route("/applications/kinds/<int:kid>/edit", methods=["GET", "POST"])
 @login_required
@@ -642,6 +677,13 @@ def kind_edit(kid):
         company_name = (request.form.get("company_name") or "").strip()
         company_address = (request.form.get("company_address") or "").strip()
         status = "active" if request.form.get("status") != "draft" else "draft"
+        # Renaming a kind to a name another live kind already has would
+        # leave two kinds with the same name (same rule as New kind).
+        if name != kind["name"] and db.execute(
+                "SELECT 1 FROM application_kinds WHERE department_id=? AND name=? AND status != 'deleted' AND id != ?",
+                (g.user["department_id"], name, kid)).fetchone() is not None:
+            flash(f"A kind called {name} already exists in your department.", "error")
+            return render_template("application_kind_form.html", kind=kind)
         # Logos: uploading a new one replaces the old file; ticking Remove
         # clears that corner (it stays blank on the letter); uploading
         # nothing leaves the current logo in place.
@@ -667,6 +709,31 @@ def kind_edit(kid):
         db.commit(); flash("Application kind saved. Changes apply to new applications only.", "ok")
         return redirect(url_for("applications.kinds"))
     return render_template("application_kind_form.html", kind=kind)
+
+@bp.route("/applications/kinds/<int:kid>/delete", methods=["POST"])
+@login_required
+def kind_delete(kid):
+    """Delete an application kind (a template). A department admin deletes
+    only their own department's kinds. The delete is soft, like the
+    invoice templates: the kind disappears from the kinds list and from
+    the Create cards at once, but the applications already made from it
+    stay exactly as they are — the kind row is kept behind the scenes
+    for them, and the kind can be brought back by running "Create
+    starter kinds" again or adding it again by name. The Custom
+    Application kind cannot be deleted: it is the department's default
+    kind, and the startup backfill would only put it back."""
+    _dept_admin_required()
+    db = get_db(); kind = _kind(db, kid)
+    if kind["department_id"] != g.user["department_id"]:
+        abort(403)
+    if kind["is_custom"]:
+        flash("The Custom Application kind is your department's default kind and cannot be deleted.", "error")
+        return redirect(url_for("applications.kinds"))
+    db.execute("UPDATE application_kinds SET status='deleted' WHERE id=?", (kid,))
+    log(db, "application_kind_deleted", kind["name"])
+    db.commit()
+    flash(f"Kind {kind['name']} deleted. The applications made from it stay as they are.", "ok")
+    return redirect(url_for("applications.kinds"))
 
 # ---------------------------------------------------------------- create an application
 @bp.route("/applications/new", methods=["GET", "POST"])
