@@ -5280,3 +5280,48 @@
     MySQL 8.0. The upgrade was also checked: this code starts on a
     build-79 database (53 tables), adds the users.email column, keeps
     the old users, and serves the login page.
+
+
+==============================================================================
+ 100. MORNING REMINDERS FOLLOW THE TIMEZONE IN .ENV (2026-11-17)
+==============================================================================
+ The morning reminders (the signature-upload reminder, the personal
+ record reminders and the Department Database meeting reminders) used
+ to measure "morning" in the server's own local time. The portal ships
+ with the server set to UTC, so the 07:00 reminder only started at
+ 13:00 Dhaka time — users checking in the Dhaka morning saw nothing.
+ Now the reminders read the timezone from the .env file (the TZ line,
+ which docker-compose reads into the container) and measure the morning
+ in that timezone: whatever TZ the .env gives — Asia/Dhaka, UTC or
+ anything else — the reminders go out from REMINDER_HOUR (07:00) in
+ that timezone. No department is left out: the signature reminder
+ already had no department filter, and it is now tested with a Billing
+ & Revenue department user too. No schema change, still 53 tables.
+ To make the morning a Dhaka morning, the live .env needs
+ TZ=Asia/Dhaka (then restart the portal). If the .env says UTC, the
+ reminders still go out from 07:00 UTC.
+ Tested: 1141/1141 automated checks (1133 of build 80 plus 8 new) on
+ the work copy and on a fresh extract of this zip, against real MySQL
+ 8.0. The upgrade was also checked: this code starts on a build-80
+ database (53 tables) and serves the login page.
+
+
+==============================================================================
+ 101. SALES PIPELINE TEMPLATE ONLY FOR SALES & MARKETING (2026-11-17)
+==============================================================================
+ The "Sales Pipeline" template was listed on the Tabs page of every
+ department, although the Sales Pipeline is the Sales & Marketing
+ department's own default tab. Now the template is only offered on the
+ Tabs page of the Sales & Marketing department: every other department
+ sees the other templates (Client Info, Meetings, Employee Info,
+ Billing, Accounts, Custom tab) without it, and a non-Sales department
+ cannot create a Sales Pipeline tab by posting the form either — such
+ a post falls back to a blank tab. Sales & Marketing is unchanged: it
+ keeps its default Sales Pipeline tab, and its Tabs page still offers
+ the template. Tabs another department already made from this template
+ are left as they are; this only stops new ones from being offered.
+ No schema change, still 53 tables.
+ Tested: 1150/1150 automated checks (1141 of build 81 plus 9 new) on
+ the work copy and on a fresh extract of this zip, against real MySQL
+ 8.0. The upgrade was also checked: this code starts on a build-81
+ database (53 tables) and serves the login page.

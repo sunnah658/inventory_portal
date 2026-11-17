@@ -1,4 +1,25 @@
 ==============================================================================
+ SALES PIPELINE TEMPLATE ONLY FOR SALES & MARKETING (2026-11-17)
+==============================================================================
+ The "Sales Pipeline" template was listed on the Tabs page of every
+ department, although the Sales Pipeline is the Sales & Marketing
+ department's own default tab. Now only Sales & Marketing sees it in
+ the Template dropdown; other departments no longer see it there, and
+ cannot create a Sales Pipeline tab by posting the form either.
+ Sales & Marketing itself is unchanged.
+
+==============================================================================
+ MORNING REMINDERS FOLLOW THE TIMEZONE IN .ENV (2026-11-17)
+==============================================================================
+ The morning reminders (signature upload, personal record reminders,
+ Department Database meeting reminders) used to measure "morning" in
+ the server's own local time, which ships as UTC — so the 07:00
+ reminder only started at 13:00 Dhaka time. Now they read the timezone
+ from the .env file (the TZ line) and go out from 07:00 in that
+ timezone. Set TZ=Asia/Dhaka in the live .env for a Dhaka morning.
+ No department is left out of the signature reminder.
+
+==============================================================================
  OFFICE MAIL FOR APPLICATIONS (2026-11-16)
 ==============================================================================
  1. Mail settings page (portal admin only). Settings -> Mail settings.

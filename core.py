@@ -165,8 +165,9 @@ def create_department(db, name, template_key=None, selected=None):
 
 # The Sales Pipeline tab (2026-11-15, build 66): the default tab for the
 # Sales & Marketing department, holding every column the follow-up &
-# pipeline report needs. Also offered as a template on the Tabs page
-# (routes_deptdb.TEMPLATE_TABS), so any department can add one.
+# pipeline report needs. It is only offered as a template on the Tabs
+# page of the Sales & Marketing department (build 82); other
+# departments never see it there.
 # (name, type, options, required, has_time). Dropdown options are joined
 # with a literal backslash-n, the same as every other template tab.
 SALES_PIPELINE_COLUMNS = [
@@ -877,12 +878,29 @@ def _when_words(days_left):
     return "today" if days_left == 0 else "tomorrow" if days_left == 1 else f"in {days_left} days"
 
 
+def portal_now():
+    """The current time in the timezone the portal is set to — the TZ in
+    the .env file, which docker-compose reads into the container. The
+    reminders' "morning" is measured in this timezone, so whatever TZ
+    the .env gives (Asia/Dhaka, UTC or anything else) the reminders go
+    out from REMINDER_HOUR in that timezone. Returns a naive datetime
+    (no tzinfo), so every comparison the reminders already do keeps
+    working exactly as before. Falls back to the server's local time
+    when the TZ is missing or zoneinfo cannot read it."""
+    tz_name = (os.environ.get("TZ") or "").strip() or "UTC"
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(tz_name)).replace(tzinfo=None)
+    except Exception:
+        return datetime.now()
+
+
 def send_reminder_notifications(db, now=None):
     """Put one bell message per record and reminder column in the OWNER's bell:
     1 day before, on the day itself, and at the number of days the owner chose (1, 3 or 7).
     Nothing is sent before config.REMINDER_HOUR (the morning). Safe to call again and again:
     the reminder_sent table makes sure every message is sent only once. Returns how many were sent."""
-    now = now or datetime.now()
+    now = now or portal_now()
     if now.hour < config.REMINDER_HOUR:
         return 0
     today = now.date()
@@ -928,7 +946,7 @@ def send_ddb_meeting_notifications(db, now=None):
     is exactly: "<USER> has a meeting at <date time>". Owner text: "You have a meeting
     at <date time>". Each (row, column, value, day-offset, person) is sent only once,
     so changing the date/time sends a new set for the new time. Returns how many were sent."""
-    now = now or datetime.now()
+    now = now or portal_now()
     if now.hour < config.REMINDER_HOUR:
         return 0
     today = now.date()
@@ -986,7 +1004,7 @@ def send_signature_reminder_notifications(db, now=None):
     a day, so it comes again the next morning until they upload one —
     and stops the morning after they do (or starts again if they remove
     their signature). Returns how many were sent."""
-    now = now or datetime.now()
+    now = now or portal_now()
     if now.hour < config.REMINDER_HOUR:
         return 0
     today = now.date().isoformat()

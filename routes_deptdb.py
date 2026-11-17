@@ -41,7 +41,7 @@ from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, SALES_PIPELINE_COLUMNS, assi
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_shared_tabs, ddb_tab_access, ddb_row_link, ddb_tabs, ddb_update_row, ddb_values,
                   display_code, external_url, is_assignee_column, new_random_code_text, notify, notify_ddb_task,
-                  parse_code_text, parse_form, print_col_widths, show_when)
+                  parse_code_text, parse_form, print_col_widths, sales_dept_id, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
 
@@ -114,6 +114,16 @@ TEMPLATE_TABS = [
     ("custom", "Custom tab (blank)", []),
 ]
 TEMPLATE_MAP = {k: (label, cols) for k, label, cols in TEMPLATE_TABS}
+
+
+def _templates_for(db, dept):
+    """The templates a department may pick on the Tabs page. The Sales
+    Pipeline template is the Sales & Marketing department's own default
+    tab (build 66), so it is only offered there — every other department
+    sees the rest of the list without it (build 82)."""
+    if dept["id"] == sales_dept_id(db):
+        return TEMPLATE_TABS
+    return [t for t in TEMPLATE_TABS if t[0] != "pipeline"]
 
 
 # ---------------------------------------------------------------- which department, which tab
@@ -1028,6 +1038,12 @@ def _request_tab_view(db, dept, is_admin, args):
 @login_required
 def tabs():
     db, dept = _tab_admin()
+    # The templates this department may pick. The Sales Pipeline template
+    # is only offered to Sales & Marketing (build 82), so a template
+    # this department cannot pick falls back to a blank tab, the same as
+    # an unknown template.
+    templates = _templates_for(db, dept)
+    template_map = {k: (label, cols) for k, label, cols in templates}
     if request.method == "POST":
         name = " ".join((request.form.get("name") or "").split())[:60]
         if name.lower() == "general":
@@ -1036,7 +1052,7 @@ def tabs():
             flash("The General tab was removed for all users and cannot be created again.", "error")
             return redirect(url_for("ddb.tabs", **_back(dept)))
         template = request.form.get("template", "custom")
-        if template not in TEMPLATE_MAP:
+        if template not in template_map:
             template = "custom"
         meeting = 1 if (template == "meetings" or request.form.get("meeting_notify")) else 0
         if not name:
@@ -1048,7 +1064,7 @@ def tabs():
                 tab_id = db.execute("INSERT INTO ddb_tabs(department_id,name,template,meeting_notify,position,created_by) "
                                     "VALUES (?,?,?,?,?,?)",
                                     (dept["id"], name, template, meeting, pos, g.user["id"])).lastrowid
-                _label, starter = TEMPLATE_MAP[template]
+                _label, starter = template_map[template]
                 for i, (cname, ctype, opts, req, has_time) in enumerate(starter):
                     db.execute("INSERT INTO ddb_columns(department_id,tab_id,name,col_type,options,required,has_time,position) "
                                "VALUES (?,?,?,?,?,?,?,?)",
@@ -1068,7 +1084,7 @@ def tabs():
     all_tabs = db.execute("SELECT t.*, (SELECT COUNT(*) FROM ddb_rows r WHERE r.tab_id=t.id AND r.deleted_at IS NULL) AS row_count "
                           "FROM ddb_tabs t WHERE t.department_id=? AND t.removed_at IS NULL ORDER BY t.position, t.id",
                           (dept["id"],)).fetchall()
-    return render_template("deptdb_tabs.html", dept=dept, tabs=all_tabs, templates=TEMPLATE_TABS)
+    return render_template("deptdb_tabs.html", dept=dept, tabs=all_tabs, templates=templates)
 
 
 @bp.route("/tabs/<int:tab_id>/edit", methods=["POST"])
