@@ -39,7 +39,6 @@
     <details><summary>More</summary><div class="more">
       <a href="{{ url_for('public.links') }}">Public QR links</a>
       {% if can_reports %}<a href="{{ url_for('bulk.reports') }}">Reports</a>{% endif %}
-      <a href="{{ url_for('applications.list_applications') }}">Application Letters</a>
       {% if can_portal_admin %}
       <a href="{{ url_for('admin.import_page') }}">Import users</a>
       <a href="{{ url_for('admin.activity') }}">Activity</a>

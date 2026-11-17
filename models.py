@@ -795,145 +795,6 @@ CREATE TABLE IF NOT EXISTS item_request_steps (
     KEY idx_req_steps (request_id, position)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Application Letters (2026-11-10): kinds made by the dept admin, and the
--- applications users send to one specific HR & Admin user. The HR recipient
--- and the HR & Admin dept admin can edit, set a note, upload a signature
--- and change the status. The document is a formal letter, not an invoice.
-CREATE TABLE IF NOT EXISTS application_kinds (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    department_id INT NOT NULL,
-    created_by    INT,
-    name          VARCHAR(255) NOT NULL,
-    number_prefix VARCHAR(255) NOT NULL DEFAULT 'LV',
-    company_name  VARCHAR(255),
-    company_address VARCHAR(255),
-    logo_left     VARCHAR(255),
-    logo_right    VARCHAR(255),
-    next_number   INT NOT NULL DEFAULT 1,
-    status        VARCHAR(255) NOT NULL DEFAULT 'active',
-    is_custom     INT NOT NULL DEFAULT 0,
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
-    FOREIGN KEY (created_by) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS applications (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    department_id INT NOT NULL,
-    kind_id       INT,
-    owner_id      INT NOT NULL,
-    recipient_id  INT,
-    checker_id    INT,
-    checker_signature_path VARCHAR(255),
-    checker_signature_at DATETIME,
-    approver_id   INT,
-    number        VARCHAR(255),
-    status        VARCHAR(255) NOT NULL DEFAULT 'pending',
-    from_date     VARCHAR(255),
-    to_date       VARCHAR(255),
-    days          INT NOT NULL DEFAULT 0,
-    reason        TEXT,
-    letter_body   TEXT,
-    subject       VARCHAR(255),
-    to_lines      TEXT,
-    hr_note       TEXT,
-    signature_path VARCHAR(255),
-    signature_by  INT,
-    signature_at  DATETIME,
-    public_code   VARCHAR(255) UNIQUE,
-    public_enabled INT NOT NULL DEFAULT 0,
-    public_views  INT NOT NULL DEFAULT 0,
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at    DATETIME,
-    deleted_by    INT,
-    chain_legacy  INT NOT NULL DEFAULT 0,
-    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
-    FOREIGN KEY (kind_id) REFERENCES application_kinds(id),
-    FOREIGN KEY (owner_id) REFERENCES users(id),
-    FOREIGN KEY (recipient_id) REFERENCES users(id),
-    FOREIGN KEY (checker_id) REFERENCES users(id),
-    FOREIGN KEY (approver_id) REFERENCES users(id),
-    FOREIGN KEY (signature_by) REFERENCES users(id),
-    FOREIGN KEY (deleted_by) REFERENCES users(id),
-    KEY idx_app_owner (owner_id),
-    KEY idx_app_recip (recipient_id),
-    KEY idx_app_checker (checker_id),
-    KEY idx_app_approver (approver_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS application_history (
-    id             INT AUTO_INCREMENT PRIMARY KEY,
-    application_id INT NOT NULL,
-    user_id        INT,
-    username       VARCHAR(255),
-    full_name      VARCHAR(255),
-    action         VARCHAR(255) NOT NULL,
-    field          VARCHAR(255),
-    old_value      TEXT,
-    new_value      TEXT,
-    at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    KEY idx_app_hist (application_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS application_steps (
-    id             INT AUTO_INCREMENT PRIMARY KEY,
-    application_id INT NOT NULL,
-    position       INT NOT NULL,
-    role           VARCHAR(255) NOT NULL CHECK (role IN ('checked','approved','authorised')),
-    user_id        INT,
-    status         VARCHAR(255) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-    signature_path VARCHAR(255),
-    signature_at   DATETIME,
-    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY (application_id, position),
-    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    KEY idx_app_steps (application_id, position)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Leave balances (build 76): the HR & Admin department admin sets, for
--- each of the four leave types, how many days every user can take in a
--- year. One row per leave type, company-wide. A leave set to 0 days is
--- not offered — it does not appear in any user's Leaves table. The
--- balances themselves are computed, not stored: Uses counts the days of
--- a user's applications of that kind that are approved or still waiting
--- for a decision (pending or checked) in the current year, so a
--- rejection gives the days back automatically.
-CREATE TABLE IF NOT EXISTS leave_setup (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    leave_name    VARCHAR(255) NOT NULL UNIQUE,
-    days          INT NOT NULL DEFAULT 0,
-    updated_by    INT,
-    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (updated_by) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Leave date changes (build 76): when a step user changes the leave
--- dates of an application, the old and new dates are written here, so
--- the change can be shown as a note on the application detail page and
--- on its PDF. The application's own from_date/to_date/days are updated
--- at the same time; the letter body is the applicant's own words and is
--- not rewritten.
-CREATE TABLE IF NOT EXISTS application_date_changes (
-    id            INT AUTO_INCREMENT PRIMARY KEY,
-    application_id INT NOT NULL,
-    changed_by    INT,
-    changed_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    old_from_date VARCHAR(255),
-    old_to_date   VARCHAR(255),
-    old_days      INT NOT NULL DEFAULT 0,
-    new_from_date VARCHAR(255),
-    new_to_date   VARCHAR(255),
-    new_days      INT NOT NULL DEFAULT 0,
-    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-    FOREIGN KEY (changed_by) REFERENCES users(id),
-    KEY idx_app_dates (application_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- Dashboard settings (2026-11-06): one row per admin, JSON with which
 -- dashboard sections that admin wants to see and which chart type (bar/pie)
 -- each of the two department charts uses. No row = everything shown, bars.
@@ -1090,6 +951,17 @@ def _upgrade_columns_user_columns(conn):
                      "CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment'))")
 
 
+def _drop_application_tables(conn):
+    """Build 83: the Application Letters feature is removed. Drop its six
+    tables when they exist, children first so the foreign keys do not
+    block the drop. A database backup taken before applying the build is
+    the only way back."""
+    for _t in ("application_steps", "application_history",
+               "application_date_changes", "applications",
+               "application_kinds", "leave_setup"):
+        conn.execute(f"DROP TABLE IF EXISTS {_t}")
+
+
 def _upgrade_remove_row_shares(conn):
     """Row sharing is gone (build 78): a normal user can no longer share one
     Department Database row with anyone, and only the department admin
@@ -1144,109 +1016,10 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "ddb_rows", "public_views", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "ddb_rows", "deleted_by", "INTEGER REFERENCES users(id)")  # who deleted the row, shown in the Recycle Bin (2026-11-10)
     _ensure_column(conn, "ddb_tabs", "deleted_by", "INTEGER REFERENCES users(id)")  # who deleted the tab, shown in the Recycle Bin Others tab (2026-11-16)
-    _ensure_column(conn, "applications", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-10)
-    _ensure_column(conn, "applications", "deleted_by", "INTEGER REFERENCES users(id)")
     _ensure_column(conn, "invoices", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-14)
     _ensure_column(conn, "invoices", "deleted_by", "INTEGER REFERENCES users(id)")
     _ensure_column(conn, "item_requests", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-14)
     _ensure_column(conn, "item_requests", "deleted_by", "INTEGER REFERENCES users(id)")
-    _ensure_column(conn, "applications", "checker_id", "INTEGER REFERENCES users(id)")  # own-department checker (two-stage, 2026-11-10)
-    _ensure_column(conn, "applications", "checker_signature_path", "VARCHAR(255)")  # checker's uploaded signature image
-    _ensure_column(conn, "applications", "checker_signature_at", "DATETIME")  # when the checker signed
-    _ensure_column(conn, "applications", "approver_id", "INTEGER REFERENCES users(id)")  # HR & Admin user it was forwarded to
-    _ensure_column(conn, "applications", "to_lines", "TEXT")  # the lines the user wrote for the letter's To section (2026-11-14)
-    _ensure_column(conn, "applications", "chain_legacy", "INTEGER NOT NULL DEFAULT 0")  # 1 = made the old single-recipient way (or before build 52 with no approver yet): the checker may still forward it to HR (2026-11-14)
-    _ensure_column(conn, "applications", "subject", "VARCHAR(255)")  # the subject the user wrote, for a Custom Application (2026-11-14)
-    # The checker/approver indexes live HERE, after the columns above —
-    # not in SCHEMA. SCHEMA runs before _ensure_column, so on a database
-    # made before build 43 (no checker_id/approver_id yet) the index
-    # creation in SCHEMA crashed init_db with "no such column:
-    # checker_id" and the container kept restarting (2026-11-12).
-    # MySQL has no CREATE INDEX IF NOT EXISTS (MariaDB accepts it, MySQL 8.0
-    # does not), so guard with the information_schema check instead.
-    if not _index_exists(conn, "idx_app_checker"):
-        conn.execute("CREATE INDEX idx_app_checker ON applications(checker_id)")
-    if not _index_exists(conn, "idx_app_approver"):
-        conn.execute("CREATE INDEX idx_app_approver ON applications(approver_id)")
-    # The To box (2026-11-14): applications made before this build have no
-    # typed To lines, so fill theirs in from the three lines the letter
-    # used to show automatically (checker name, department, company) —
-    # their letters look exactly as they did. New applications store what
-    # the user typed, or nothing. Only rows with no To lines at all are
-    # touched, so this is safe to run on every startup.
-    for _a in conn.execute("SELECT id, department_id, kind_id, checker_id, recipient_id FROM applications WHERE to_lines IS NULL").fetchall():
-        _chk = conn.execute("SELECT full_name FROM users WHERE id=?", (_a["checker_id"],)).fetchone() if _a["checker_id"] else None
-        if not _chk and _a["recipient_id"]:
-            _chk = conn.execute("SELECT full_name FROM users WHERE id=?", (_a["recipient_id"],)).fetchone()
-        _dept = conn.execute("SELECT name FROM departments WHERE id=?", (_a["department_id"],)).fetchone()
-        _k = conn.execute("SELECT company_name FROM application_kinds WHERE id=?", (_a["kind_id"],)).fetchone() if _a["kind_id"] else None
-        _co = (_k["company_name"] or "").strip() if _k else ""
-        if not _co:
-            _co = setting_get(conn, "company_name", config.DEFAULT_COMPANY_NAME)
-        _lines = [(_chk["full_name"] if _chk else ""), (_dept["name"] if _dept else ""), _co]
-        conn.execute("UPDATE applications SET to_lines=? WHERE id=?",
-                     ("\n".join([_l for _l in _lines if _l]), _a["id"]))
-    # The three-step approval chain (2026-11-14): applications made before
-    # this build have no step rows, so build their chain from the columns
-    # they already have — the checker is step 1 (Checked By), the HR
-    # approver (when there is one) is step 2 (Approved By), and an
-    # application made before the two-stage flow (no checker at all) has
-    # one step, Approved By, for the HR user it was sent to. A step that
-    # already happened is marked approved (or rejected, for the last one);
-    # a step that has not happened yet stays pending. Only applications
-    # with no step rows at all are touched, so this is safe to run on
-    # every startup. An application that is still Pending with no
-    # approver keeps the old forward: its checker may still forward it
-    # to an HR & Admin user (chain_legacy = 1), so no live application
-    # is stranded by the new chain.
-    for _a in conn.execute(
-            "SELECT id, status, checker_id, checker_signature_path, checker_signature_at, "
-            "approver_id, recipient_id, signature_path, signature_at "
-            "FROM applications WHERE id NOT IN (SELECT application_id FROM application_steps)").fetchall():
-        _steps = []
-        if _a["checker_id"]:
-            _s1 = "approved" if _a["status"] in ("checked", "approved", "rejected") else "pending"
-            _steps.append(("checked", _a["checker_id"], _s1,
-                           _a["checker_signature_path"], _a["checker_signature_at"]))
-        if _a["approver_id"]:
-            _s2 = _a["status"] if _a["status"] in ("approved", "rejected") else "pending"
-            _steps.append(("approved", _a["approver_id"], _s2,
-                           _a["signature_path"], _a["signature_at"]))
-        if not _steps and _a["recipient_id"]:
-            _s1 = _a["status"] if _a["status"] in ("approved", "rejected") else "pending"
-            _steps.append(("approved", _a["recipient_id"], _s1,
-                           _a["signature_path"], _a["signature_at"]))
-        for _i, (_role, _uid, _st, _sig, _sig_at) in enumerate(_steps, start=1):
-            conn.execute("INSERT INTO application_steps(application_id,position,role,user_id,status,signature_path,signature_at) "
-                         "VALUES (?,?,?,?,?,?,?)", (_a["id"], _i, _role, _uid, _st, _sig, _sig_at))
-        if _a["status"] == "pending" and not _a["approver_id"]:
-            conn.execute("UPDATE applications SET chain_legacy=1 WHERE id=?", (_a["id"],))
-    _ensure_column(conn, "application_kinds", "company_name", "VARCHAR(255)")  # letterhead company for this kind (2026-11-10)
-    _ensure_column(conn, "application_kinds", "company_address", "VARCHAR(255)")  # letterhead address for this kind
-    _ensure_column(conn, "application_kinds", "logo_left", "VARCHAR(255)")  # letterhead logo, top left corner (2026-11-14)
-    _ensure_column(conn, "application_kinds", "logo_right", "VARCHAR(255)")  # letterhead logo, top right corner
-    _ensure_column(conn, "application_kinds", "is_custom", "INTEGER NOT NULL DEFAULT 0")  # 1 = the default Custom Application kind (2026-11-14)
-    # The closing moves into the body (2026-11-14): the letter no longer
-    # adds "Thanking you. Yours faithfully," of its own — it is part of
-    # the body the user wrote, so they can change it. Applications made
-    # before this build have no closing in their body, so append it to
-    # theirs — their letters look exactly as they did. Only rows whose
-    # body does not already end with the closing are touched, so this is
-    # safe to run on every startup.
-    for _a in conn.execute("SELECT id, letter_body FROM applications WHERE letter_body IS NOT NULL").fetchall():
-        _b = (_a["letter_body"] or "").rstrip()
-        if _b and "yours faithfully" not in _b[-80:].lower():
-            conn.execute("UPDATE applications SET letter_body=? WHERE id=?",
-                         (_b + "\n\nThanking you.\n\nYours faithfully,", _a["id"]))
-    # The default Custom Application kind (2026-11-14): every department
-    # has one, whether it was made before this build or after — a user
-    # writes their own subject and body for it. Only departments with no
-    # custom kind yet are touched, so this is safe to run on every startup.
-    for _d in conn.execute("SELECT id FROM departments").fetchall():
-        if conn.execute("SELECT 1 FROM application_kinds WHERE department_id=? AND is_custom=1",
-                        (_d["id"],)).fetchone() is None:
-            conn.execute("INSERT INTO application_kinds(department_id,name,number_prefix,next_number,is_custom) "
-                         "VALUES (?,?,?,1,1)", (_d["id"], "Custom Application", "CA"))
     _ensure_column(conn, "item_request_lines", "item_name", "VARCHAR(255)")  # item name per line (2026-11-09)
     # Per-tab column unique index (an old index was department-wide).
     # On MySQL the index is on the generated name_live column (see
@@ -1374,6 +1147,7 @@ def init_db():
         _upgrade_remove_row_shares(conn)
         _upgrade_invoice_tax_tick(conn)
         _upgrade_invoice_header(conn)
+        _drop_application_tables(conn)
         _drop_index(conn, "ux_column_reminder", "columns")   # several reminder columns are allowed now
         _ensure_column(conn, "activity_log", "ip", "VARCHAR(255)")
         _ensure_column(conn, "attachments", "scan_status", "VARCHAR(255)")

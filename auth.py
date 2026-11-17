@@ -223,7 +223,7 @@ def _save_user_signature(file_storage):
     converted to PNG (whether the user uploads a png or a jpg) and trimmed
     to the ink, then stored in uploads/user_signatures/ under a random
     name, so it is there for future use — the "Use my signature" tick box
-    in application letters uses this stored PNG. Returns the stored file
+    in invoices and item requests uses this stored PNG. Returns the stored file
     name, or None when nothing was uploaded or the file type is not png
     or jpg."""
     if not file_storage or not file_storage.filename:
@@ -321,7 +321,7 @@ def my_settings():
     """My settings: every logged-in user changes their OWN full name,
     username and designation. The username must stay unique (another user's
     username is refused). The designation is shown under the user's name in
-    the owner signature on their invoices, item requests and applications.
+    the owner signature on their invoices and item requests.
     Changing the username takes effect at once; the user signs in with the
     new username next time. The password is changed from the Change password
     box on this same page (POST /my-settings/password). The user's own

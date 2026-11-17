@@ -119,7 +119,7 @@ def hr_admin_dept_id(db):
 
 def management_dept_id(db):
     """The Management department id, by name — the third department an
-    application step can be sent to (2026-11-14). None when there is no
+    item request step can be sent to (2026-11-14). None when there is no
     department called Management yet; then no Management users appear in
     the person list."""
     row = db.execute("SELECT id FROM departments WHERE LOWER(name)='management'").fetchone()
@@ -185,7 +185,7 @@ def _can_edit(db, user, req):
     return req["owner_id"] == user["id"] or req["recipient_id"] == user["id"]
 
 # ---------------------------------------------------------------- approval chain
-# A request is approved the same way as an application letter: the owner
+# A request is approved the same way as an invoice: the owner
 # picks up to 3 steps when the request is sent (role + a person from their
 # own department, HR & Admin or Management), one step and only one step
 # being "Send/Request To" — the person who receives the request. The steps
@@ -494,9 +494,8 @@ def _new_request_code(db):
         if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
             if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
                 if db.execute("SELECT 1 FROM public_links WHERE code_text=?", (cand,)).fetchone() is None:
-                    if db.execute("SELECT 1 FROM applications WHERE public_code=?", (cand,)).fetchone() is None:
-                        if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
-                            return cand
+                    if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
+                        return cand
     return None
 
 def _parse_lines(form):
@@ -680,7 +679,7 @@ def request_new():
         return redirect(url_for("requests.list_requests"))
     if request.method == "POST" and kind is not None:
         # Who approves it: up to 3 steps, picked here, exactly like an
-        # application letter — one step and only one step being
+        # item request — one step and only one step being
         # "Send/Request To", the person who receives the request. The dept
         # admin no longer sets signatures on the kind.
         chain, chain_err = _parse_request_chain(request.form, _request_chain_people(db, g.user["department_id"]))

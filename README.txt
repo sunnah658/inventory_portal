@@ -5325,3 +5325,58 @@
  the work copy and on a fresh extract of this zip, against real MySQL
  8.0. The upgrade was also checked: this code starts on a build-81
  database (53 tables) and serves the login page.
+
+==============================================================================
+ 102. APPLICATION LETTERS REMOVED (2026-11-17)
+==============================================================================
+ The whole Application Letters feature is gone from the portal, by the
+ user's instruction. The Application Letters page is gone (My / Received
+ / All tabs, the Leave setup tab, all Create cards), with it every kind
+ (Leave Application, Casual Leave, Sick Leave, Annual Leave, Maternity
+ Leave, Custom Application), the Leaves table and the HR & Admin Leave
+ setup (days per year), the three-step approval chain, the letter PDFs,
+ the public QR and code pages for letters, and Search QR opening a
+ letter. The "Application Letters" link is gone from the menu, and the
+ Recycle Bin no longer lists letters. All of the data goes with it:
+ every existing letter, kind, leave setup, date change and approval
+ history is erased when the new code first starts on the live database
+ (the six tables are dropped). A database backup taken before applying
+ is the only way back — back up first.
+
+ KEPT, untouched: the office mail feature (build 80). The Mail settings
+ page, the mail-sending code, the users' mail addresses and the Email
+ box in My settings all stay and still work; the mail has no automatic
+ trigger any more, since the only mails the portal sent were the
+ application-letter ones. The settings-page hint text and the Email box
+ hint were rewritten so they no longer talk about applications.
+ Signatures stay too: the signature upload in My settings, the morning
+ signature reminder, and the signatures on invoices and item requests
+ are unchanged, and the designation box stays for the same reason.
+ Everything else is untouched: My records, the Department Database
+ with all its tabs and the Sales Pipeline, Invoices and Request items
+ with their approval chains and public QR, Search QR for invoices,
+ requests, rows and public links, the dashboard, users, departments,
+ settings and notifications.
+
+ What was removed from the code: the whole routes_applications.py
+ file; the 7 application page templates; the letter PDF builder
+ (exports.application_pdf); the 6 tables (application_kinds,
+ applications, application_history, application_steps, leave_setup,
+ application_date_changes) in the schema, plus the upgrade code that
+ used to backfill them and seed the Custom Application kind; the
+ Bin's application section and its restore/erase routes; the Search
+ QR lookup for letters; the application checks in the invoice,
+ request and code uniqueness checks; and the "application letters"
+ mentions in the Bin, notifications and settings help texts.
+ The Management department and its user stay: invoice and item
+ request chains still use a Management step person.
+
+ Schema change: 53 tables become 47. No new files; 8 files are gone
+ (routes_applications.py and the 7 application templates).
+ Tested: 657/657 automated checks on the work copy and on a fresh
+ extract of this zip, against real MySQL 8.0 (636 checks for the rest
+ of the portal plus 21 new build-83 checks). The upgrade was also
+ checked: this code starts on a build-82 database (53 tables, with a
+ letter, a kind, leave setup and mail settings) and drops the six
+ tables to 47, keeps the user, their mail address and the mail
+ settings, and serves the login page with /applications answering 404.

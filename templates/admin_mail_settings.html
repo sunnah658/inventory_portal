@@ -3,7 +3,7 @@
 {% block title %}Mail settings{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>Mail settings</h1>
-  <p class="hint">The mail account the portal sends all its mail from. Only the portal admin can open this page. When a user creates an application, the portal mails the creator and the step user whose turn it is, from this address.</p></div></div>
+  <p class="hint">The mail account the portal sends all its mail from. Only the portal admin can open this page.</p></div></div>
 <div class="tw"><div class="stack">
   <div class="card"><h2>Sender mail account</h2>
     <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
@@ -25,7 +25,7 @@
 </div>
 <div class="stack rail">
   <div class="card"><h2>About mail</h2>
-    <p class="hint">The portal sends mail when a user creates an application: the creator gets a mail saying they created it, and the step user whose turn it is gets a mail saying it is waiting for their approval. When a step approves, the next step user gets the same mail. A user who has not added their mail in My settings gets no mail. If these settings are empty, no mail is sent at all.</p>
+    <p class="hint">A user who has not added their mail in My settings gets no mail. If these settings are empty, no mail is sent at all.</p>
     <p class="hint">The password is stored in the portal's database. For Gmail, Google does not accept the normal account password for sending — use an App Password from Google instead.</p></div>
   {{ quick_card([
     ('Settings', url_for('admin.settings'), False),

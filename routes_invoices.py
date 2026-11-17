@@ -180,9 +180,8 @@ def _new_invoice_code(db):
         if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
             if db.execute("SELECT 1 FROM public_links WHERE code_text=?", (cand,)).fetchone() is None:
                 if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
-                    if db.execute("SELECT 1 FROM applications WHERE public_code=?", (cand,)).fetchone() is None:
-                        if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
-                            return cand
+                    if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
+                        return cand
     return None
 
 def _parse_lines(form, kind):
@@ -521,7 +520,7 @@ def invoice_new():
         if cur not in CURRENCIES:
             cur = tpl["default_currency"]
         # Who approves it: up to 3 steps, picked here, exactly like an
-        # application letter. The dept admin no longer sets signatures on
+        # item request. The dept admin no longer sets signatures on
         # the template — the user picks the chain when the invoice is made.
         chain, chain_err = _parse_invoice_chain(request.form, _invoice_chain_people(db))
         if chain_err:
@@ -885,8 +884,8 @@ def _pdf_sigs(inv):
     approval chain) shows the owner's block (Prepared By) plus one block
     per chain step, each with the step's saved signature image, the role
     label ("Rejected By" when that step rejected), the name, the
-    designation and the department — the same blocks as the application
-    letter's FOR OFFICE USE. The owner's block shows the signature the
+    designation and the department — the same blocks as the item request
+    PDF. The owner's block shows the signature the
     owner saved in My settings, above the name, exactly like the steps
     show theirs; the PDF is built fresh on every download, so it reads
     the signature the owner has saved now — which is also what makes an
@@ -924,7 +923,7 @@ def _pdf_sigs(inv):
     return out
 
 # ---------------------------------------------------------------- approval chain
-# An invoice is approved the same way as an application letter: the owner
+# An invoice is approved the same way as an item request: the owner
 # picks up to 3 steps when the draft is made (role + a person from ANY
 # department), Finalise gives the invoice its number and starts it
 # forwarding through the steps in order, each person must tick "Use my

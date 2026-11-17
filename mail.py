@@ -4,7 +4,7 @@ table: smtp_sender (the mail address the portal sends from), smtp_password,
 smtp_host (the mail server), smtp_port and smtp_encryption (starttls, ssl
 or none). Nothing is sent when the settings are not filled in, and a failed
 send never raises — it only returns False, so a mail problem can never
-break the page that triggered it (for example, creating an application)."""
+break the page that triggered it."""
 
 import smtplib
 from email.message import EmailMessage

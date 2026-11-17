@@ -1,4 +1,16 @@
 ==============================================================================
+ APPLICATION LETTERS REMOVED (2026-11-17)
+==============================================================================
+ The Application Letters feature is gone from the portal, by your
+ instruction: the page, all the kinds, leave balances and Leave setup,
+ the approval chain, the letter PDFs and the public code pages for
+ letters, and all the letters and leave data with them. Back up the
+ database before applying — that is the only way back.
+ The office mail stays: the Mail settings page, the Email box in My
+ settings and the send path still work. Signatures stay too, for
+ invoices and requests. Everything else is untouched.
+
+==============================================================================
  SALES PIPELINE TEMPLATE ONLY FOR SALES & MARKETING (2026-11-17)
 ==============================================================================
  The "Sales Pipeline" template was listed on the Tabs page of every

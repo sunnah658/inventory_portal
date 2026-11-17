@@ -153,9 +153,6 @@ def create_department(db, name, template_key=None, selected=None):
     dept_id = db.execute("INSERT INTO departments(name,repairs_enabled) VALUES (?,?)",
                          (name, 1 if template_key == "IT" else 0)).lastrowid   # only the IT starter has a repair log
     create_department_columns(db, dept_id, template_key, selected)
-    # Every department has a Custom Application kind by default (2026-11-14).
-    db.execute("INSERT INTO application_kinds(department_id,name,number_prefix,next_number,is_custom) "
-               "VALUES (?,?,?,1,1)", (dept_id, "Custom Application", "CA"))
     # A department named Sales & Marketing gets the default Sales Pipeline
     # tab with its 12 columns (2026-11-15, build 66).
     if "sales" in name.lower() and "marketing" in name.lower():
@@ -581,22 +578,6 @@ def purge_ddb_tab(db, tab_id):
     db.execute("DELETE FROM ddb_tabs WHERE id=?", (tab_id,))   # columns/shares are deleted by CASCADE
 
 
-def purge_application(db, aid):
-    """Erase an application letter for good, including its uploaded signature files (every step's signature, not only the checker's and the approver's)."""
-    row = db.execute("SELECT signature_path, checker_signature_path FROM applications WHERE id=?", (aid,)).fetchone()
-    _names = []
-    if row:
-        _names += [row["signature_path"], row["checker_signature_path"]]
-    _names += [r[0] for r in db.execute("SELECT signature_path FROM application_steps WHERE application_id=?", (aid,))]
-    for _name in _names:
-        if _name:
-            try:
-                os.remove(os.path.join(config.UPLOAD_DIR, "app_signatures", os.path.basename(_name)))
-            except Exception:
-                pass
-    db.execute("DELETE FROM applications WHERE id=?", (aid,))  # history and steps are deleted by CASCADE
-
-
 def purge_invoice(db, iid):
     """Erase an invoice for good, including its chain steps' signature files
     and its lines (build 60: invoice delete is a soft delete to the Recycle
@@ -642,8 +623,6 @@ def purge_user_work(db, uid):
         purge_record(db, rid)
     for _rid in [r[0] for r in db.execute("SELECT id FROM ddb_rows WHERE owner_id=?", (uid,))]:
         purge_ddb_row(db, _rid)
-    for _aid in [r[0] for r in db.execute("SELECT id FROM applications WHERE owner_id=?", (uid,))]:
-        purge_application(db, _aid)
     for _iid in [r[0] for r in db.execute("SELECT id FROM invoices WHERE owner_id=?", (uid,))]:
         purge_invoice(db, _iid)
     for _qid in [r[0] for r in db.execute("SELECT id FROM item_requests WHERE owner_id=?", (uid,))]:
@@ -669,18 +648,11 @@ def purge_user_account(db, uid, delete_work):
     purge_user_work(db, uid)
     db.execute("UPDATE records SET deleted_by=NULL WHERE deleted_by=?", (uid,))
     db.execute("UPDATE ddb_rows SET deleted_by=NULL WHERE deleted_by=?", (uid,))
-    db.execute("UPDATE applications SET deleted_by=NULL WHERE deleted_by=?", (uid,))
     db.execute("UPDATE invoices SET deleted_by=NULL WHERE deleted_by=?", (uid,))
     db.execute("UPDATE item_requests SET deleted_by=NULL WHERE deleted_by=?", (uid,))
-    db.execute("UPDATE applications SET recipient_id=NULL WHERE recipient_id=?", (uid,))
-    db.execute("UPDATE applications SET checker_id=NULL WHERE checker_id=?", (uid,))
-    db.execute("UPDATE applications SET approver_id=NULL WHERE approver_id=?", (uid,))
-    db.execute("UPDATE application_steps SET user_id=NULL WHERE user_id=?", (uid,))
     db.execute("UPDATE invoice_steps SET user_id=NULL WHERE user_id=?", (uid,))
     db.execute("UPDATE item_request_steps SET user_id=NULL WHERE user_id=?", (uid,))
     db.execute("UPDATE item_requests SET recipient_id=NULL WHERE recipient_id=?", (uid,))
-    db.execute("UPDATE applications SET signature_by=NULL WHERE signature_by=?", (uid,))
-    db.execute("UPDATE application_history SET user_id=NULL WHERE user_id=?", (uid,))
     db.execute("UPDATE record_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
     db.execute("UPDATE record_user_shares SET shared_by=NULL WHERE shared_by=?", (uid,))
     db.execute("UPDATE repairs SET created_by=NULL WHERE created_by=?", (uid,))
@@ -733,15 +705,9 @@ def purge_expired(db):
             "SELECT id FROM ddb_tabs WHERE removed_at IS NOT NULL AND removed_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
             (config.BIN_DAYS,))]:
         purge_ddb_tab(db, _tid)
-    # Deleted application letters: after 30 days the letter and its uploaded
-    # signature are erased for good, the same as a deleted record or row.
-    for _aid in [r[0] for r in db.execute(
-            "SELECT id FROM applications WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
-            (config.BIN_DAYS,))]:
-        purge_application(db, _aid)
     # Deleted invoices and item requests: after 30 days the invoice or
     # request and its lines and chain signatures are erased for good, the
-    # same as a deleted record, row or application letter (build 60).
+    # same as a deleted record or row (build 60).
     for _iid in [r[0] for r in db.execute(
             "SELECT id FROM invoices WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
             (config.BIN_DAYS,))]:
@@ -1047,10 +1013,7 @@ def ddb_display_value(col, value):
 # ---------------------------------------------------------------- notifications
 def notify(db, user_ids, text, link=None, skip=None):
     """Put a message in the bell of each user (never for 'skip', the person who acted).
-    'skip' is one user id, or a list of them (2026-11-14: the application
-    send tells the checker directly, so the watcher notification skips the
-    checker too — otherwise a checker who is also a department admin gets
-    the same news twice)."""
+    'skip' is one user id, or a list of them."""
     if isinstance(skip, (list, tuple, set)):
         skips = set(skip)
     elif skip is not None:
@@ -1117,8 +1080,7 @@ def notify_ddb_task(db, actor, dept, text, link=None, skip=None):
     tells the true portal admins; a dept admin's or delegate's action
     tells the true portal admins and the permission users; a regular
     user's action tells that department's dept admins. 'skip' is one more
-    user who must not be told (2026-11-14: the checker, who is already
-    told directly when an application is sent to them)."""
+    user who must not be told."""
     if is_true_admin(actor):
         return
     if is_portal_admin(actor):
@@ -1313,8 +1275,8 @@ def parse_code_text(text):
 
 def new_random_code_text(db):
     """A random HRC-##### code not used by any public link, invoice,
-    item request, application letter or Department Database row (the Search
-    QR page looks all over for a code, so every code must be unique everywhere)."""
+    item request or Department Database row (the Search QR page looks all
+    over for a code, so every code must be unique everywhere)."""
     import secrets as _secrets
     for _ in range(200):
         cand = f"HRC-{_secrets.randbelow(90000) + 10000}"
@@ -1322,9 +1284,8 @@ def new_random_code_text(db):
             try:
                 if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
                     if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
-                        if db.execute("SELECT 1 FROM applications WHERE public_code=?", (cand,)).fetchone() is None:
-                            if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
-                                return cand
+                        if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
+                            return cand
             except Exception:
                 return cand
     return None
