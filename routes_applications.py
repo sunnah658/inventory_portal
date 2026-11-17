@@ -71,6 +71,7 @@ from flask import (Blueprint, Response, abort, flash, g, redirect, render_templa
 import config
 import exports
 from auth import login_required
+from mail import send_mail
 from utils import is_portal_admin, is_true_admin
 from core import external_url, notify, notify_admin_task, notify_ddb_task, notify_dept_task, permission_user_ids, true_admin_ids
 from models import get_db, log, setting_get
@@ -172,6 +173,60 @@ def _current_step(db, aid):
         if s["status"] == "pending":
             return s
     return None
+
+
+def _mail_application_created(db, app, kind):
+    """Mail the creator and the step user whose turn it is, when an
+    application is created (build 80). Only the step user whose turn it
+    is gets the mail — not every step user at once — because the chain
+    is strict order and "waiting for your approval" is only true for the
+    person whose turn it is. A user with no mail address in My settings
+    gets no mail, and nothing is sent when the portal admin has not set
+    up the sender mail on the Mail settings page. A failed send never
+    raises, so it can never break creating the application."""
+    owner = db.execute("SELECT full_name, email FROM users WHERE id=?", (app["owner_id"],)).fetchone()
+    step = _current_step(db, app["id"])
+    link = external_url(db, "applications.detail", aid=app["id"])
+    dates = ""
+    if app["from_date"] and app["to_date"]:
+        dates = (f"\nFrom: {_long_date(app['from_date'])}  To: {_long_date(app['to_date'])}  "
+                 f"({app['days']} {'day' if app['days'] == 1 else 'days'})")
+    if owner and owner["email"]:
+        send_mail(db, owner["email"],
+                  f"You created a {kind['name']} application {app['number']}",
+                  f"You created a {kind['name']} application {app['number']}.{dates}\n"
+                  f"Status: Pending — it is now with {(step['full_name'] if step else 'your department')} "
+                  f"to {STEP_VERBS[step['role']] if step else 'check'}.\n\n"
+                  f"Open it in the portal: {link}\n")
+    if step and step["user_id"]:
+        who = db.execute("SELECT full_name, email FROM users WHERE id=?", (step["user_id"],)).fetchone()
+        if who and who["email"]:
+            send_mail(db, who["email"],
+                      f"{owner['full_name'] if owner else 'A user'} created a {kind['name']} application "
+                      f"{app['number']} — waiting for your approval",
+                      f"{owner['full_name'] if owner else 'A user'} created a {kind['name']} application "
+                      f"{app['number']} and it is waiting for your approval.{dates}\n"
+                      f"Your step: {STEP_ROLES.get(step['role'], step['role'])}.\n\n"
+                      f"Open it in the portal: {link}\n")
+
+
+def _mail_application_advanced(db, app, kind, approver_name):
+    """Mail the next step user when an application is approved and it
+    becomes their turn (build 80). Same rules as the creation mail."""
+    step = _current_step(db, app["id"])
+    if not step or not step["user_id"]:
+        return
+    who = db.execute("SELECT full_name, email FROM users WHERE id=?", (step["user_id"],)).fetchone()
+    if not who or not who["email"]:
+        return
+    owner = db.execute("SELECT full_name FROM users WHERE id=?", (app["owner_id"],)).fetchone()
+    link = external_url(db, "applications.detail", aid=app["id"])
+    send_mail(db, who["email"],
+              f"{approver_name} approved {app['number']} — it is now waiting for your approval",
+              f"{approver_name} approved the {kind['name']} application {app['number']} "
+              f"from {owner['full_name'] if owner else 'a user'} and it is now waiting for your approval.\n"
+              f"Your step: {STEP_ROLES.get(step['role'], step['role'])}.\n\n"
+              f"Open it in the portal: {link}\n")
 
 def _step_user_ids(db, aid):
     return [s["user_id"] for s in _steps(db, aid) if s["user_id"]]
@@ -1051,6 +1106,9 @@ def application_new():
                        f"{g.user['full_name']} sent a {kind['name']} {number} to {rec['full_name']} to {STEP_VERBS[first_role]}.",
                        url_for("applications.detail", aid=aid), skip=g.user["id"])
             db.commit()
+            # Mail the creator and the step user whose turn it is (build 80).
+            # A failed send never raises, so it cannot break the creation.
+            _mail_application_created(db, db.execute("SELECT * FROM applications WHERE id=?", (aid,)).fetchone(), kind)
             flash(f"Application {number} sent to {rec['full_name'] if rec else 'your department'} to {STEP_VERBS[first_role]}.", "ok")
             return redirect(url_for("applications.detail", aid=aid))
     return render_template("application_form.html", kind=kind, recipients=recipients,
@@ -1463,6 +1521,13 @@ def _decide(aid):
                               url_for("applications.detail", aid=aid))
     db.commit()
     if new_status == "approved" and not is_last:
+        # Mail the next step user now that it is their turn (build 80).
+        # A failed send never raises, so it cannot break the decision.
+        # (The local is named "kind" — "_kind" would shadow the _kind()
+        # helper used on the same line.)
+        kind = _kind(db, app["kind_id"]) if app["kind_id"] else None
+        if kind:
+            _mail_application_advanced(db, app, kind, g.user["full_name"])
         flash(f"Status changed to {STATUS_LABELS[new_app_status]}. The application is now with {nxt_name}.", "ok")
     else:
         flash(f"Status changed to {STATUS_LABELS[new_status]}. The applicant and the earlier approvers have been notified.", "ok")

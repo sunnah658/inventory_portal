@@ -25,13 +25,14 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
 import config
 from auth import admin_required, login_required
 from backup import make_backup
+from dbapi import IntegrityError
 from utils import is_portal_admin, is_true_admin
 import scanner
 from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_history, ddb_is_tab_admin, ddb_tabs, ddb_values, change_owner, may_change_owner, owner_candidates, display_code, display_record_value, external_url, first_text_value, EDIT_LEVELS, MANAGE_LEVELS, PERMISSIONS, PERM_WORDS, clean_permission, share_with_department,
                   share_with_user, access_level, add_history, admin_ids, build_csv, can_use_record_attachments,
                   column_names, col_weight, create_record, dept_member_ids, filter_clause, get_record,
                   hidden_mine_columns, set_hidden_mine_columns, record_columns,
-                  names_for_records, notify, notify_admin_task, parse_code_text, parse_form, print_col_widths, purge_application, purge_ddb_row, purge_invoice, purge_record, purge_request, purge_user_account, rec_select, reminder_rows,
+                  names_for_records, notify, notify_admin_task, notify_ddb_task, parse_code_text, parse_form, print_col_widths, purge_application, purge_ddb_row, purge_ddb_tab, purge_invoice, purge_record, purge_request, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context, USER_COLUMN_TYPES,
                   update_record, values_for, viewable_departments, USER_TYPE_LABEL)
 from models import get_db, log
@@ -1316,11 +1317,34 @@ def bin_page():
     Database row never appeared here at all."""
     db = get_db()
     portal = is_portal_admin(g.user)
+    # The Others tab holds deleted Department Database tabs (build 79). A
+    # portal admin sees them all; anyone else sees it only when they can
+    # manage tabs in their own department (dept admin or delegate).
+    show_others = portal or ddb_is_tab_admin(db, g.user, g.user["department_id"])
     tab = request.args.get("tab", "records")
-    if tab not in ("records", "users"):
+    if tab not in ("records", "users", "others"):
         tab = "records"
     if tab == "users" and not portal:
         tab = "records"
+    if tab == "others" and not show_others:
+        tab = "records"
+
+    # The deleted Department Database tabs, for the Others tab and its KPI.
+    # A portal admin sees every department's; anyone else sees only their
+    # own department's.
+    deleted_tabs = []
+    if show_others:
+        _where = "t.removed_at IS NOT NULL" + ("" if portal else " AND t.department_id=?")
+        _params = [] if portal else [g.user["department_id"]]
+        deleted_tabs = db.execute("SELECT t.*, d.name AS department_name, "
+                                  "(SELECT full_name FROM users WHERE id=t.deleted_by) AS deleted_by_name "
+                                  "FROM ddb_tabs t JOIN departments d ON d.id=t.department_id "
+                                  "WHERE " + _where + " ORDER BY t.removed_at DESC", _params).fetchall()
+
+    def _erase(deleted_at):
+        erase = datetime.strptime(deleted_at, "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS)
+        return erase.strftime("%d %b %Y"), (erase - datetime.now()).days
+
     if tab == "users":
         rows = db.execute("SELECT u.*, d.name AS department_name, "
                           "(SELECT full_name FROM users WHERE id=u.deleted_by) AS deleted_by_name "
@@ -1331,11 +1355,25 @@ def bin_page():
             erase = datetime.strptime(r["deleted_at"], "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS) if r["deleted_at"] else None
             users.append(dict(r, erase_on=erase.strftime("%d %b %Y") if erase else "",
                               days_left=(erase - datetime.now()).days if erase else 0))
-        return render_template("bin.html", items=[], users=users, tab=tab, portal=portal, days=config.BIN_DAYS)
+        return render_template("bin.html", items=[], users=users, deleted_tabs=deleted_tabs, tab=tab,
+                               portal=portal, show_others=show_others, days=config.BIN_DAYS)
 
-    def _erase(deleted_at):
-        erase = datetime.strptime(deleted_at, "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS)
-        return erase.strftime("%d %b %Y"), (erase - datetime.now()).days
+    if tab == "others":
+        # The tab is listed like any other deleted item, so the same table
+        # renders it, with Restore and Delete forever.
+        items = []
+        for r in deleted_tabs:
+            erase_on, days_left = _erase(r["removed_at"])
+            row_count = db.execute("SELECT COUNT(*) FROM ddb_rows WHERE tab_id=? AND deleted_at IS NULL",
+                                   (r["id"],)).fetchone()[0]
+            items.append(dict(r, summary=r["name"], erase_on=erase_on, days_left=days_left,
+                              deleted_at=r["removed_at"],
+                              kind_label=f"Department tab · {row_count} row(s)",
+                              view_url=None,
+                              restore_url=url_for("records.bin_tab_restore", tab_id=r["id"]),
+                              purge_url=url_for("records.bin_tab_purge", tab_id=r["id"])))
+        return render_template("bin.html", items=items, users=[], deleted_tabs=deleted_tabs, tab=tab,
+                               portal=portal, show_others=show_others, days=config.BIN_DAYS)
 
     items = []
     # 1. Personal records (as before).
@@ -1435,7 +1473,8 @@ def bin_page():
                           restore_url=url_for("records.bin_request_restore", rid=r["id"]),
                           purge_url=url_for("records.bin_request_purge", rid=r["id"])))
     items.sort(key=lambda it: it["deleted_at"] or "", reverse=True)
-    return render_template("bin.html", items=items, users=[], tab=tab, portal=portal, days=config.BIN_DAYS)
+    return render_template("bin.html", items=items, users=[], deleted_tabs=deleted_tabs, tab=tab,
+                           portal=portal, show_others=show_others, days=config.BIN_DAYS)
 
 
 def _bin_purge_blocked(db, deleted_by):
@@ -1488,6 +1527,58 @@ def bin_ddb_purge(rid):
     db.commit()
     flash("Row erased for good.", "ok")
     return redirect(url_for("records.bin_page"))
+
+
+@bp.route("/bin/tabs/<int:tab_id>/restore", methods=["POST"])
+@login_required
+def bin_tab_restore(tab_id):
+    """Restore a deleted Department Database tab from the Recycle Bin's
+    Others tab. The department admin of that department (or a delegate, or
+    the portal admin) can do it."""
+    db = get_db()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (tab_id,)).fetchone()
+    if tab is None or not tab["removed_at"]:
+        abort(404)
+    if tab["name"].lower() == "general":
+        # The General tab was deleted for all users (2026-11-05); restoring it
+        # would put it back in front of every user, so it stays deleted.
+        flash("The General tab was removed for all users and cannot be restored.", "error")
+        return redirect(url_for("records.bin_page", tab="others"))
+    if not ddb_is_tab_admin(db, g.user, tab["department_id"]):
+        abort(403)
+    try:
+        db.execute("UPDATE ddb_tabs SET removed_at=NULL, deleted_by=NULL WHERE id=?", (tab_id,))
+        log(db, "ddb_tab_restore", f"{tab['name']} (from the Recycle Bin)")
+        notify_ddb_task(db, g.user, db.execute("SELECT * FROM departments WHERE id=?", (tab["department_id"],)).fetchone(),
+                        f"{g.user['full_name']} restored the tab '{tab['name']}'.",
+                        url_for("ddb.index", dept=tab["department_id"], tab=tab_id))
+        db.commit()
+        flash("Tab restored.", "ok")
+    except IntegrityError:
+        db.rollback()
+        flash(f"A tab named '{tab['name']}' exists already. Rename it first, then restore.", "error")
+    return redirect(url_for("records.bin_page", tab="others"))
+
+
+@bp.route("/bin/tabs/<int:tab_id>/purge", methods=["POST"])
+@login_required
+def bin_tab_purge(tab_id):
+    """Erase a deleted Department Database tab for good, from the Recycle
+    Bin's Others tab, with its rows and columns."""
+    db = get_db()
+    tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (tab_id,)).fetchone()
+    if tab is None or not tab["removed_at"]:
+        abort(404)
+    if not ddb_is_tab_admin(db, g.user, tab["department_id"]):
+        abort(403)
+    if _bin_purge_blocked(db, tab["deleted_by"]):
+        flash("Only the portal admin can erase this tab for good.", "error")
+        return redirect(url_for("records.bin_page", tab="others"))
+    purge_ddb_tab(db, tab_id)
+    log(db, "ddb_tab_erase", f"tab {tab_id} ({tab['name']}) erased for good")
+    db.commit()
+    flash("Tab erased for good.", "ok")
+    return redirect(url_for("records.bin_page", tab="others"))
 
 
 @bp.route("/bin/applications/<int:aid>/restore", methods=["POST"])

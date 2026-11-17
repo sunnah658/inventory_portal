@@ -52,7 +52,7 @@
 {% else %}
 {% if kinds %}
 <div class="kp">
-{% for t in kinds %}<div class="k1"><span>{% if t['is_custom'] %}custom{% else %}leave{% endif %}</span><b style="font-size:1.1rem">{{ t['name'] }}</b><small>{% if t['is_custom'] %}Write your own subject and body{% else %}Apply to an HR &amp; Admin user{% endif %}</small><div style="margin-top:10px"><a class="b p sm" href="{{ url_for('applications.application_new', kind=t['id']) }}">Create</a></div></div>{% endfor %}
+{% for t in kinds %}<div class="k1"><span>{% if t['is_custom'] %}custom{% else %}leave{% endif %}</span><b style="font-size:1.1rem">{{ t['name'] }}</b>{% if t['is_custom'] %}<small>Write your own subject and body</small>{% endif %}<div style="margin-top:10px"><a class="b p sm" href="{{ url_for('applications.application_new', kind=t['id']) }}">Create</a></div></div>{% endfor %}
 </div>
 {% endif %}
 {% if rows %}

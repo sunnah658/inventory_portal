@@ -18,6 +18,7 @@ from werkzeug.security import generate_password_hash
 
 import config
 from auth import admin_required, login_required
+from mail import send_mail, smtp_config, valid_email
 from utils import is_portal_admin, is_true_admin
 from backup import make_backup
 from core import (COLUMN_TYPES, TYPE_LABEL, admin_ids, build_csv, column_names, create_department, dashboard_settings,
@@ -965,6 +966,61 @@ def settings():
     return render_template("admin_settings.html",
                            name=setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
                            public_base_url=setting_get(db, "public_base_url", ""))
+
+
+@bp.route("/mail-settings", methods=["GET", "POST"])
+@admin_required
+def mail_settings():
+    """Mail settings — only the portal admin. The sender mail account the
+    portal sends all its mail from: the mail address, its password, the
+    mail server, the port and the encryption. The password is stored in the
+    settings table; leaving it blank on save keeps the current one. The
+    test button sends a test mail to the address the admin types, so the
+    settings can be checked before any real mail goes out."""
+    db = get_db()
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "save":
+            sender = (request.form.get("smtp_sender") or "").strip()
+            password = request.form.get("smtp_password") or ""
+            host = (request.form.get("smtp_host") or "").strip()
+            port = (request.form.get("smtp_port") or "").strip()
+            encryption = (request.form.get("smtp_encryption") or "starttls").strip().lower()
+            if encryption not in ("starttls", "ssl", "none"):
+                encryption = "starttls"
+            if sender and not valid_email(sender):
+                flash("Type a valid mail address to send from.", "error")
+            elif port and not port.isdigit():
+                flash("The port must be a number.", "error")
+            else:
+                setting_set(db, "smtp_sender", sender)
+                if password:
+                    setting_set(db, "smtp_password", password)
+                setting_set(db, "smtp_host", host)
+                setting_set(db, "smtp_port", port)
+                setting_set(db, "smtp_encryption", encryption)
+                log(db, "settings", "mail settings changed")
+                notify_admin_task(db, g.user,
+                                  f"{g.user['full_name']} changed the mail settings.",
+                                  url_for("admin.mail_settings"))
+                db.commit()
+                flash("Mail settings saved.", "ok")
+        elif action == "test":
+            to = (request.form.get("test_to") or "").strip()
+            if not valid_email(to):
+                flash("Type a valid mail address to send the test mail to.", "error")
+            else:
+                ok, reason = send_mail(db, to, "Test mail from the portal",
+                                       "This is a test mail from the portal. The mail settings work.")
+                if ok:
+                    flash(f"Test mail sent to {to}.", "ok")
+                else:
+                    flash(f"The test mail could not be sent: {reason}", "error")
+        return redirect(url_for("admin.mail_settings"))
+    sender, _password, host, port, encryption = smtp_config(db)
+    return render_template("admin_mail_settings.html",
+                           sender=sender, has_password=bool(_password),
+                           host=host, port=port or "", encryption=encryption)
 
 
 # ================================================================ delete / approve / reject a user

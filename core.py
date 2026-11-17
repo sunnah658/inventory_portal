@@ -572,6 +572,14 @@ def purge_ddb_row(db, rid):
     db.execute("DELETE FROM ddb_rows WHERE id=?", (rid,))      # values/history/shares are deleted by CASCADE
 
 
+def purge_ddb_tab(db, tab_id):
+    """Erase a Department Database tab for good, with its rows (and their
+    attachment files). Its columns and tab shares go with it by CASCADE."""
+    for (rid,) in db.execute("SELECT id FROM ddb_rows WHERE tab_id=?", (tab_id,)).fetchall():
+        purge_ddb_row(db, rid)
+    db.execute("DELETE FROM ddb_tabs WHERE id=?", (tab_id,))   # columns/shares are deleted by CASCADE
+
+
 def purge_application(db, aid):
     """Erase an application letter for good, including its uploaded signature files (every step's signature, not only the checker's and the approver's)."""
     row = db.execute("SELECT signature_path, checker_signature_path FROM applications WHERE id=?", (aid,)).fetchone()
@@ -718,6 +726,12 @@ def purge_expired(db):
             "SELECT id FROM ddb_rows WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
             (config.BIN_DAYS,))]:
         purge_ddb_row(db, _rid)
+    # Deleted Department Database tabs: after 30 days the tab and its rows
+    # and columns are erased for good, the same as a deleted row (build 79).
+    for _tid in [r[0] for r in db.execute(
+            "SELECT id FROM ddb_tabs WHERE removed_at IS NOT NULL AND removed_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+            (config.BIN_DAYS,))]:
+        purge_ddb_tab(db, _tid)
     # Deleted application letters: after 30 days the letter and its uploaded
     # signature are erased for good, the same as a deleted record or row.
     for _aid in [r[0] for r in db.execute(

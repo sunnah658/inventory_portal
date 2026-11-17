@@ -1,4 +1,36 @@
 ==============================================================================
+ OFFICE MAIL FOR APPLICATIONS (2026-11-16)
+==============================================================================
+ 1. Mail settings page (portal admin only). Settings -> Mail settings.
+    The portal admin enters the sender mail account there: the mail
+    address, its password, the mail server, the port and the encryption
+    (STARTTLS / SSL / None). All portal mail goes from that address.
+    A "Send a test mail" box checks the settings before any real mail
+    goes out.
+ 2. Each user adds their own mail address in My settings (new Email
+    box). A user who has not added an email gets no mail.
+ 3. When a user creates an application, the creator gets a mail saying
+    they created it, and the step user whose turn it is gets a mail
+    saying it is waiting for their approval. When a step approves, the
+    next step user gets the same mail. Only the step user whose turn it
+    is gets the mail, not every step user at once. If the sender mail
+    is not set up, no mail is sent and nothing breaks.
+
+==============================================================================
+ DELETED TABS GO TO THE RECYCLE BIN; SHARED TAB STAYS ON INVOICES AND
+ REQUEST ITEMS; NO "APPLY TO" LINE ON LEAVE KINDS (2026-11-16)
+==============================================================================
+ 1. A deleted Department Database tab no longer stays on the Tabs page.
+    It goes to the Recycle Bin, into a new Others tab, and is restored
+    from there, with its rows. After 30 days it is erased for good.
+ 2. A tab shared with you now stays visible in the tabs row when you
+    open the Invoices or Request items tab. Before, it vanished there
+    and only came back on the main Department Database page.
+ 3. On the Application Letters page, the line "Apply to an HR & Admin
+    user" is gone from the leave kind cards. Custom Application still
+    says "Write your own subject and body".
+
+==============================================================================
  TAB SHARING BY THE DEPARTMENT ADMIN; ROW SHARING REMOVED (2026-11-16)
 ==============================================================================
  1. A normal user can no longer share one Department Database record

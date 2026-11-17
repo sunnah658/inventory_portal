@@ -150,6 +150,19 @@ def _get_tab(db, dept, tab_id=None):
     return tabs[0], tabs
 
 
+def _tabs_row(own, shared_tabs):
+    """The tabs row for the Department Database pages: this department's own
+    tabs, then the tabs shared with this user, each named TabName(DepartmentName).
+    The Invoices and Request items pages use this too, so a shared tab stays
+    visible there (build 79)."""
+    tabs = list(own)
+    for st in shared_tabs:
+        tabs.append({"id": st["tab_id"], "name": st["display_name"],
+                     "department_id": st["dept_id"], "shared": True,
+                     "access": st["access"]})
+    return tabs
+
+
 def _resolve_tab(db, dept, tab_id=None):
     """(tab, tabs, shared) for the list/export/report views. tab is the tab
     being viewed — an own tab of this department, or a tab shared with this
@@ -160,11 +173,7 @@ def _resolve_tab(db, dept, tab_id=None):
     never resolves a shared tab (he opens any department directly)."""
     own = ddb_tabs(db, dept["id"])
     shared_tabs = ddb_shared_tabs(db, g.user)
-    tabs = list(own)
-    for st in shared_tabs:
-        tabs.append({"id": st["tab_id"], "name": st["display_name"],
-                     "department_id": st["dept_id"], "shared": True,
-                     "access": st["access"]})
+    tabs = _tabs_row(own, shared_tabs)
     if tab_id is not None:
         for tb in own:
             if tb["id"] == tab_id:
@@ -886,7 +895,9 @@ def _invoice_tab_view(db, dept, is_admin, args):
                        (dept["id"],)).fetchall()
     create_templates = db.execute("SELECT * FROM invoice_templates WHERE department_id=? AND status='active' ORDER BY id",
                                   (dept["id"],)).fetchall()
-    return render_template("deptdb_invoices.html", dept=dept, tabs=ddb_tabs(db, dept["id"]), is_admin=is_admin,
+    return render_template("deptdb_invoices.html", dept=dept,
+                           tabs=_tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user)),
+                           is_admin=is_admin,
                            sub_tabs=[{"id": tid, "name": name} for tid, name in sub.items()],
                            invtype=invtype, invtype_id=invtype_id, counts=counts, rows=rows,
                            users=users, user_filter=user_filter, status=status, q=q, sort=sort,
@@ -1001,7 +1012,9 @@ def _request_tab_view(db, dept, is_admin, args):
     keep["tab"] = "requests"
     create_kinds = db.execute("SELECT * FROM item_request_kinds WHERE department_id=? AND status='active' ORDER BY id",
                               (dept["id"],)).fetchall()
-    return render_template("deptdb_requests.html", dept=dept, tabs=ddb_tabs(db, dept["id"]), is_admin=is_admin,
+    return render_template("deptdb_requests.html", dept=dept,
+                           tabs=_tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user)),
+                           is_admin=is_admin,
                            reqtab=reqtab, counts=counts, rows=rows,
                            status=status, q=q, sort=sort, fdept=fdept or "",
                            total=total, page=page, pages=pages, keep=keep, create_kinds=create_kinds,
@@ -1050,8 +1063,10 @@ def tabs():
                 db.rollback()
                 flash(f"A tab named '{name}' already exists.", "error")
         return redirect(url_for("ddb.tabs", **_back(dept)))
+    # Only live tabs are listed here. A deleted tab leaves this page and
+    # goes to the Recycle Bin's Others tab, where it is restored (build 79).
     all_tabs = db.execute("SELECT t.*, (SELECT COUNT(*) FROM ddb_rows r WHERE r.tab_id=t.id AND r.deleted_at IS NULL) AS row_count "
-                          "FROM ddb_tabs t WHERE t.department_id=? AND NOT (t.removed_at IS NOT NULL AND LOWER(t.name)='general') ORDER BY t.removed_at IS NOT NULL, t.position, t.id",
+                          "FROM ddb_tabs t WHERE t.department_id=? AND t.removed_at IS NULL ORDER BY t.position, t.id",
                           (dept["id"],)).fetchall()
     return render_template("deptdb_tabs.html", dept=dept, tabs=all_tabs, templates=TEMPLATE_TABS)
 
@@ -1092,13 +1107,13 @@ def tab_delete(tab_id):
     tab = db.execute("SELECT * FROM ddb_tabs WHERE id=? AND department_id=?", (tab_id, dept["id"])).fetchone()
     if tab is None:
         abort(404)
-    db.execute("UPDATE ddb_tabs SET removed_at=datetime('now','localtime') WHERE id=?", (tab_id,))
+    db.execute("UPDATE ddb_tabs SET removed_at=datetime('now','localtime'), deleted_by=? WHERE id=?", (g.user["id"], tab_id))
     log(db, "ddb_tab_delete", f"{dept['name']}: {tab['name']}")
     notify_ddb_task(db, g.user, dept,
                     f"{g.user['full_name']} deleted the tab '{tab['name']}' in {dept['name']}.",
                     url_for("ddb.index", dept=dept["id"]))
     db.commit()
-    flash(f"Tab '{tab['name']}' deleted. Its rows are hidden until the tab is restored.", "ok")
+    flash(f"Tab '{tab['name']}' deleted. You can restore it from the Recycle Bin.", "ok")
     return redirect(url_for("ddb.tabs", **_back(dept)))
 
 

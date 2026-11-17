@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}Mail settings{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Mail settings</h1>
+  <p class="hint">The mail account the portal sends all its mail from. Only the portal admin can open this page. When a user creates an application, the portal mails the creator and the step user whose turn it is, from this address.</p></div></div>
+<div class="tw"><div class="stack">
+  <div class="card"><h2>Sender mail account</h2>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
+      <div class="fd"><label for="smtp_sender">Mail address to send from</label><input id="smtp_sender" name="smtp_sender" type="email" maxlength="255" placeholder="accounts@hrctech.net" value="{{ sender }}"></div>
+      <div class="fd"><label for="smtp_password">Password</label><input id="smtp_password" name="smtp_password" type="password" autocomplete="new-password" placeholder="{% if has_password %}Leave blank to keep the current password{% else %}The password of the mail above{% endif %}">{% if has_password %}<div class="sub">A password is already saved. Leave this blank to keep it.</div>{% endif %}</div>
+      <div class="fd"><label for="smtp_host">Mail server</label><input id="smtp_host" name="smtp_host" type="text" maxlength="255" placeholder="mail.hrctech.net" value="{{ host }}"><div class="sub">The SMTP server of the mail above. For Gmail it is smtp.gmail.com, for Outlook smtp.office365.com, for the office mail it is the address the mail app uses.</div></div>
+      <div class="fd"><label for="smtp_port">Port</label><input id="smtp_port" name="smtp_port" type="text" maxlength="5" placeholder="587" value="{{ port }}"><div class="sub">Leave it empty for the usual port: 587 for STARTTLS, 465 for SSL.</div></div>
+      <div class="fd"><label for="smtp_encryption">Encryption</label><select id="smtp_encryption" name="smtp_encryption">
+        <option value="starttls" {{ 'selected' if encryption == 'starttls' }}>STARTTLS (port 587)</option>
+        <option value="ssl" {{ 'selected' if encryption == 'ssl' }}>SSL (port 465)</option>
+        <option value="none" {{ 'selected' if encryption == 'none' }}>None</option>
+      </select></div>
+      <button class="b p" type="submit">Save mail settings</button></form></div>
+  <div class="card"><h2>Send a test mail</h2>
+    <p class="hint">Send a test mail to check the settings before any real mail goes out.</p>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="test">
+      <div class="fd"><label for="test_to">Send the test mail to</label><input id="test_to" name="test_to" type="email" maxlength="255" placeholder="your own mail address" value="{{ sender }}"></div>
+      <button class="b p" type="submit">Send test mail</button></form></div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>About mail</h2>
+    <p class="hint">The portal sends mail when a user creates an application: the creator gets a mail saying they created it, and the step user whose turn it is gets a mail saying it is waiting for their approval. When a step approves, the next step user gets the same mail. A user who has not added their mail in My settings gets no mail. If these settings are empty, no mail is sent at all.</p>
+    <p class="hint">The password is stored in the portal's database. For Gmail, Google does not accept the normal account password for sending — use an App Password from Google instead.</p></div>
+  {{ quick_card([
+    ('Settings', url_for('admin.settings'), False),
+    ('Users', url_for('admin.users'), False),
+    ('Dashboard', url_for('admin.dashboard'), False),
+  ]) }}
+</div></div>
+{% endblock %}

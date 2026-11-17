@@ -2,14 +2,15 @@
 {% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Recycle bin{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records, Department Database rows, application letters, invoices and item requests stay here for {{ days }} days, then are erased for good. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
+<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records, Department Database rows, application letters, invoices and item requests stay here for {{ days }} days, then are erased for good. Deleted Department Database tabs stay in the Others tab, where they can be restored. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
 <div class="kp">
   {{ kpi('Deleted records', items|length) }}
+  {% if show_others %}{{ kpi('Deleted tabs', deleted_tabs|length) }}{% endif %}
   {% if portal %}{{ kpi('Deleted users', users|length) }}{% endif %}
   {{ kpi('Kept for', days ~ ' days') }}
 </div>
 <div class="tw"><div>
-{% if portal %}<div class="tabs"><a class="tab {{ 'on' if tab == 'records' }}" href="{{ url_for('records.bin_page', tab='records') }}">Records</a><a class="tab {{ 'on' if tab == 'users' }}" href="{{ url_for('records.bin_page', tab='users') }}">Users</a></div>{% endif %}
+{% if portal or show_others %}<div class="tabs"><a class="tab {{ 'on' if tab == 'records' }}" href="{{ url_for('records.bin_page', tab='records') }}">Records</a>{% if show_others %}<a class="tab {{ 'on' if tab == 'others' }}" href="{{ url_for('records.bin_page', tab='others') }}">Others</a>{% endif %}{% if portal %}<a class="tab {{ 'on' if tab == 'users' }}" href="{{ url_for('records.bin_page', tab='users') }}">Users</a>{% endif %}</div>{% endif %}
 {% if tab == 'users' %}
 <div class="tb">
 {% if users %}<table><thead><tr><th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
@@ -37,15 +38,15 @@ function purgeUser(form){
   <td class="actcell">
     <form method="post" action="{{ r['restore_url'] }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p sm" type="submit">Restore</button></form>
     <form method="post" action="{{ r['purge_url'] }}" onsubmit="return confirm('Erase this for good? This cannot be undone.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b dg sm" type="submit">Delete forever</button></form></td></tr>{% endfor %}
-</tbody></table>{% else %}<div class="empty">The recycle bin is empty.</div>{% endif %}
+</tbody></table>{% else %}<div class="empty">{% if tab == 'others' %}No deleted tabs in the recycle bin.{% else %}The recycle bin is empty.{% endif %}</div>{% endif %}
 </div>
 {% endif %}
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens here</h2>
-    <p class="hint">A deleted record, Department Database row, application letter, invoice or item request can be restored any time within {{ days }} days. After that it is erased for good.</p>
+    <p class="hint">A deleted record, Department Database row, application letter, invoice or item request can be restored any time within {{ days }} days. After that it is erased for good. A deleted Department Database tab is restored from the Others tab, with its rows.</p>
     <p class="hint">Deleting a user for good asks: "You want to delete this user all work from the portal too?" — <b>Yes</b> erases the work at once, <b>No</b> leaves the work until the {{ days }} days end. A purged user can never be restored.</p>
-    <p class="hint">A permission user can restore anything, but only the portal admin can erase a record, row, application, invoice or request that a permission user deleted.</p></div>
+    <p class="hint">A permission user can restore anything, but only the portal admin can erase a record, row, application, invoice, request or tab that a permission user deleted.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),
     ('All records', url_for('admin.all_records'), False) if can_portal_admin else None,

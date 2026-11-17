@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
     designation          VARCHAR(255),
     username             VARCHAR(255) NOT NULL UNIQUE,
     password_hash        VARCHAR(255) NOT NULL,
+    email                VARCHAR(255),
     department_id        INT,
     role                 VARCHAR(255) NOT NULL DEFAULT 'user' CHECK (role IN ('admin','user')),
     must_change_password INT NOT NULL DEFAULT 1,
@@ -406,10 +407,12 @@ CREATE TABLE IF NOT EXISTS ddb_tabs (
     created_by    INT,
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     removed_at    DATETIME,
+    deleted_by    INT,
     name_live     VARCHAR(255) GENERATED ALWAYS AS
                   (CASE WHEN removed_at IS NULL THEN name ELSE NULL END) STORED,
     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
     FOREIGN KEY (created_by) REFERENCES users(id),
+    FOREIGN KEY (deleted_by) REFERENCES users(id),
     UNIQUE KEY ux_ddb_tab_name (department_id, name_live)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1140,6 +1143,7 @@ def _upgrade_ddb_tabs(conn):
     _ensure_column(conn, "ddb_rows", "public_enabled", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "ddb_rows", "public_views", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "ddb_rows", "deleted_by", "INTEGER REFERENCES users(id)")  # who deleted the row, shown in the Recycle Bin (2026-11-10)
+    _ensure_column(conn, "ddb_tabs", "deleted_by", "INTEGER REFERENCES users(id)")  # who deleted the tab, shown in the Recycle Bin Others tab (2026-11-16)
     _ensure_column(conn, "applications", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-10)
     _ensure_column(conn, "applications", "deleted_by", "INTEGER REFERENCES users(id)")
     _ensure_column(conn, "invoices", "deleted_at", "DATETIME")  # soft delete, shown in the Recycle Bin (2026-11-14)
@@ -1348,6 +1352,7 @@ def init_db():
         _ensure_column(conn, "departments", "attachment_max_mb", "INT NOT NULL DEFAULT 10")
         _ensure_column(conn, "users", "created_by", "INT REFERENCES users(id)")  # who created the account (2026-11-05)
         _ensure_column(conn, "users", "designation", "VARCHAR(255)")  # job title, for the owner signature (2026-11-10)
+        _ensure_column(conn, "users", "email", "VARCHAR(255)")  # the user's own mail address, set in My settings (2026-11-16)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")

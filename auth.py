@@ -19,6 +19,7 @@ from flask import (Blueprint, abort, flash, g, redirect, render_template, reques
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
+from mail import valid_email
 from models import get_db, log
 from security import (blocked_reason, create_session, password_problem, record_attempt,
                       revoke_session)
@@ -331,14 +332,17 @@ def my_settings():
         full_name = (request.form.get("full_name") or "").strip()
         designation = (request.form.get("designation") or "").strip()
         username = (request.form.get("username") or "").strip()
+        email = (request.form.get("email") or "").strip()
         if not full_name or not username:
             flash("Full name and username are required.", "error")
+        elif email and not valid_email(email):
+            flash("Type a valid mail address, or leave it empty.", "error")
         elif db.execute("SELECT 1 FROM users WHERE username=? AND id != ?",
                         (username, g.user["id"])).fetchone():
             flash(f"The username '{username}' is already used.", "error")
         else:
-            db.execute("UPDATE users SET full_name=?, designation=?, username=? WHERE id=?",
-                       (full_name, designation, username, g.user["id"]))
+            db.execute("UPDATE users SET full_name=?, designation=?, username=?, email=? WHERE id=?",
+                       (full_name, designation, username, email, g.user["id"]))
             log(db, "my_settings", username)
             db.commit()
             flash("Your settings have been saved.", "ok")

@@ -5190,3 +5190,93 @@
     code starts on a build-77 database (52 tables), creates the new
     table (53 tables) and deletes the old row shares, and serves the
     login page.
+
+
+98. DELETED TABS GO TO THE RECYCLE BIN; SHARED TAB STAYS ON INVOICES AND
+    REQUEST ITEMS; NO "APPLY TO" LINE ON LEAVE KINDS (2026-11-16)
+    (1) A deleted Department Database tab no longer stays on the Tabs
+    page. It leaves that page and goes to the Recycle Bin, into a new
+    Others tab. The Tabs page now shows only live tabs (no deleted
+    tag, no Restore button there). In the Bin's Others tab the deleted
+    tab is listed with its department, who deleted it and when it will
+    be erased, and it can be restored from there (with its rows) or
+    deleted forever. Restoring refuses when a live tab now has the
+    same name. A deleted tab is erased for good after 30 days, with
+    its rows and columns. Who sees the Others tab: the portal admin
+    (every department's deleted tabs) and the department admin or
+    delegate of a department (that department's deleted tabs). A
+    regular user never sees it. The same erase rule as other Bin
+    items applies: only the portal admin can erase a tab a permission
+    user or the portal admin deleted. New column ddb_tabs.deleted_by
+    (who deleted the tab); no new table, still 53 tables.
+    (2) A tab shared with a department or a user used to vanish from
+    the tabs row when the user opened the Invoices or Request items
+    tab, because those two pages built their tabs row from only the
+    department's own tabs. They now use the same tabs row as the main
+    Department Database page — own tabs plus the shared tabs — so the
+    shared tab stays visible on every tab.
+    (3) On the Application Letters page, the line "Apply to an HR &
+    Admin user" is gone from the leave kind cards (Leave Application,
+    Casual Leave, Sick Leave, Annual Leave, Maternity Leave). Custom
+    Application still says "Write your own subject and body".
+    Tested: 1113/1113 automated checks (1086 of build 78 plus 27 new)
+    on the work copy and on a fresh extract of this zip, against real
+    MySQL 8.0. The upgrade was also checked: this code starts on a
+    build-78 database (53 tables), adds the deleted_by column and
+    serves the login page.
+
+
+==============================================================================
+ 99. OFFICE MAIL FOR APPLICATIONS (2026-11-16)
+==============================================================================
+ 1. Mail settings page (portal admin only). Settings -> Mail settings
+    (or /admin/mail-settings). Only the portal admin can open it. The
+    admin enters everything the portal needs to send mail, and all mail
+    goes from this one account:
+      - Mail address to send from (the sender address)
+      - Password (of that mail address)
+      - Mail server (the SMTP server, e.g. mail.hrctech.net for the
+        office Icewarp mail, smtp.gmail.com for Gmail,
+        smtp.office365.com for Outlook)
+      - Port (leave empty for the usual port: 587 for STARTTLS, 465
+        for SSL)
+      - Encryption: STARTTLS (port 587), SSL (port 465) or None
+    Leaving the password blank when saving keeps the saved password.
+    The password is stored in the portal's database (settings table).
+    For Gmail, Google does not accept the normal account password for
+    sending mail — use an App Password from Google instead. The portal
+    server must be able to reach the mail server (outbound SMTP).
+    A "Send a test mail" box on the same page sends a test mail to an
+    address the admin types, so the settings can be checked before any
+    real mail goes out.
+ 2. Each user adds their own mail address in My settings (new Email
+    box). A user who has not added an email gets no mail. A bad email
+    address is refused when saving.
+ 3. When a user creates an application, the portal mails:
+      - the creator, to their own mail: "You created a [kind]
+        application [number]" (with the dates and who it is now with);
+      - the step user whose turn it is: "[creator] created a [kind]
+        application [number] — waiting for your approval" (with the
+        dates and their step, and a link to open it in the portal).
+    When a step approves and the application moves to the next step,
+    that next step user gets the same "waiting for your approval"
+    mail. No mail is sent when the application is finally approved or
+    rejected, and no mail is sent for invoices or item requests — only
+    for application letters, as asked.
+    READING (open): only the step user whose turn it is gets the mail,
+    not every step user at once. The chain is strict order, so
+    "waiting for your approval" is only true for the person whose turn
+    it is. If you want all step users mailed at once when the
+    application is created, say so and it will be changed.
+    A failed send never breaks creating or deciding an application:
+    the application is still created/decided, the mail just does not
+    go out. If the sender mail is not set up at all, no mail is sent
+    and nothing breaks.
+    New: mail.py (the SMTP helper, Python's built-in smtplib, no new
+    package) and templates/admin_mail_settings.html. New column
+    users.email. No new table, still 53 tables.
+    Tested: 1133/1133 automated checks (1113 of build 79 plus 20 new)
+    on the work copy and on a fresh extract of this zip, against real
+    MySQL 8.0. The upgrade was also checked: this code starts on a
+    build-79 database (53 tables), adds the users.email column, keeps
+    the old users, and serves the login page.

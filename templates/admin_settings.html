@@ -25,6 +25,7 @@
   <div class="card"><h2>About settings</h2>
     <p class="hint">The company name and logo show on the login page, on every page, in the browser tab and on printouts. A wide picture with a transparent background (PNG) looks best.</p></div>
   {{ quick_card([
+    ('Mail settings', url_for('admin.mail_settings'), False),
     ('Users', url_for('admin.users'), False),
     ('Departments', url_for('admin.departments'), False),
     ('Dashboard', url_for('admin.dashboard'), False),
