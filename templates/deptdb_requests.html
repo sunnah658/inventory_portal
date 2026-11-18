@@ -33,7 +33,7 @@
 <div class="tabs">
   {% for tb in tabs %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
   <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
-  <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>
+  <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>{% if show_clients_tab %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients') }}">Client onboarding</a>{% endif %}
 </div>
 <div class="tabs" style="margin-top:8px">
   <a class="tab {{ 'on' if reqtab == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests', reqtab='all', status=status, q=q, sort=sort, fdept=fdept) }}">All request · {{ counts.all }}</a>

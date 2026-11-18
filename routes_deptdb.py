@@ -3,7 +3,7 @@ routes_deptdb.py - the DEPARTMENT DATABASE, as tabs inside one department page.
 
 There is no single DeptDB table any more. Under "Department database" the
 department admin (or a delegate he chose) creates tabs — from a template
-(Client Info, Meetings, Employee Info, Billing, Accounts, Sales Pipeline)
+(Client Info, Meetings, Employee Info, Billing, Accounts)
 or blank — and customises each tab's columns. Users switch tabs at the top
 of the page; filter and sorting sit on top of the tabs and apply to the
 open tab.
@@ -36,12 +36,12 @@ import config
 import exports
 import scanner
 from auth import login_required
-from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, SALES_PIPELINE_COLUMNS, assignee_name_for, col_weight,
+from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, assignee_name_for, col_weight,
                   ddb_attachment_info, ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_shared_tabs, ddb_tab_access, ddb_row_link, ddb_tabs, ddb_update_row, ddb_values,
                   display_code, external_url, is_assignee_column, new_random_code_text, notify, notify_ddb_task,
-                  parse_code_text, parse_form, print_col_widths, sales_dept_id, show_when)
+                  parse_code_text, parse_form, print_col_widths, show_when)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
 
@@ -105,25 +105,9 @@ TEMPLATE_TABS = [
         ("Reference", "text", None, 0, 0),
         ("Notes", "longtext", None, 0, 0),
     ]),
-    # The Sales Pipeline tab (2026-11-15, build 66): the default tab for
-    # the Sales & Marketing department, holding every column the
-    # follow-up & pipeline report needs. The columns live in
-    # core.SALES_PIPELINE_COLUMNS so the startup backfill and this
-    # template always agree.
-    ("pipeline", "Sales Pipeline", SALES_PIPELINE_COLUMNS),
     ("custom", "Custom tab (blank)", []),
 ]
 TEMPLATE_MAP = {k: (label, cols) for k, label, cols in TEMPLATE_TABS}
-
-
-def _templates_for(db, dept):
-    """The templates a department may pick on the Tabs page. The Sales
-    Pipeline template is the Sales & Marketing department's own default
-    tab (build 66), so it is only offered there — every other department
-    sees the rest of the list without it (build 82)."""
-    if dept["id"] == sales_dept_id(db):
-        return TEMPLATE_TABS
-    return [t for t in TEMPLATE_TABS if t[0] != "pipeline"]
 
 
 # ---------------------------------------------------------------- which department, which tab
@@ -388,12 +372,18 @@ def index():
     # (filtered to that department's invoices / requests). A code typed in
     # any other tab's search box goes to the Search QR page, which looks
     # all over for the code — a record, an invoice, a request or a row.
-    if _wanted is not None and request.args.get("tab") not in ("invoices", "requests"):
+    if _wanted is not None and request.args.get("tab") not in ("invoices", "requests", "clients"):
         return redirect(url_for("public.search_qr", q=_wanted))
     if request.args.get("tab") == "invoices":
         return _invoice_tab_view(db, dept, is_admin, request.args)
     if request.args.get("tab") == "requests":
         return _request_tab_view(db, dept, is_admin, request.args)
+    if request.args.get("tab") == "clients":
+        # Client onboarding (build 85): its own pages live in routes_clients.py.
+        from routes_clients import client_tab_visible, client_tab_view
+        if not client_tab_visible(db, g.user):
+            abort(404)
+        return client_tab_view(db, dept, is_admin, request.args)
     show_mine = _show_mine(dept)
     args = request.args.copy()
     if not show_mine:
@@ -412,7 +402,7 @@ def index():
                                cols=[], rows=[], vmap={}, attach_urls={}, info={"sort": "updated", "dir": "desc", "fcol": "", "fval": ""},
                                q="", mine=False, deleted=False, total=0, page=1, pages=1,
                                counts={"all": 0, "mine": 0, "deleted": 0}, keep={}, can_add=False, names=[],
-                               show_mine=show_mine, widths=[], show_report=False,
+                               show_mine=show_mine, widths=[],
                                depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                                if is_portal_admin(g.user) else [],
                                is_admin=is_admin, is_shared=False, shared_access=None, shared_owner=None,
@@ -425,7 +415,6 @@ def index():
                       "WHERE " + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
                       params + op + [config.PER_PAGE, offset]).fetchall()
     cols = ddb_columns(db, row_dept["id"], tab_id=tab["id"])
-    show_report = _has_report_columns(cols)
     # Print widths for this tab's columns plus the trailing Added by column.
     widths = print_col_widths([col_weight(c["col_type"]) for c in cols] + [1.0])
     counts = {
@@ -452,7 +441,7 @@ def index():
         total=total, page=page, pages=pages, counts=counts, keep=keep, show_mine=show_mine,
         widths=widths,
         can_add=can_add_here, names=[c["name"] for c in cols], is_admin=is_admin,
-        show_report=show_report, is_shared=bool(shared),
+        is_shared=bool(shared),
         shared_access=shared["access"] if shared else None,
         shared_owner=shared["owner_dept"]["name"] if shared else None,
         can_manage_tab_sharing=can_manage_tab_sharing,
@@ -496,150 +485,6 @@ def export():
                               f"{len(rows)} rows", setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME),
                               "department_database_" + dept["name"] + "_" + tab["name"])
 
-
-
-# ---------------------------------------------------------------- Sales Pipeline report (build 66)
-# The columns the follow-up & pipeline report needs, by lowercase name.
-# The Report button appears on a Department Database tab only when it has
-# all four; the other columns (client name, follow-up date, referred by,
-# phone reason) are optional and their sections are left out when missing.
-_REPORT_COLUMNS = ("assigned to", "follow-up method", "deal stage", "mrc (bdt)")
-
-
-def _has_report_columns(cols):
-    names = {c["name"].strip().lower() for c in cols}
-    return all(n in names for n in _REPORT_COLUMNS)
-
-
-def _report_number(value):
-    """A number-column value as a float (commas and spaces ignored)."""
-    try:
-        return float(str(value or "").replace(",", "").replace(" ", ""))
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _sales_pipeline_data(cols, rows, vals):
-    """The numbers for the follow-up & pipeline report, computed from the
-    selected rows only. A row with no follow-up method is counted in the
-    total but in neither visit nor phone; a Terminated row is counted in
-    the follow-up but not in the pipeline (it is no longer a prospect)."""
-    by_name = {c["name"].strip().lower(): c for c in cols}
-
-    def val(row_id, name):
-        c = by_name.get(name)
-        return (vals.get(row_id, {}).get(c["id"]) or "") if c else ""
-
-    def mrc_of(row_id):
-        return _report_number(val(row_id, "mrc (bdt)") or val(row_id, "mrc"))
-
-    data = {"total": len(rows), "visit": 0, "phone": 0, "kam_follow": {},
-            "prospects": 0, "mrc_total": 0.0, "done_n": 0, "done_mrc": 0.0,
-            "open_n": 0, "open_mrc": 0.0, "terminated_n": 0, "kam_mrc": {},
-            "referred": None, "phone_reasons": {"outside": 0, "busy": 0, "other": 0},
-            "top5": []}
-    ref_totals = {}
-    for r in rows:
-        method = val(r["id"], "follow-up method").strip().lower()
-        stage = val(r["id"], "deal stage").strip().lower()
-        kam = (val(r["id"], "assigned to") or "").strip() or "Unassigned"
-        mrc = mrc_of(r["id"])
-        if method == "physical visit":
-            data["visit"] += 1
-        elif method == "phone call":
-            data["phone"] += 1
-            reason = val(r["id"], "phone reason").strip().lower()
-            if reason == "outside dhaka":
-                data["phone_reasons"]["outside"] += 1
-            elif reason == "busy":
-                data["phone_reasons"]["busy"] += 1
-            elif reason:
-                data["phone_reasons"]["other"] += 1
-        kf = data["kam_follow"].setdefault(kam, {"visit": 0, "phone": 0})
-        if method == "physical visit":
-            kf["visit"] += 1
-        elif method == "phone call":
-            kf["phone"] += 1
-        if stage == "terminated":
-            data["terminated_n"] += 1
-            continue
-        if stage not in ("open", "done"):
-            continue
-        data["prospects"] += 1
-        data["mrc_total"] += mrc
-        km = data["kam_mrc"].setdefault(kam, {"open": 0.0, "done": 0.0})
-        if stage == "done":
-            data["done_n"] += 1
-            data["done_mrc"] += mrc
-            km["done"] += mrc
-        else:
-            data["open_n"] += 1
-            data["open_mrc"] += mrc
-            km["open"] += mrc
-            data["top5"].append((val(r["id"], "client name") or "-", kam, mrc))
-        ref = (val(r["id"], "referred by") or "").strip()
-        if ref:
-            rt = ref_totals.setdefault(ref, {"prospects": 0, "mrc": 0.0, "done": 0, "open": 0, "by_kam": {}})
-            rt["prospects"] += 1
-            rt["mrc"] += mrc
-            rt["done" if stage == "done" else "open"] += 1
-            rt["by_kam"][kam] = rt["by_kam"].get(kam, 0) + 1
-    data["reached_pct"] = round(100 * (data["visit"] + data["phone"]) / data["total"]) if data["total"] else 0
-    data["kam_follow"] = sorted(
-        ((kam, v["visit"], v["phone"], v["visit"] + v["phone"]) for kam, v in data["kam_follow"].items()),
-        key=lambda t: (-t[3], t[0]))
-    data["kam_mrc"] = sorted(
-        ((kam, v["open"], v["done"], v["open"] + v["done"]) for kam, v in data["kam_mrc"].items()),
-        key=lambda t: (-t[3], t[0]))
-    data["top5"] = sorted(data["top5"], key=lambda t: -t[2])[:5]
-    if ref_totals:
-        name, rt = max(ref_totals.items(), key=lambda kv: (kv[1]["mrc"], kv[1]["prospects"]))
-        data["referred"] = {"name": name, "prospects": rt["prospects"], "mrc": rt["mrc"],
-                            "pct": round(100 * rt["mrc"] / data["mrc_total"]) if data["mrc_total"] else 0,
-                            "by_kam": sorted(rt["by_kam"].items(), key=lambda kv: (-kv[1], kv[0])),
-                            "done": rt["done"], "open": rt["open"]}
-    return data
-
-
-@bp.route("/report")
-@login_required
-def report():
-    """The follow-up & pipeline report (build 66): a PDF made from the
-    rows ticked on a Department Database tab that has the report columns.
-    Only on the Department Database page — the Invoices and Request items
-    tabs have their own views and never show the Report button."""
-    db, dept, is_admin = _dept()
-    tab, _tabs, shared = _resolve_tab(db, dept, request.args.get("tab", type=int))
-    if tab is None:
-        flash("This department database has no tabs yet.", "error")
-        return redirect(url_for("ddb.index", **_back(dept)))
-    row_dept = shared["owner_dept"] if shared else dept
-    cols = ddb_columns(db, row_dept["id"], tab_id=tab["id"])
-    if not _has_report_columns(cols):
-        flash("This tab does not have the columns the report needs.", "error")
-        return redirect(url_for("ddb.index", **_back(dept, tab)))
-    ids = request.args.get("ids")
-    if not ids:
-        flash("Please select the data row first.", "error")
-        return redirect(url_for("ddb.index", **_back(dept, tab)))
-    where, params, order, op, _info, _q, _mine, _deleted = _filters(db, row_dept, tab, is_admin, request.args)
-    rows = db.execute("SELECT r.*, u.full_name AS owner_name FROM ddb_rows r JOIN users u ON u.id=r.owner_id "
-                      "WHERE " + where + " ORDER BY " + order, params + op).fetchall()
-    idset = {x for x in ids.split(",") if x.isdigit()}
-    rows = [r for r in rows if str(r["id"]) in idset]
-    if not rows:
-        flash("Please select the data row first.", "error")
-        return redirect(url_for("ddb.index", **_back(dept, tab)))
-    vals = ddb_values(db, [r["id"] for r in rows])
-    data = _sales_pipeline_data(cols, rows, vals)
-    pdf = exports.sales_pipeline_report_pdf(
-        row_dept["name"], tab["name"], data,
-        setting_get(db, "company_name", config.DEFAULT_COMPANY_NAME))
-    log(db, "export", f"sales pipeline report {row_dept['name']} / {tab['name']}: {len(rows)} rows")
-    db.commit()
-    resp = Response(pdf, mimetype="application/pdf")
-    resp.headers["Content-Disposition"] = 'attachment; filename="sales-pipeline-report.pdf"'
-    return resp
 
 
 # ---------------------------------------------------------------- tab sharing (build 78)
@@ -1042,7 +887,7 @@ def tabs():
     # is only offered to Sales & Marketing (build 82), so a template
     # this department cannot pick falls back to a blank tab, the same as
     # an unknown template.
-    templates = _templates_for(db, dept)
+    templates = TEMPLATE_TABS
     template_map = {k: (label, cols) for k, label, cols in templates}
     if request.method == "POST":
         name = " ".join((request.form.get("name") or "").split())[:60]

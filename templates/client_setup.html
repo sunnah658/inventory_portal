@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "_design6.html" import quick_card with context %}
+{% block title %}Client onboarding setup{% endblock %}
+{% block content %}
+<div class="tw"><div>
+<div class="card medium">
+  <h1>Client onboarding setup</h1>
+  <p class="hint" style="margin-bottom:14px">Choose which department plays each part of the client onboarding flow.{% if not saved %} Nothing is saved yet, so departments are matched by name (Sales, Revenue Assurance, Transmission, Core, Technical support, Finance); check them and click Save.{% endif %}</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for key, label, what in roles %}
+    <div class="fd"><label for="role_{{ key }}">{{ label }}</label>
+      <select id="role_{{ key }}" name="role_{{ key }}"><option value="">(not set)</option>
+        {% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if flow[key] == d['id'] }}>{{ d['name'] }}</option>{% endfor %}</select>
+      <div class="sub">{{ what }}</div></div>
+    {% endfor %}
+    <div class="acts"><button class="b p" type="submit">Save</button><a class="b" href="{{ url_for('ddb.index', tab='clients') }}">Back to Client onboarding</a></div>
+  </form>
+</div></div>
+<div class="stack rail"><div class="card"><h2>Good to know</h2>
+  <p class="hint">The Sales admin who approves is the department admin (or delegate) of the Sales department. Revenue Assurance is the only department that edits the activation date. Changing a department here changes who sees the clients from now on.</p></div>
+  {{ quick_card([('Back to Client onboarding', url_for('ddb.index', tab='clients'), True)]) }}</div></div>
+{% endblock %}

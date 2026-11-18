@@ -110,7 +110,7 @@ def options_of(col):
 
 def is_assignee_column(col):
     """True for the "Assigned to" dropdown of a department-database tab
-    (build 74: the Sales Pipeline tab's column). A row belongs to the
+    (build 74: any tab's column). A row belongs to the
     user who adds it, so this column is never a form field — the
     adder's name is set by the route, not picked from a dropdown."""
     return (col["name"] or "").strip().lower() == "assigned to" and col["col_type"] == "dropdown"
@@ -118,8 +118,8 @@ def is_assignee_column(col):
 
 def assignee_name_for(user, column):
     """The name a new row is assigned to: the adder's name, matched to
-    one of the column's options where possible, so the pipeline report
-    keeps grouping the person under the name already used there
+    one of the column's options where possible, so rows keep grouping
+    the person under the name already used there
     (e.g. a user called "Syful Islam" is assigned to "Syful"). If no
     option matches, the adder's full name is used as it stands."""
     name = (user["full_name"] or "").strip()
@@ -153,65 +153,7 @@ def create_department(db, name, template_key=None, selected=None):
     dept_id = db.execute("INSERT INTO departments(name,repairs_enabled) VALUES (?,?)",
                          (name, 1 if template_key == "IT" else 0)).lastrowid   # only the IT starter has a repair log
     create_department_columns(db, dept_id, template_key, selected)
-    # A department named Sales & Marketing gets the default Sales Pipeline
-    # tab with its 12 columns (2026-11-15, build 66).
-    if "sales" in name.lower() and "marketing" in name.lower():
-        ensure_sales_pipeline_tab(db, dept_id)
     return dept_id
-
-
-# The Sales Pipeline tab (2026-11-15, build 66): the default tab for the
-# Sales & Marketing department, holding every column the follow-up &
-# pipeline report needs. It is only offered as a template on the Tabs
-# page of the Sales & Marketing department (build 82); other
-# departments never see it there.
-# (name, type, options, required, has_time). Dropdown options are joined
-# with a literal backslash-n, the same as every other template tab.
-SALES_PIPELINE_COLUMNS = [
-    ("Client name", "text", None, 1, 0),
-    ("Contact person", "text", None, 0, 0),
-    ("Phone number", "text", None, 0, 0),
-    ("Email", "text", None, 0, 0),
-    ("Assigned to", "dropdown", "Mohaiminul\nSyful\nShanjid\nPrince\nImtiaz", 0, 0),
-    ("Follow-up method", "dropdown", "Physical visit\nPhone call", 0, 0),
-    ("Follow-up date", "date", None, 0, 0),
-    ("Deal stage", "dropdown", "Open\nDone\nTerminated", 0, 0),
-    ("MRC (BDT)", "number", None, 0, 0),
-    ("Referred by", "text", None, 0, 0),
-    ("Phone reason", "dropdown", "Outside Dhaka\nBusy", 0, 0),
-    ("Notes", "longtext", None, 0, 0),
-]
-
-
-def sales_dept_id(db):
-    """The Sales & Marketing department id: exact name first, then a
-    like match, so a department spelled a little differently is still
-    found (the same pattern as hr_admin_dept_id)."""
-    row = db.execute("SELECT id FROM departments WHERE LOWER(name)='sales & marketing'").fetchone()
-    if row:
-        return row["id"]
-    row = db.execute("SELECT id FROM departments WHERE LOWER(name) LIKE '%sales%' "
-                     "AND LOWER(name) LIKE '%marketing%' ORDER BY id LIMIT 1").fetchone()
-    return row["id"] if row else None
-
-
-def ensure_sales_pipeline_tab(db, dept_id):
-    """Create the Sales Pipeline tab (with all 12 columns) for the given
-    department when it has no live tab by that name. Returns the new tab
-    id, or None when one already exists. Safe to run on every startup."""
-    if db.execute("SELECT 1 FROM ddb_tabs WHERE department_id=? AND LOWER(name)='sales pipeline' "
-                  "AND removed_at IS NULL", (dept_id,)).fetchone():
-        return None
-    pos = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM ddb_tabs WHERE department_id=?",
-                     (dept_id,)).fetchone()[0]
-    tab_id = db.execute("INSERT INTO ddb_tabs(department_id,name,template,meeting_notify,position,created_by) "
-                        "VALUES (?,?, 'pipeline', 0, ?, NULL)",
-                        (dept_id, "Sales Pipeline", pos)).lastrowid
-    for i, (cname, ctype, opts, req, has_time) in enumerate(SALES_PIPELINE_COLUMNS):
-        db.execute("INSERT INTO ddb_columns(department_id,tab_id,name,col_type,options,required,has_time,position) "
-                   "VALUES (?,?,?,?,?,?,?,?)",
-                   (dept_id, tab_id, cname, ctype, opts, req, has_time, i))
-    return tab_id
 
 
 # ---------------------------------------------------------------- records: reading

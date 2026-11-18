@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "_design6.html" import kpi, quick_card with context %}
+{% block title %}{{ c['id']|client_no }} · {{ c['client_name'] }}{% endblock %}
+{% block head %}<style>
+.flow{list-style:none;margin:0;padding:0}
+.flow li{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.flow li:first-child{border-top:0}
+.flow .dot{flex:0 0 22px;height:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;background:var(--chip);color:var(--soft)}
+.flow .done .dot{background:var(--ok-bg);color:var(--ok-tx)}
+.flow .now .dot{background:var(--warn-bg);color:var(--warn-tx)}
+.flow .bad .dot{background:var(--err-bg);color:var(--err-tx)}
+.flow small{display:block;color:var(--soft)}
+.kv{display:flex;padding:8px 0;border-top:1px solid var(--line)}.kv:first-child{border-top:0}
+.kv b{flex:0 0 150px;color:var(--soft);font-weight:500}
+</style>{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>{{ c['id']|client_no }} · {{ c['client_name'] }}</h1>
+  <p class="hint">Added by {{ c['owner_name'] or '—' }} · {{ c['created_at']|showdt }}</p></div>
+  <div class="acts noprint">
+    {% if perm.edit %}<a class="b p" href="{{ url_for('clients.edit', cid=c['id']) }}">Change and save again</a>{% endif %}
+    <a class="b" href="{{ back }}">Back to Client onboarding</a>
+    <button class="b" type="button" onclick="window.print()">Print</button>
+  </div>
+</div>
+<div class="kp">
+  {{ kpi('Status', c['status']|client_status) }}
+  {{ kpi('Services (SOF)', services|length) }}
+  {{ kpi('Contacts', contacts|length) }}
+  {{ kpi('Activation date', (c['activation_date']|string)[:10] if c['activation_date'] else '—') }}
+</div>
+<div class="tw"><div>
+
+{% if c['status'] == 'rejected' %}<div class="alert"><b>Rejected{% if c['decided_name'] %} by {{ c['decided_name'] }}{% endif %}:</b> {{ c['reject_reason'] }}{% if perm.edit %} Change what is needed, then save again to send it back for approval.{% endif %}</div>{% endif %}
+
+{% if perm.approve %}
+<div class="card"><h2>Approval</h2>
+  <p class="hint">Approve the client so Revenue Assurance, Transmission, Core and Technical support can see it, or reject it with a reason and it goes back to the Sales user.</p>
+  <div class="acts">
+    <form method="post" action="{{ url_for('clients.approve', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Approve</button></form>
+  </div>
+  <form method="post" action="{{ url_for('clients.reject', cid=c['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fd"><label for="reason">Reason for rejecting <span class="req">*</span></label><input id="reason" name="reason" type="text" maxlength="1000" required></div>
+    <button class="b dg" type="submit">Reject</button></form>
+</div>
+{% endif %}
+
+{% if perm.upload_san %}
+<div class="card"><h2>Upload the SAN report</h2>
+  <p class="hint">Only one SAN report can be uploaded for this client, by any one of Transmission, Core or Technical support. Revenue Assurance and Sales receive it at once.</p>
+  <form method="post" action="{{ url_for('clients.san_upload', cid=c['id']) }}" enctype="multipart/form-data" onsubmit="return confirm('Only one SAN report can be uploaded. Upload this file?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fd"><input name="san_file" type="file" required></div>
+    <button class="b p" type="submit">Upload SAN report</button></form>
+</div>
+{% endif %}
+
+{% if perm.activation %}
+<div class="card"><h2>Activation date</h2>
+  <p class="hint">Only Revenue Assurance edits this. Saving it sends the final record to Finance.</p>
+  <form method="post" action="{{ url_for('clients.activation', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fd"><label for="activation_date">Activation date</label><input id="activation_date" name="activation_date" type="date" required value="{{ (c['activation_date']|string)[:10] if c['activation_date'] else '' }}" style="max-width:220px"></div>
+    <button class="b p" type="submit">{{ 'Change activation date' if c['activation_date'] else 'Save and send to Finance' }}</button></form>
+</div>
+{% endif %}
+
+<div class="card"><h2>Client</h2>
+  <div class="kv"><b>Client name</b><span>{{ c['client_name'] }}</span></div>
+  <div class="kv"><b>Business type</b><span>{{ c['business_type'] or '—' }}</span></div>
+  <div class="kv"><b>Phone</b><span>{{ c['phone'] or '—' }}</span></div>
+  <div class="kv"><b>Email</b><span>{{ c['email'] or '—' }}</span></div>
+  <div class="kv"><b>Address</b><span style="white-space:pre-wrap">{{ c['address'] or '—' }}</span></div>
+  <div class="kv"><b>Notes</b><span style="white-space:pre-wrap">{{ c['notes'] or '—' }}</span></div>
+  <div class="kv"><b>Account manager</b><span>{{ c['am_name'] or '—' }}{% if c['am_designation'] %} · {{ c['am_designation'] }}{% endif %}</span></div>
+</div>
+
+<div class="card"><h2>Contacts</h2>
+  {% if contacts %}<div class="tb"><table><thead><tr><th>Name</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
+    {% for r in contacts %}<tr class="r"><td>{{ r['name'] }}</td><td>{{ r['designation'] or '' }}</td><td>{{ r['phone'] or '' }}</td><td>{{ r['email'] or '' }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<p class="hint">No contacts.</p>{% endif %}</div>
+
+<div class="card"><h2>Services (SOF)</h2>
+  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Details</th><th class="noprint">SOF file</th></tr></thead><tbody>
+    {% for s, f in sof %}<tr class="r"><td><b>{{ s['sof_number'] }}</b></td><td>{{ s['service'] }}</td><td style="white-space:pre-wrap">{{ s['details'] or '' }}</td>
+      <td class="noprint">{% if f %}<a href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">{{ f['original'] }}</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<p class="hint">No services.</p>{% endif %}</div>
+
+<div class="card"><h2>SAN report</h2>
+  {% if san %}
+    <p><a class="b" href="{{ url_for('clients.san_download', cid=c['id']) }}">Download {{ san['original'] }}</a></p>
+    <p class="hint">Uploaded by {{ c['san_name'] or '—' }} · {{ c['san_at']|showdt }}</p>
+    {% if perm.remove_san %}<form method="post" action="{{ url_for('clients.san_remove', cid=c['id']) }}" onsubmit="return confirm('Remove the SAN report so a new one can be uploaded?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove (portal admin)</button></form>{% endif %}
+  {% else %}<p class="hint">{% if c['status'] in ('pending','rejected') %}Not available until the client is approved.{% else %}Not uploaded yet.{% endif %}</p>{% endif %}
+</div>
+
+<div class="card"><h2>History</h2>
+  {% if history %}<div class="tb"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>
+    {% for h in history %}<tr class="r"><td>{{ h['at']|showdt }}</td><td>{{ h['full_name'] or '—' }}</td><td>{{ h['action'] }}</td><td>{{ h['detail'] or '' }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<p class="hint">No history yet.</p>{% endif %}</div>
+</div>
+<div class="stack rail">
+  <div class="card"><h2>Where it is in the flow</h2>
+    <ul class="flow">{% for label, note, state in timeline %}
+      <li class="{{ state }}"><span class="dot">{{ '✓' if state == 'done' else '!' if state == 'bad' else loop.index }}</span><span><b>{{ label }}</b>{% if note %}<small>{{ note }}</small>{% endif %}</span></li>{% endfor %}</ul></div>
+  {{ quick_card([('Back to Client onboarding', back, True)]) }}
+</div></div>
+{% endblock %}

@@ -125,12 +125,6 @@ document.addEventListener('DOMContentLoaded',function(){
         window.print();
       });
     });
-    /* Report with nothing selected shows an error instead of downloading. */
-    document.querySelectorAll('.reportguard').forEach(function(r){
-      r.addEventListener('click',function(e){
-        if(selIds().length===0){if(err)err.hidden=false;e.preventDefault();}
-      });
-    });
     /* Whichever way printing starts, only the ticked rows print. */
     window.addEventListener('beforeprint',function(){
       if(selIds().length===0)return;

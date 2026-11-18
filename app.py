@@ -28,6 +28,7 @@ from models import get_db, setting_get
 from utils import is_portal_admin, user_name_class
 from routes_admin import bp as admin_bp
 from routes_bulk import bp as bulk_bp
+from routes_clients import bp as clients_bp, client_tab_visible
 from routes_deptdb import bp as ddb_bp
 from routes_invoices import bp as invoices_bp
 from routes_public import bp as public_bp
@@ -91,7 +92,7 @@ def create_app():
     if os.environ.get("PORTAL_NO_SCHEDULER") != "1":      # tests switch the helper off
         threading.Thread(target=_reminder_loop, name="reminders", daemon=True).start()
 
-    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, ddb_bp, admin_bp, brand_bp, invoices_bp, requests_bp):
+    for blueprint in (auth_bp, records_bp, flow_bp, public_bp, bulk_bp, ddb_bp, admin_bp, brand_bp, invoices_bp, requests_bp, clients_bp):
         app.register_blueprint(blueprint)
 
     # ------------------------------------------------------------ before every request
@@ -178,7 +179,8 @@ def create_app():
                 "logo_url": url_for("brand.logo", v=version), "icon_url": url_for("brand.icon", v=version),
                 "css_v": css_v,
                 "reauth_fresh": reauth_fresh(), "unread": 0,
-                "can_reports": False, "has_view_tabs": False, "can_portal_admin": False, "user_name_class": user_name_class}
+                "can_reports": False, "has_view_tabs": False, "can_portal_admin": False, "user_name_class": user_name_class,
+                "show_clients_tab": False}
         user = g.get("user")
         if user is not None:
             data["unread"] = db.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND read_at IS NULL",
@@ -186,6 +188,10 @@ def create_app():
             data["can_reports"] = user["role"] == "admin" or bool(user["is_dept_admin"])
             data["can_portal_admin"] = is_portal_admin(user)
             data["user_name_class"] = user_name_class
+            try:    # the Client onboarding tab (build 85) is shown only to departments in the flow
+                data["show_clients_tab"] = client_tab_visible(db, user)
+            except Exception:
+                data["show_clients_tab"] = False
             # Design 6 rail + chart data (follow-ups, recent rows, rows added this
             # week), scoped to the department/tab being viewed. Only data this
             # user is already allowed to see; {} when there is nothing to show.

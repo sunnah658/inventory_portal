@@ -5380,3 +5380,121 @@
  letter, a kind, leave setup and mail settings) and drops the six
  tables to 47, keeps the user, their mail address and the mail
  settings, and serves the login page with /applications answering 404.
+
+==============================================================================
+ 103. SALES PIPELINE TAB REMOVED (2026-11-18)
+==============================================================================
+ The default Sales Pipeline tab is gone from the Sales & Marketing
+ department, with all its rows, by the user's instruction. The tab no
+ longer appears on the department's page, and the code behind it is
+ gone too: the bit that created the tab by default when a Sales &
+ Marketing department was made, the startup check that re-created it,
+ the 12-column definition, the "Sales Pipeline" template on the Tabs
+ page (so no department can make one again), and the Report button
+ with its report PDF, since that report only worked on a tab with
+ those columns. The "Assigned to" auto-fill stays: it works on any
+ tab with an "Assigned to" dropdown, not only the pipeline, and is
+ still tested on a plain tab.
+
+ All of the data goes with the tab: every Sales Pipeline row in the
+ Sales & Marketing department is erased when the new code first starts
+ on the live database. A database backup taken before applying is the
+ only way back — back up first. Tabs another department made from the
+ template before build 82 are left alone: they are ordinary tabs now
+ (their Report button is gone with the report). Everything else is
+ untouched: My records, the Department Database with all its other
+ tabs, Invoices and Request items with their approval chains and
+ public QR, Search QR, the dashboard, users, departments, settings
+ and notifications.
+
+ What was removed from the code: core.SALES_PIPELINE_COLUMNS,
+ core.ensure_sales_pipeline_tab and core.sales_dept_id; the Sales &
+ Marketing branch of core.create_department; the pipeline backfill in
+ models._upgrade_ddb_tabs (replaced by models._drop_sales_pipeline_tab,
+ which deletes the tab and its rows on upgrade); the "pipeline" entry
+ of routes_deptdb.TEMPLATE_TABS and the _templates_for filter;
+ routes_deptdb._has_report_columns, _sales_pipeline_data and the
+ /deptdb/report route; exports.sales_pipeline_report_pdf with its
+ _band/_hbar/_bar_table helpers; the Report button in
+ templates/deptdb.html and the .reportguard script in templates/base.html.
+
+ No schema change, still 47 tables. No files added or removed.
+ Tested: 607/607 automated checks on the work copy and on a fresh
+ extract of this zip, against real MySQL 8.0 (the suite run needs the
+ morning hour for one page-load reminder check, so it was run with
+ TZ=UTC). The upgrade was also checked: this code starts on a build-83
+ database (47 tables, with a Sales Pipeline tab holding rows and
+ another Sales tab) and deletes the pipeline tab, its rows and its
+ values, keeps the other tab and the user, and serves the login page
+ with /deptdb/report answering 404.
+
+==============================================================================
+ 104. CLIENT ONBOARDING TAB IN THE DEPARTMENT DATABASE (2026-11-18)
+==============================================================================
+ A new default tab, "Client onboarding", sits next to Invoices and Request
+ items on the Department Database page. It follows the customer workflow
+ diagram:
+
+   1. A Sales user fills three pages in one form: (1) the client, (2) the
+      contacts and the account manager, (3) the services, one block per SOF
+      (SOF number, service, details, optional SOF file). Several contacts
+      and several SOFs are allowed; at least one of each is needed.
+   2. Save sends the request to the Sales admin (the Sales department
+      admin, a delegate, or the portal admin), who approves or rejects.
+      A rejection needs a reason; the client goes back to the Sales user,
+      who changes it and saves again (it is sent for approval again).
+   3. Approved: the client is saved and appears in the "Approved client"
+      dropdown on the tab. Revenue Assurance is told first and sees it
+      (view only); Transmission, Core and Technical support see the full
+      record.
+   4. SAN report: ONE upload only, by any one of Transmission, Core or
+      Technical support. The upload is atomic, so two people uploading at
+      the same moment cannot both succeed. Revenue Assurance and all Sales
+      users are notified and can download it.
+   5. Activation date: only Revenue Assurance can set or change it. Setting
+      it completes the client and sends the final record to Finance (a
+      later change tells Finance again).
+
+ Status: Waiting for approval -> Approved -> SAN report uploaded ->
+ Completed (or Rejected, back to Waiting for approval after the fix).
+
+ WHO SEES WHAT
+   Sales department, portal admin ....... every client, at every stage
+   The Sales user who made it ........... their own client at every stage
+   Revenue Assurance, Transmission,
+   Core, Technical support .............. from Approved onward
+   Finance .............................. only when Completed
+   Everyone else ........................ the tab is not shown at all
+ Each client page shows a checklist of the flow, its history (who did what
+ and when), and the To do sub-tab lists what is waiting for the viewer.
+
+ SETUP (portal admin): Department Database > Client onboarding > Setup.
+ Pick the department for Sales, Revenue Assurance, Transmission, Core,
+ Technical support and Finance. Until it is saved, departments are matched
+ by name (Sales, Revenue Assurance, Transmission, Core, Technical support or
+ Technical, Finance). The portal admin can also remove a wrong SAN report
+ before the activation date is set, so a new one can be uploaded.
+
+ NOT INCLUDED (ask if you want them): deleting a client / Recycle Bin,
+ Excel or PDF export of clients, public QR and Search QR for clients, and
+ an extra "forward" button for Revenue Assurance (all four reviewing
+ departments see the client as soon as it is approved).
+
+ Schema change: 47 tables become 51 (client_onboardings, client_contacts,
+ client_services, client_history). They are created automatically when the
+ new code first starts; nothing existing is changed or deleted. Purging a
+ user never deletes a client (the user columns are ON DELETE SET NULL).
+ New file: routes_clients.py. New templates: deptdb_clients, client_form,
+ client_detail, client_setup. Changed: app.py, models.py, routes_deptdb.py,
+ deptdb.html, deptdb_invoices.html, deptdb_requests.html.
+ Upload files go to the same attachment folder as other Department
+ Database files (allowed types and the per-file size limit are the same).
+
+ Tested: 127 automated end-to-end checks of this flow (every role, every
+ step, refused actions, one-upload rule, file keep/replace/remove on edit,
+ notifications, search and filters), plus all 74 templates parse and all
+ Python files compile. NOT tested: against real MySQL 8.0 and in Docker (not
+ available where this build was made); the checks ran on the real portal
+ code with SQLite standing in for MySQL. After applying, run
+   docker compose up -d --build
+ and watch  docker compose logs portal  on the first start. Back up first.

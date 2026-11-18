@@ -31,7 +31,7 @@
 <div class="tabs">
   {% for tb in tabs %}<a class="tab {{ 'on' if tb['id'] == tab['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
   <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
-  <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>
+  <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>{% if show_clients_tab %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients') }}">Client onboarding</a>{% endif %}
 </div>
 <div class="subtabs">
 <div class="tabs">
@@ -39,7 +39,7 @@
   {% if show_mine and not is_shared %}<a class="tab {{ 'on' if mine }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], mine=1) }}">My rows · {{ counts.mine }}</a>{% endif %}
   {% if is_admin and not is_shared %}<a class="tab {{ 'on' if deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], deleted=1) }}">Deleted · {{ counts.deleted }}</a>{% endif %}
 </div>
-<div class="selbtns">{% if can_manage_tab_sharing %}<a class="b" href="{{ url_for('ddb.tab_permissions', dept=dept['id'], tab=tab['id']) }}">Permission</a>{% endif %}<button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if show_report %}<a class="b explink reportguard" href="{{ url_for('ddb.report', **keep) }}">Report</a>{% endif %}</div>
+<div class="selbtns">{% if can_manage_tab_sharing %}<a class="b" href="{{ url_for('ddb.tab_permissions', dept=dept['id'], tab=tab['id']) }}">Permission</a>{% endif %}<button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>
 </div>
 <p class="msg error" id="printErr" hidden>Please select the data row first.</p>
 <p class="print-only">Selected rows · <span class="selprint-n">0</span> of {% if deleted %}{{ counts.deleted }}{% elif mine %}{{ counts.mine }}{% else %}{{ counts.all }}{% endif %}</p>
@@ -74,7 +74,7 @@
   ] | select) }}
 </div></div>
 {% else %}
-  <div class="tabs"><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a></div>
+  <div class="tabs"><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a><a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>{% if show_clients_tab %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients') }}">Client onboarding</a>{% endif %}</div>
   <div class="tb"><div class="empty">This department database has no tabs yet.{% if is_admin %} <a href="{{ url_for('ddb.tabs', dept=dept['id']) }}">Create the first tab</a>.{% else %} Ask the department admin to create one.{% endif %}</div></div>
 {% endif %}
 {% endblock %}

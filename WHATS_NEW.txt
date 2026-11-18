@@ -1,4 +1,14 @@
 ==============================================================================
+ SALES PIPELINE TAB REMOVED (2026-11-18)
+==============================================================================
+ The default Sales Pipeline tab is gone from the Sales & Marketing
+ department, with all its client rows, by your instruction. The
+ template is gone from the Tabs page too, and the Report button with
+ its report PDF. The "Assigned to" auto-fill stays — it works on any
+ tab. Back up the database before applying — that is the only way back
+ for the pipeline rows.
+
+==============================================================================
  APPLICATION LETTERS REMOVED (2026-11-17)
 ==============================================================================
  The Application Letters feature is gone from the portal, by your

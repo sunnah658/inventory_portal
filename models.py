@@ -795,6 +795,85 @@ CREATE TABLE IF NOT EXISTS item_request_steps (
     KEY idx_req_steps (request_id, position)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ======================= Client onboarding (build 85) =======================
+-- One row per new client sent through the onboarding flow: Sales fills three
+-- pages (client, contacts, services/SOF), the Sales admin approves, then
+-- Revenue Assurance / Transmission / Core / Technical support see it, one SAN
+-- report is uploaded, Revenue Assurance sets the activation date and Finance
+-- receives the final record. Every user column is ON DELETE SET NULL, so purging
+-- a user never blocks and never deletes a client.
+CREATE TABLE IF NOT EXISTS client_onboardings (
+    id                 INT AUTO_INCREMENT PRIMARY KEY,
+    department_id      INT NOT NULL,
+    owner_id           INT,
+    client_name        VARCHAR(255) NOT NULL,
+    business_type      VARCHAR(255),
+    address            TEXT,
+    phone              VARCHAR(255),
+    email              VARCHAR(255),
+    notes              TEXT,
+    account_manager_id INT,
+    status             VARCHAR(255) NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending','rejected','approved','san_uploaded','completed')),
+    reject_reason      TEXT,
+    decided_by         INT,
+    decided_at         DATETIME,
+    san_file           TEXT,
+    san_by             INT,
+    san_at             DATETIME,
+    activation_date    DATE,
+    activation_by      INT,
+    activation_at      DATETIME,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (account_manager_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (san_by) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (activation_by) REFERENCES users(id) ON DELETE SET NULL,
+    KEY idx_client_status (status),
+    KEY idx_client_owner (owner_id),
+    KEY idx_client_dept (department_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS client_contacts (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    client_id   INT NOT NULL,
+    position    INT NOT NULL DEFAULT 0,
+    name        VARCHAR(255) NOT NULL,
+    designation VARCHAR(255),
+    phone       VARCHAR(255),
+    email       VARCHAR(255),
+    FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The services of a client: one row per SOF (Service Order Form), several allowed.
+-- sof_file is the JSON {"stored":..., "original":...} the attachment helpers use.
+CREATE TABLE IF NOT EXISTS client_services (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    client_id  INT NOT NULL,
+    position   INT NOT NULL DEFAULT 0,
+    sof_number VARCHAR(255) NOT NULL,
+    service    VARCHAR(255) NOT NULL,
+    details    TEXT,
+    sof_file   TEXT,
+    FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS client_history (
+    id        INT AUTO_INCREMENT PRIMARY KEY,
+    client_id INT NOT NULL,
+    user_id   INT,
+    full_name VARCHAR(255),
+    action    VARCHAR(255) NOT NULL,
+    detail    TEXT,
+    at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    KEY idx_client_hist (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Dashboard settings (2026-11-06): one row per admin, JSON with which
 -- dashboard sections that admin wants to see and which chart type (bar/pie)
 -- each of the two department charts uses. No row = everything shown, bars.
@@ -962,6 +1041,35 @@ def _drop_application_tables(conn):
         conn.execute(f"DROP TABLE IF EXISTS {_t}")
 
 
+
+def _drop_sales_pipeline_tab(conn):
+    """Build 84: the Sales Pipeline tab is removed from the Sales &
+    Marketing department, with all its rows. Delete every tab named
+    'Sales Pipeline' in that department (live or in the Recycle Bin),
+    children first so the foreign keys do not block the delete. A
+    database backup taken before applying the build is the only way
+    back. Tabs another department made from the template are left
+    alone: they are ordinary tabs now."""
+    row = conn.execute("SELECT id FROM departments WHERE LOWER(name)='sales & marketing'").fetchone()
+    if row is None:
+        row = conn.execute("SELECT id FROM departments WHERE LOWER(name) LIKE '%sales%' "
+                           "AND LOWER(name) LIKE '%marketing%' ORDER BY id LIMIT 1").fetchone()
+    if row is None:
+        return
+    tabs = conn.execute("SELECT id FROM ddb_tabs WHERE department_id=? AND LOWER(name)='sales pipeline'",
+                        (row[0],)).fetchall()
+    for (tab_id,) in tabs:
+        row_ids = [r[0] for r in conn.execute("SELECT id FROM ddb_rows WHERE tab_id=?", (tab_id,)).fetchall()]
+        for rid in row_ids:
+            conn.execute("DELETE FROM ddb_values WHERE row_id=?", (rid,))
+            conn.execute("DELETE FROM ddb_history WHERE row_id=?", (rid,))
+            conn.execute("DELETE FROM ddb_meeting_sent WHERE row_id=?", (rid,))
+        conn.execute("DELETE FROM ddb_rows WHERE tab_id=?", (tab_id,))
+        conn.execute("DELETE FROM ddb_columns WHERE tab_id=?", (tab_id,))
+        conn.execute("DELETE FROM ddb_tab_shares WHERE tab_id=?", (tab_id,))
+        conn.execute("DELETE FROM ddb_tabs WHERE id=?", (tab_id,))
+
+
 def _upgrade_remove_row_shares(conn):
     """Row sharing is gone (build 78): a normal user can no longer share one
     Department Database row with anyone, and only the department admin
@@ -1046,16 +1154,6 @@ def _upgrade_ddb_tabs(conn):
             continue
         conn.execute("UPDATE ddb_columns SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (first[0], dept_id))
         conn.execute("UPDATE ddb_rows SET tab_id=? WHERE department_id=? AND tab_id IS NULL", (first[0], dept_id))
-    # The Sales Pipeline tab (2026-11-15, build 66): the Sales & Marketing
-    # department gets a default tab holding every column the follow-up &
-    # pipeline report needs. Only a department with no live tab by that
-    # name is touched, so this is safe to run on every startup. (A new
-    # Sales & Marketing department gets the same tab from
-    # core.create_department.)
-    from core import ensure_sales_pipeline_tab, sales_dept_id
-    _sales_id = sales_dept_id(conn)
-    if _sales_id is not None:
-        ensure_sales_pipeline_tab(conn, _sales_id)
 
 
 def _ensure_column(conn, table, column, ddl):
@@ -1148,6 +1246,7 @@ def init_db():
         _upgrade_invoice_tax_tick(conn)
         _upgrade_invoice_header(conn)
         _drop_application_tables(conn)
+        _drop_sales_pipeline_tab(conn)
         _drop_index(conn, "ux_column_reminder", "columns")   # several reminder columns are allowed now
         _ensure_column(conn, "activity_log", "ip", "VARCHAR(255)")
         _ensure_column(conn, "attachments", "scan_status", "VARCHAR(255)")
