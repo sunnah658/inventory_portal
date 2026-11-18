@@ -5525,3 +5525,37 @@
  run against this code: 604 of 607 checks pass; the 3 remaining failures
  are checks that expect exactly 47 tables, which is the build-83 count —
  the code now correctly has 51 tables with the 4 client tables.
+ 106. RECYCLE BIN USER PURGE 500 — FIXED (2026-11-18)
+==============================================================================
+ Purging a deleted user from the Recycle Bin with "Yes, delete all work
+ too" showed 500 Internal Server Error. The account could not be erased
+ at all — the "No, keep their work" choice was not affected, because it
+ never deletes the account.
+
+ Cause: core.purge_user_account() deletes the user's work, then clears a
+ long list of places that still name them, and finally deletes the
+ account row. It missed five places, each holding a plain foreign key
+ to users, so MySQL refused the final DELETE with error 1451:
+   activity_log.user_id (every action the user ever did is logged),
+   item_request_history.user_id (a request they created or changed),
+   ddb_tabs.deleted_by (a DeptDB tab they deleted),
+   item_request_kinds.created_by (a request kind they created),
+   users.created_by (another account they created).
+ Any ONE of these on a deleted user broke the purge; a deleted user
+ with none of them purged fine, which is why the tests never caught it.
+ The same failure also broke the automatic 30-day cleanup
+ (purge_expired calls the same function).
+
+ Fix: five UPDATEs in purge_user_account, next to the other clears, set
+ each of these to NULL before the DELETE. The rows stay — only the link
+ to the erased account is cleared. The activity log and the request
+ history keep their username column, so the history stays readable; a
+ tab, a kind or an account created by the erased user keeps working
+ with no creator named. No schema change, still 51 tables.
+
+ Tested: all six cases against real MySQL 8.0 — a deleted user with no
+ leftover references, and one with each of the five — now purge with
+ 302 and the account is gone, with every referencing row kept and its
+ link NULL. Full regression suite: 619/619 checks (607 from build 84
+ plus 12 new b87 purge checks; the three table-count checks now expect
+ 51 tables, 47 from build 83 plus the 4 client tables from build 85).

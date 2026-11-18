@@ -611,6 +611,17 @@ def purge_user_account(db, uid, delete_work):
     db.execute("UPDATE invoice_templates SET created_by=NULL WHERE created_by=?", (uid,))
     db.execute("UPDATE ddb_tabs SET created_by=NULL WHERE created_by=?", (uid,))
     db.execute("UPDATE ddb_delegates SET granted_by=NULL WHERE granted_by=?", (uid,))
+    # Five more places that still name the user (build 87): each of these
+    # holds a plain foreign key to users, so the DELETE below fails with
+    # MySQL error 1451 while any of them points at the account. The rows
+    # stay — only the link to the erased account is cleared, the same as
+    # the other UPDATEs above (the activity log and the request history
+    # keep their username column, so the history stays readable).
+    db.execute("UPDATE activity_log SET user_id=NULL WHERE user_id=?", (uid,))
+    db.execute("UPDATE item_request_history SET user_id=NULL WHERE user_id=?", (uid,))
+    db.execute("UPDATE ddb_tabs SET deleted_by=NULL WHERE deleted_by=?", (uid,))
+    db.execute("UPDATE item_request_kinds SET created_by=NULL WHERE created_by=?", (uid,))
+    db.execute("UPDATE users SET created_by=NULL WHERE created_by=?", (uid,))
     db.execute("UPDATE users SET deleted_by=NULL WHERE deleted_by=?", (uid,))
     db.execute("DELETE FROM transfers WHERE from_user=? OR to_user=?", (uid, uid))
     db.execute("DELETE FROM requests WHERE requester_id=?", (uid,))

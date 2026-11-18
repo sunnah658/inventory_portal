@@ -1,4 +1,15 @@
 ==============================================================================
+ RECYCLE BIN USER PURGE FIXED (2026-11-18)
+==============================================================================
+ Purging a deleted user from the Recycle Bin with "Yes, delete all work
+ too" showed 500. The purge missed five places that still named the
+ user (activity log, request history, a deleted DeptDB tab, a request
+ kind they created, an account they created), so MySQL refused to
+ delete the account. All five are now cleared (rows kept, link set to
+ NULL) before the account goes. The "No, keep their work" choice was
+ never affected, and the automatic 30-day cleanup uses the same fix.
+
+==============================================================================
  CLIENT DETAIL PAGE 500 FIXED (2026-11-18)
 ==============================================================================
  Every client detail page (/clients/1, /clients/2, ...) showed 500 on the
