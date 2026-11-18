@@ -1,4 +1,14 @@
 ==============================================================================
+ CLIENT DETAIL PAGE 500 FIXED (2026-11-18)
+==============================================================================
+ Every client detail page (/clients/1, /clients/2, ...) showed 500 on the
+ live MySQL 8.0. Cause: the client query used the short name "dec" for a
+ users table join, and DEC is a reserved word in MySQL 8.0. Renamed to
+ "decider" in that one query. The tab list, the create form, the setup page
+ and approving were never affected. Verified against real MySQL 8.0: the
+ detail page now opens for the admin, the Sales user and the Sales admin.
+
+==============================================================================
  SALES PIPELINE TAB REMOVED (2026-11-18)
 ==============================================================================
  The default Sales Pipeline tab is gone from the Sales & Marketing

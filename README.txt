@@ -5498,3 +5498,30 @@
  code with SQLite standing in for MySQL. After applying, run
    docker compose up -d --build
  and watch  docker compose logs portal  on the first start. Back up first.
+ 105. CLIENT DETAIL PAGE 500 ON MYSQL 8.0 — FIXED (2026-11-18)
+==============================================================================
+ The client onboarding feature (section 104) was tested on SQLite, where
+ this worked; on the live MySQL 8.0 it broke every client detail page
+ (/clients/1, /clients/2, ...) with a 500 Internal Server Error.
+
+ Cause: routes_clients.py, _load(), joined the users table with the short
+ name "dec":
+   LEFT JOIN users dec ON dec.id=c.decided_by
+ DEC is a reserved word in MySQL 8.0 (short for DECIMAL), so MySQL refused
+ the query with error 1064. The query runs before any permission check, so
+ the page failed for every user. The tab list, the create form, the setup
+ page and the approve flow were not affected — they use other queries.
+
+ Fix: the short name is now "decider" in that one query (the join and
+ "decider.full_name AS decided_name"). Nothing else changed: no schema
+ change (still 51 tables: 47 + the 4 client tables from section 104), no
+ other file touched.
+
+ Tested: the fix was reproduced and verified against real MySQL 8.0 — the
+ detail page now opens (200) for the portal admin, the Sales user who
+ created the client and the Sales admin, the setup page, the tab list and
+ the new-client form all open, and approving a client works and the detail
+ page still opens after approval. The build-84 regression suite was also
+ run against this code: 604 of 607 checks pass; the 3 remaining failures
+ are checks that expect exactly 47 tables, which is the build-83 count —
+ the code now correctly has 51 tables with the 4 client tables.

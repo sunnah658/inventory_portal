@@ -324,10 +324,10 @@ def _load(cid):
     db = get_db()
     c = db.execute(
         "SELECT c.*, u.full_name AS owner_name, am.full_name AS am_name, am.designation AS am_designation, "
-        "dec.full_name AS decided_name, sb.full_name AS san_name, ab.full_name AS activation_name, "
+        "decider.full_name AS decided_name, sb.full_name AS san_name, ab.full_name AS activation_name, "
         "d.name AS dept_name FROM client_onboardings c "
         "LEFT JOIN users u ON u.id=c.owner_id LEFT JOIN users am ON am.id=c.account_manager_id "
-        "LEFT JOIN users dec ON dec.id=c.decided_by LEFT JOIN users sb ON sb.id=c.san_by "
+        "LEFT JOIN users decider ON decider.id=c.decided_by LEFT JOIN users sb ON sb.id=c.san_by "
         "LEFT JOIN users ab ON ab.id=c.activation_by LEFT JOIN departments d ON d.id=c.department_id "
         "WHERE c.id=?", (cid,)).fetchone()
     if c is None:
