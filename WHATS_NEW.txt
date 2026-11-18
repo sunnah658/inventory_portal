@@ -1,4 +1,14 @@
 ==============================================================================
+ DELETED USERS' DATA TAB (2026-11-18)
+==============================================================================
+ Recycle Bin, new tab "Deleted users' data" (true portal admin only):
+ lists the deleted users whose data is still in the database (removed
+ from the Bin with "No"). Tick the names and click "Delete all" to
+ erase a user and ALL their data at once — no more waiting 30 days,
+ no more deleting from MySQL by hand. Users still in the Bin are not
+ listed here. See README section 107.
+
+==============================================================================
  RECYCLE BIN USER PURGE FIXED (2026-11-18)
 ==============================================================================
  Purging a deleted user from the Recycle Bin with "Yes, delete all work

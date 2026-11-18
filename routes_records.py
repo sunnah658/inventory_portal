@@ -1317,14 +1317,17 @@ def bin_page():
     Database row never appeared here at all."""
     db = get_db()
     portal = is_portal_admin(g.user)
+    true_admin = is_true_admin(g.user)
     # The Others tab holds deleted Department Database tabs (build 79). A
     # portal admin sees them all; anyone else sees it only when they can
     # manage tabs in their own department (dept admin or delegate).
     show_others = portal or ddb_is_tab_admin(db, g.user, g.user["department_id"])
     tab = request.args.get("tab", "records")
-    if tab not in ("records", "users", "others"):
+    if tab not in ("records", "users", "others", "users_data"):
         tab = "records"
     if tab == "users" and not portal:
+        tab = "records"
+    if tab == "users_data" and not true_admin:
         tab = "records"
     if tab == "others" and not show_others:
         tab = "records"
@@ -1341,6 +1344,20 @@ def bin_page():
                                   "FROM ddb_tabs t JOIN departments d ON d.id=t.department_id "
                                   "WHERE " + _where + " ORDER BY t.removed_at DESC", _params).fetchall()
 
+    # The deleted users whose data is still in the database (build 88):
+    # deleted AND already removed from the Users tab with "No" — invisible
+    # in both the Users list and the Bin until the 30 days end.
+    users_data = []
+    if true_admin:
+        _rows88 = db.execute("SELECT u.*, d.name AS department_name, "
+                             "(SELECT full_name FROM users WHERE id=u.deleted_by) AS deleted_by_name "
+                             "FROM users u LEFT JOIN departments d ON d.id=u.department_id "
+                             "WHERE u.is_deleted=1 AND u.bin_purged=1 ORDER BY u.deleted_at DESC").fetchall()
+        for r in _rows88:
+            erase = datetime.strptime(r["deleted_at"], "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS) if r["deleted_at"] else None
+            users_data.append(dict(r, erase_on=erase.strftime("%d %b %Y") if erase else "",
+                                   days_left=(erase - datetime.now()).days if erase else 0))
+
     def _erase(deleted_at):
         erase = datetime.strptime(deleted_at, "%Y-%m-%d %H:%M:%S") + timedelta(days=config.BIN_DAYS)
         return erase.strftime("%d %b %Y"), (erase - datetime.now()).days
@@ -1356,7 +1373,13 @@ def bin_page():
             users.append(dict(r, erase_on=erase.strftime("%d %b %Y") if erase else "",
                               days_left=(erase - datetime.now()).days if erase else 0))
         return render_template("bin.html", items=[], users=users, deleted_tabs=deleted_tabs, tab=tab,
-                               portal=portal, show_others=show_others, days=config.BIN_DAYS)
+                               portal=portal, show_others=show_others, days=config.BIN_DAYS,
+                               users_data=users_data, true_admin=true_admin)
+
+    if tab == "users_data":
+        return render_template("bin.html", items=[], users=[], deleted_tabs=deleted_tabs, tab=tab,
+                               portal=portal, show_others=show_others, days=config.BIN_DAYS,
+                               users_data=users_data, true_admin=true_admin)
 
     if tab == "others":
         # The tab is listed like any other deleted item, so the same table
@@ -1373,7 +1396,8 @@ def bin_page():
                               restore_url=url_for("records.bin_tab_restore", tab_id=r["id"]),
                               purge_url=url_for("records.bin_tab_purge", tab_id=r["id"])))
         return render_template("bin.html", items=items, users=[], deleted_tabs=deleted_tabs, tab=tab,
-                               portal=portal, show_others=show_others, days=config.BIN_DAYS)
+                               portal=portal, show_others=show_others, days=config.BIN_DAYS,
+                               users_data=users_data, true_admin=true_admin)
 
     items = []
     # 1. Personal records (as before).
@@ -1453,7 +1477,8 @@ def bin_page():
                           purge_url=url_for("records.bin_request_purge", rid=r["id"])))
     items.sort(key=lambda it: it["deleted_at"] or "", reverse=True)
     return render_template("bin.html", items=items, users=[], deleted_tabs=deleted_tabs, tab=tab,
-                           portal=portal, show_others=show_others, days=config.BIN_DAYS)
+                           portal=portal, show_others=show_others, days=config.BIN_DAYS,
+                           users_data=users_data, true_admin=true_admin)
 
 
 def _bin_purge_blocked(db, deleted_by):
@@ -1732,6 +1757,44 @@ def bin_user_restore(user_id):
     db.commit()
     flash(f"{row['full_name']} is restored and can work as before.", "ok")
     return redirect(url_for("records.bin_page", tab="users"))
+
+
+@bp.route("/bin/users-data/delete-all", methods=["POST"])
+@admin_required
+def bin_users_data_delete_all():
+    """Erase deleted users whose data is still in the database, at once.
+    The Recycle Bin tab "Deleted users' data" lists the users who were
+    removed from the Bin with "No" (is_deleted=1, bin_purged=1): invisible
+    in the Users list and in the Bin, unrestorable, their work kept until
+    the 30 days end. The portal admin ticks the names and clicks Delete
+    all, and the user and ALL their data go immediately — the same wipe
+    as purging with "Yes, delete all work too" (core.purge_user_account
+    with delete_work=True). True portal admin only."""
+    db = get_db()
+    if not is_true_admin(g.user):
+        abort(403)
+    ids = request.form.getlist("user_ids")
+    done = []
+    for _raw in ids:
+        try:
+            _uid = int(_raw)
+        except (TypeError, ValueError):
+            continue
+        row = db.execute("SELECT * FROM users WHERE id=?", (_uid,)).fetchone()
+        if row is None or not row["is_deleted"] or not row["bin_purged"]:
+            continue
+        purge_user_account(db, _uid, delete_work=True)
+        log(db, "user_purge", row["username"])
+        done.append(row["full_name"])
+    if done:
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} erased {len(done)} deleted user(s) and all their data for good: " + ", ".join(done) + ".",
+                          url_for("records.bin_page", tab="users_data"))
+        db.commit()
+        flash(f"{len(done)} user(s) and all their data were deleted from the portal for good: " + ", ".join(done) + ".", "ok")
+    else:
+        flash("No users selected, or the selected users cannot be deleted from here.", "error")
+    return redirect(url_for("records.bin_page", tab="users_data"))
 
 
 @bp.route("/bin/users/<int:user_id>/purge", methods=["POST"])

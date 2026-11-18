@@ -5559,3 +5559,35 @@
  link NULL. Full regression suite: 619/619 checks (607 from build 84
  plus 12 new b87 purge checks; the three table-count checks now expect
  51 tables, 47 from build 83 plus the 4 client tables from build 85).
+
+==============================================================================
+107. RECYCLE BIN "DELETED USERS' DATA" TAB (build 88, 2026-11-18)
+==============================================================================
+ A deleted user whose work was kept ("No" to "You want to delete this
+ user all work from the portal too?") left the Users tab and the Users
+ list, and there was no way in the portal to erase them for good — the
+ account and their data just sat in the database until the 30 days
+ ended. The Recycle Bin now has a fourth tab, "Deleted users' data",
+ for the true portal admin only. It lists exactly those users —
+ deleted, already removed from the Bin, data still in the database —
+ with their name, username, department, who deleted them and when, and
+ the date their data would vanish on its own. The portal admin ticks
+ the names and clicks "Delete all", and the user and ALL their data go
+ at once: their records, Department Database rows, invoices, item
+ requests, own columns and public links, plus every reference that
+ would block the delete (the same wipe as purging with "Yes, delete
+ all work too", core.purge_user_account with delete_work=True). The
+ action asks for confirmation first and cannot be undone. Users still
+ in the Bin (not yet purged) are never listed here and cannot be
+ erased from this tab; a permission user or regular user never sees
+ the tab, and posting to it directly returns 403. No schema change,
+ still 51 tables.
+
+ Tested: 14 new b88 checks against real MySQL 8.0 — the tab lists the
+ No-purged user and not the Bin user, the Users tab still lists the
+ Bin user and not the No-purged one, the tab and the action are hidden
+ from a regular user and a permission user (403), Delete all erases
+ two ticked users and all of their work at once while an unticked user
+ stays, and a Bin user posted to Delete all is left untouched. Full
+ regression suite: 633/633 checks (619 from build 87 plus 14 new b88
+ checks).

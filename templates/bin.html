@@ -2,15 +2,16 @@
 {% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Recycle bin{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records, Department Database rows, invoices and item requests stay here for {{ days }} days, then are erased for good. Deleted Department Database tabs stay in the Others tab, where they can be restored. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too.</p></div></div>
+<div class="hd"><div><h1>Recycle bin</h1><p class="hint">Deleted records, Department Database rows, invoices and item requests stay here for {{ days }} days, then are erased for good. Deleted Department Database tabs stay in the Others tab, where they can be restored. Deleted users stay in the Users tab for {{ days }} days, with their work kept (name in red); after {{ days }} days their work vanishes too. Deleted users whose data is still in the database are listed in the 'Deleted users' data' tab (portal admin only), where their data can be erased at once.</p></div></div>
 <div class="kp">
   {{ kpi('Deleted records', items|length) }}
   {% if show_others %}{{ kpi('Deleted tabs', deleted_tabs|length) }}{% endif %}
   {% if portal %}{{ kpi('Deleted users', users|length) }}{% endif %}
+  {% if true_admin %}{{ kpi("Deleted users' data", users_data|length) }}{% endif %}
   {{ kpi('Kept for', days ~ ' days') }}
 </div>
 <div class="tw"><div>
-{% if portal or show_others %}<div class="tabs"><a class="tab {{ 'on' if tab == 'records' }}" href="{{ url_for('records.bin_page', tab='records') }}">Records</a>{% if show_others %}<a class="tab {{ 'on' if tab == 'others' }}" href="{{ url_for('records.bin_page', tab='others') }}">Others</a>{% endif %}{% if portal %}<a class="tab {{ 'on' if tab == 'users' }}" href="{{ url_for('records.bin_page', tab='users') }}">Users</a>{% endif %}</div>{% endif %}
+{% if portal or show_others %}<div class="tabs"><a class="tab {{ 'on' if tab == 'records' }}" href="{{ url_for('records.bin_page', tab='records') }}">Records</a>{% if show_others %}<a class="tab {{ 'on' if tab == 'others' }}" href="{{ url_for('records.bin_page', tab='others') }}">Others</a>{% endif %}{% if portal %}<a class="tab {{ 'on' if tab == 'users' }}" href="{{ url_for('records.bin_page', tab='users') }}">Users</a>{% endif %}{% if true_admin %}<a class="tab {{ 'on' if tab == 'users_data' }}" href="{{ url_for('records.bin_page', tab='users_data') }}">Deleted users' data</a>{% endif %}</div>{% endif %}
 {% if tab == 'users' %}
 <div class="tb">
 {% if users %}<table><thead><tr><th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
@@ -27,6 +28,23 @@ function purgeUser(form){
   var yes = confirm("You want to delete this user all work from the portal too?");
   form.querySelector('input[name="delete_work"]').value = yes ? "1" : "0";
   return true;
+}
+</script>
+{% elif tab == 'users_data' %}
+<div class="tb">
+{% if users_data %}<form method="post" action="{{ url_for('records.bin_users_data_delete_all') }}" onsubmit="return deleteUsersData(this);"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<table><thead><tr><th></th><th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th></tr></thead><tbody>
+{% for u in users_data %}<tr class="r"><td><input type="checkbox" name="user_ids" value="{{ u['id'] }}"></td><td><span class="user-deleted">{{ u['full_name'] }}</span> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td>
+  <td>{{ u['deleted_at'] }}<div class="sub">by {{ u['deleted_by_name'] or '' }}</div></td>
+  <td>{{ u['erase_on'] }} {% if u['days_left'] <= 3 %}<span class="s r">{{ u['days_left'] if u['days_left'] > 0 else 0 }} days left</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+<div style="margin-top:12px"><button class="b dg" type="submit">Delete all</button> <span class="hint">Deletes the ticked users and ALL their data at once. This cannot be undone.</span></div></form>{% else %}<div class="empty">No deleted users with data left in the database.</div>{% endif %}
+</div>
+<script>
+function deleteUsersData(form){
+  var n = form.querySelectorAll('input[name="user_ids"]:checked').length;
+  if(!n){ alert("Tick at least one user first."); return false; }
+  return confirm("Delete all data of the selected user(s) for good? Their records, rows, invoices, requests and accounts will be erased at once. This cannot be undone.");
 }
 </script>
 {% else %}
@@ -46,6 +64,7 @@ function purgeUser(form){
   <div class="card"><h2>What happens here</h2>
     <p class="hint">A deleted record, Department Database row, invoice or item request can be restored any time within {{ days }} days. After that it is erased for good. A deleted Department Database tab is restored from the Others tab, with its rows.</p>
     <p class="hint">Deleting a user for good asks: "You want to delete this user all work from the portal too?" — <b>Yes</b> erases the work at once, <b>No</b> leaves the work until the {{ days }} days end. A purged user can never be restored.</p>
+    <p class="hint">Users removed with <b>No</b> leave the Users tab but their data stays in the database — they are listed in the 'Deleted users' data' tab (portal admin only). Tick the names there and click <b>Delete all</b> to erase a user and ALL their data at once, without waiting for the {{ days }} days.</p>
     <p class="hint">A permission user can restore anything, but only the portal admin can erase a record, row, invoice, request or tab that a permission user deleted.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),
