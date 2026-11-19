@@ -26,7 +26,6 @@
   {{ kpi('Status', c['status']|client_status, cls='txt') }}
   {{ kpi('Services (SOF)', services|length) }}
   {{ kpi('Contacts', contacts|length) }}
-  {{ kpi('Activation date', (c['activation_date']|string)[:10] if c['activation_date'] else '—') }}
 </div>
 <div class="tw"><div>
 
@@ -69,10 +68,18 @@
 
 {% if perm.activation %}
 <div class="card"><h2>Activation date</h2>
-  <p class="hint">Only Revenue Assurance edits this. Saving it sends the final record to Finance.</p>
+  <p class="hint">Only Revenue Assurance edits this. Saving it does not send the record to Finance — forward it below once it is ready.</p>
   <form method="post" action="{{ url_for('clients.activation', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fd"><label for="activation_date">Activation date</label><input id="activation_date" name="activation_date" type="date" required value="{{ (c['activation_date']|string)[:10] if c['activation_date'] else '' }}" style="max-width:220px"></div>
-    <button class="b p" type="submit">{{ 'Change activation date' if c['activation_date'] else 'Save and send to Finance' }}</button></form>
+    <button class="b p" type="submit">{{ 'Change activation date' if c['activation_date'] else 'Save activation date' }}</button></form>
+</div>
+{% endif %}
+
+{% if perm.forward_finance %}
+<div class="card"><h2>Forward to Finance</h2>
+  <p class="hint">Send the finished record to Finance. Only then can Finance see it.{% if not c['activation_date'] %} Set the activation date first.{% endif %}</p>
+  <form method="post" action="{{ url_for('clients.forward_finance', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="b p" type="submit">Forward to Finance</button></form>
 </div>
 {% endif %}
 
@@ -84,6 +91,7 @@
   <div class="kv"><b>Address</b><span style="white-space:pre-wrap">{{ c['address'] or '—' }}</span></div>
   <div class="kv"><b>Notes</b><span style="white-space:pre-wrap">{{ c['notes'] or '—' }}</span></div>
   <div class="kv"><b>Account manager</b><span>{{ c['am_name'] or '—' }}{% if c['am_designation'] %} · {{ c['am_designation'] }}{% endif %}</span></div>
+  <div class="kv"><b>Activation date</b><span>{{ (c['activation_date']|string)[:10] if c['activation_date'] else '—' }}</span></div>
 </div>
 
 <div class="card"><h2>Contacts</h2>

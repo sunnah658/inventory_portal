@@ -45,11 +45,11 @@ bp = Blueprint("clients", __name__, url_prefix="/clients")
 # (key, label, what the department does in the flow)
 FLOW_ROLES = [
     ("sales", "Sales", "Creates the client. Its department admin approves or rejects."),
-    ("revenue_assurance", "Revenue Assurance", "Sees the approved client first (view only), gets the SAN report, sets the activation date."),
+    ("revenue_assurance", "Revenue Assurance", "Sees the approved client first (view only), gets the SAN report, edits the activation date, forwards the final record to Finance."),
     ("transmission", "Transmission", "Views the full record and may upload the SAN report."),
     ("core", "Core", "Views the full record and may upload the SAN report."),
     ("technical", "Technical support", "Views the full record and may upload the SAN report."),
-    ("finance", "Finance", "Receives the final record once the activation date is set."),
+    ("finance", "Finance", "Receives the final record once Revenue Assurance forwards it."),
 ]
 ROLE_KEYS = [k for k, _l, _d in FLOW_ROLES]
 ROLE_LABEL = {k: label for k, label, _d in FLOW_ROLES}
@@ -61,7 +61,7 @@ STATUS_LABEL = {
     "rejected": "Rejected",
     "approved": "Approved · waiting for Revenue Assurance",
     "forwarded": "Forwarded by Revenue Assurance · waiting for SAN report",
-    "san_uploaded": "SAN report uploaded · waiting for activation date",
+    "san_uploaded": "SAN report uploaded · waiting for activation date and forward to Finance",
     "completed": "Completed",
 }
 ALL_STATUSES = tuple(STATUS_LABEL)
@@ -217,6 +217,7 @@ def _perms(db, user, roles, c):
                       and (bool(roles.intersection(SAN_ROLES)) or is_portal_admin(user)),
         "remove_san": bool(c["san_file"]) and status == "san_uploaded" and is_portal_admin(user),
         "activation": status in ("san_uploaded", "completed") and "revenue_assurance" in roles,
+        "forward_finance": status == "san_uploaded" and _is_ra_admin(db, user),
     }
 
 
@@ -378,6 +379,8 @@ def _timeline(db, c):
          "done" if st in ("san_uploaded", "completed") else "todo"),
         ("Activation date set", f"Only {names['revenue_assurance']} edits it",
          "done" if st == "completed" else "now" if st == "san_uploaded" else "todo"),
+        (f"{names['revenue_assurance']} forwards it to {names['finance']}", "Only then Finance sees the final record",
+         "done" if st == "completed" else "now" if st == "san_uploaded" else "todo"),
         (f"{names['finance']} receives the final record", "", "done" if st == "completed" else "todo"),
     ]
     return steps
@@ -422,13 +425,14 @@ def _account_managers(db):
 
 def _blank_form():
     return {"client_name": "", "business_type": "", "address": "", "phone": "", "email": "", "notes": "",
-            "account_manager_id": None,
+            "activation_date": "", "account_manager_id": None,
             "contacts": [{"name": "", "designation": "", "phone": "", "email": ""}],
             "services": [{"id": "", "sof_number": "", "service": "", "details": "", "file_name": ""}]}
 
 
 def _form_from_db(db, c):
     form = {k: c[k] or "" for k in ("client_name", "business_type", "address", "phone", "email", "notes")}
+    form["activation_date"] = str(c["activation_date"])[:10] if c["activation_date"] else ""
     form["account_manager_id"] = c["account_manager_id"]
     form["contacts"] = [dict(name=r["name"] or "", designation=r["designation"] or "", phone=r["phone"] or "",
                              email=r["email"] or "")
@@ -462,6 +466,13 @@ def _read_form(db, existing):
         errors.append("Page 1: type the client name.")
     if form["email"] and "@" not in form["email"]:
         errors.append("Page 1: the client email does not look right.")
+    raw_day = (f.get("activation_date") or "").strip()
+    form["activation_date"] = ""
+    if raw_day:
+        try:
+            form["activation_date"] = datetime.strptime(raw_day, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            errors.append("Page 1: the activation date does not look right.")
 
     # ---- page 2
     contacts = []
@@ -579,9 +590,13 @@ def new():
     try:
         cid = db.execute(
             "INSERT INTO client_onboardings(department_id,owner_id,client_name,business_type,address,phone,email,"
-            "notes,account_manager_id,status) VALUES (?,?,?,?,?,?,?,?,?, 'pending')",
+            "notes,account_manager_id,activation_date,activation_by,activation_at,status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'pending')",
             (sales, g.user["id"], form["client_name"], form["business_type"] or None, form["address"] or None,
-             form["phone"] or None, form["email"] or None, form["notes"] or None, form["account_manager_id"])).lastrowid
+             form["phone"] or None, form["email"] or None, form["notes"] or None, form["account_manager_id"],
+             form["activation_date"] or None,
+             g.user["id"] if form["activation_date"] else None,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S") if form["activation_date"] else None)).lastrowid
         _write_children(db, cid, contacts, services)
         _history(db, cid, g.user, "sent for approval", f"{len(contacts)} contact(s), {len(services)} service(s)")
         log(db, "client_new", f"{client_no(cid)} {form['client_name']}")
@@ -610,12 +625,23 @@ def edit(cid):
         _remove_files(saved_new)
         return _show_form(db, form, cid=cid, c=c, errors=errors)
     try:
-        done = db.execute(
-            "UPDATE client_onboardings SET client_name=?, business_type=?, address=?, phone=?, email=?, notes=?, "
-            "account_manager_id=?, status='pending', reject_reason=NULL, decided_by=NULL, decided_at=NULL, "
-            "updated_at=datetime('now','localtime') WHERE id=? AND status='rejected'",
-            (form["client_name"], form["business_type"] or None, form["address"] or None, form["phone"] or None,
-             form["email"] or None, form["notes"] or None, form["account_manager_id"], cid)).rowcount
+        old_day = str(c["activation_date"])[:10] if c["activation_date"] else None
+        new_day = form["activation_date"] or None
+        sets = ["client_name=?", "business_type=?", "address=?", "phone=?", "email=?", "notes=?",
+                "account_manager_id=?", "activation_date=?"]
+        params = [form["client_name"], form["business_type"] or None, form["address"] or None,
+                  form["phone"] or None, form["email"] or None, form["notes"] or None,
+                  form["account_manager_id"], new_day]
+        if new_day != old_day:                       # the date itself was set, changed or cleared
+            if new_day:
+                sets += ["activation_by=?", "activation_at=datetime('now','localtime')"]
+                params.append(g.user["id"])
+            else:
+                sets += ["activation_by=NULL", "activation_at=NULL"]
+        sets.append("status='pending', reject_reason=NULL, decided_by=NULL, decided_at=NULL, "
+                    "updated_at=datetime('now','localtime')")
+        done = db.execute("UPDATE client_onboardings SET " + ", ".join(sets) + " WHERE id=? AND status='rejected'",
+                          params + [cid]).rowcount
         if done == 0:                                    # somebody else changed the status meanwhile
             db.rollback()
             _remove_files(saved_new)
@@ -808,6 +834,9 @@ def san_remove(cid):
 @bp.route("/<int:cid>/activation", methods=["POST"])
 @login_required
 def activation(cid):
+    """Revenue Assurance edits the activation date. Changing it does NOT
+    complete the record or send it to Finance (build 92): that takes the
+    separate forward below."""
     db, c, roles = _load(cid)
     if not _perms(db, g.user, roles, c)["activation"]:
         abort(403)
@@ -822,7 +851,7 @@ def activation(cid):
         flash("The activation date is already that day.", "ok")
         return redirect(_link(cid))
     done = db.execute("UPDATE client_onboardings SET activation_date=?, activation_by=?, "
-                      "activation_at=datetime('now','localtime'), status='completed', "
+                      "activation_at=datetime('now','localtime'), "
                       "updated_at=datetime('now','localtime') WHERE id=? AND status IN ('san_uploaded','completed')",
                       (day.isoformat(), g.user["id"], cid)).rowcount
     if not done:
@@ -832,14 +861,44 @@ def activation(cid):
     _history(db, cid, g.user, "activation date set" if not old else "activation date changed",
              f"{old} -> {day.isoformat()}" if old else day.isoformat())
     log(db, "client_activation", f"{client_no(cid)} {c['client_name']} {day.isoformat()}")
-    if old:
+    if c["status"] == "completed":
+        # The record is already with Finance: tell Finance (and the owner) the date moved.
         text = f"The activation date of '{c['client_name']}' changed to {day.isoformat()}."
+        notify(db, set(_members(db, "finance")) | {c["owner_id"]}, text, _link(cid), skip=g.user["id"])
+        db.commit()
+        flash("Activation date changed. Finance was told.", "ok")
     else:
-        text = f"The final record of '{c['client_name']}' is ready: activation date {day.isoformat()}."
+        db.commit()
+        flash("Activation date saved. Finance has not received the record yet — forward it below when ready.", "ok")
+    return redirect(_link(cid))
+
+
+# ---------------------------------------------------------------- Revenue Assurance: forward to Finance
+@bp.route("/<int:cid>/forward-finance", methods=["POST"])
+@login_required
+def forward_finance(cid):
+    """Revenue Assurance sends the finished record to Finance. Only now does
+    the record become Completed and visible to Finance (build 92)."""
+    db, c, roles = _load(cid)
+    if not _perms(db, g.user, roles, c)["forward_finance"]:
+        abort(403)
+    if not c["activation_date"]:
+        flash("Set the activation date first.", "error")
+        return redirect(_link(cid))
+    day = str(c["activation_date"])[:10]
+    done = db.execute("UPDATE client_onboardings SET status='completed', decided_by=?, "
+                      "decided_at=datetime('now','localtime'), updated_at=datetime('now','localtime') "
+                      "WHERE id=? AND status='san_uploaded'", (g.user["id"], cid)).rowcount
+    if not done:
+        db.rollback()
+        flash("This client cannot be sent to Finance now.", "error")
+        return redirect(_link(cid))
+    _history(db, cid, g.user, "forwarded to finance", day)
+    log(db, "client_forward_finance", f"{client_no(cid)} {c['client_name']} {day}")
+    text = f"The final record of '{c['client_name']}' is ready: activation date {day}."
     notify(db, set(_members(db, "finance")) | {c["owner_id"]}, text, _link(cid), skip=g.user["id"])
     db.commit()
-    flash("Activation date saved. Finance received the final record." if not old
-          else "Activation date changed. Finance was told.", "ok")
+    flash("Sent to Finance. Finance can now see the final record.", "ok")
     return redirect(_link(cid))
 
 

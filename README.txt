@@ -5760,3 +5760,41 @@
  Tested: 23 client-flow checks against real MySQL 8.0 (18 from build
  90 plus 5 new reject/forward redirect checks). Full regression
  suite: 630/630 checks.
+
+------------------------------------------------------------------------------
+111. (build 92) ACTIVATION DATE: NO BOX ON THE TOP, SALES SETS IT, FINANCE
+     WAITS FOR THE FORWARD
+------------------------------------------------------------------------------
+ (a) The Activation date box is GONE from the top of the client page
+ (the KPI row is now Status / Services / Contacts only). The date
+ itself still shows on the page, in the Client card.
+ (b) The Sales person who creates the record now sets the activation
+ date: a new Activation date box on page 1 of the create form. It
+ may be left blank — then Revenue Assurance fills it in later. A
+ date that is not a real date is refused. The date is stored with
+ who set it. A rejected client keeps its date when it is saved
+ again, and the Sales user can change it there.
+ (c) Revenue Assurance can still change the date after the SAN report
+ is uploaded, but changing it no longer completes the record and no
+ longer tells Finance. Finance still cannot open the record.
+ (d) Sending the record to Finance is now a separate step: after the
+ SAN report is uploaded and the date is on the record, the Revenue
+ Assurance admin forwards it with the new Forward to Finance button
+ on the client page. Only then does the record become Completed,
+ only then can Finance open it, and only then is Finance told.
+ Forwarding with no date on the record is refused ("Set the
+ activation date first."). The flow list has the new step ("Revenue
+ Assurance forwards it to Finance") between the activation date and
+ Finance receiving the record, and the SAN-uploaded status now reads
+ "waiting for activation date and forward to Finance". Changing the
+ date on a record that is already with Finance still tells Finance,
+ as before. The forward is an admin action (Revenue Assurance dept
+ admin or portal admin), like the first forward; any Revenue
+ Assurance user can still edit the date.
+
+ Tested: 45 client-flow checks against real MySQL 8.0 (23 from build
+ 91 plus 22 new build-92 checks: no date box on the top, the date on
+ the create form, blank and bad dates, the date edit not completing
+ the record, Finance blind until the forward, the forward needing a
+ date, Finance seeing the date after the forward). Full regression
+ suite: 630/630 checks.

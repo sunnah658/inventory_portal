@@ -1,11 +1,16 @@
 ==============================================================================
- REJECTED CLIENT GOES TO THE CLIENT LIST (2026-11-19)
+ ACTIVATION DATE: NO BOX ON TOP, SALES SETS IT, FINANCE WAITS FOR THE FORWARD (2026-11-19)
 ==============================================================================
- After the Revenue Assurance admin rejected a client, the page sent
- them back to that client — but a rejected client is invisible to
- Revenue Assurance, so it came back "page not found". A reject now
- takes the admin to the Client onboarding page instead. A forward is
- unchanged. See README section 110.
+ The Activation date box is gone from the top of the client page. The
+ Sales person now sets the activation date when they create the
+ record (a box on the create form; it may be left blank). Revenue
+ Assurance can still change the date after the SAN report is uploaded,
+ but changing it no longer sends the record to Finance. Finance sees
+ the record only once Revenue Assurance forwards it with the new
+ Forward to Finance button — the record becomes Completed then, and
+ Finance is told. The date itself shows in the Client card on the
+ page, and the flow list has the new forward step. See README
+ section 111.
 
  NOTE: if the portal container keeps restarting with MySQL error
  1045 after applying a build, the live .env was overwritten by the
