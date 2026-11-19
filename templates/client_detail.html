@@ -23,7 +23,7 @@
   </div>
 </div>
 <div class="kp">
-  {{ kpi('Status', c['status']|client_status) }}
+  {{ kpi('Status', c['status']|client_status, cls='txt') }}
   {{ kpi('Services (SOF)', services|length) }}
   {{ kpi('Contacts', contacts|length) }}
   {{ kpi('Activation date', (c['activation_date']|string)[:10] if c['activation_date'] else '—') }}

@@ -5657,3 +5657,38 @@
  build-61 attachment-access checks rewritten for the removal: the
  pages are 404, the tick is gone, and an unticked user adds an
  Attachment column and uploads a file).
+
+==============================================================================
+109. CLIENT STATUS FONT + THE .env COMMENT THAT TURNED SCANNING ON
+     (build 90, 2026-11-19)
+==============================================================================
+ (A) The Status card on the client page was set in the big-number KPI
+ size (1.9rem), so a long status phrase filled the whole card in huge
+ type. The Status KPI now uses a small text size (1.1rem) through a
+ new .k1.txt class; the other KPI values (Services, Contacts,
+ Activation date) stay at the big size.
+
+ (B) Why uploads still failed with the scan error even though the live
+ .env had CLAMAV_HOST empty: the line in the .env was
+ "CLAMAV_HOST=                   # set to: clamav". Docker Compose
+ reads a comment on the same line as an EMPTY value as the value
+ itself, so the running portal saw CLAMAV_HOST="# set to: clamav" —
+ scanning on, host unresolvable, every upload refused with
+ "[Errno -2] Name or service not known" (proved by
+ "docker compose exec portal env | grep CLAMAV" on the live server).
+ The other .env lines have a real value before their comment, so
+ theirs are fine; only an empty value has this trap. The fix on the
+ server: make the CLAMAV_HOST line bare ("CLAMAV_HOST=" with nothing
+ after it — or delete the line), then "docker compose up -d" to
+ recreate the container (a plain restart keeps the old container and
+ its old value). In this zip the comment moved to its own line above
+ CLAMAV_HOST=, so the shipped .env is genuinely empty. The value did
+ not change (still empty); the .env md5 changed because the line did.
+ Never put a comment on the same line as an empty value in the .env.
+ (The live .env also had TZ=Dhaka/Asia, which is backwards — the
+ correct name is Asia/Dhaka; see README section 100.)
+
+ Tested: 18 client-flow checks against real MySQL 8.0 (16 from build
+ 89 plus the .env line check and the Status card class check). Full
+ regression suite: 630/630 checks. The client page was rendered to a
+ JPG proof (b90-client-status-font.jpg) showing the smaller status.

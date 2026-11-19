@@ -1,4 +1,16 @@
 ==============================================================================
+ CLIENT STATUS FONT + SCAN ERROR ROOT CAUSE (2026-11-19)
+==============================================================================
+ The Status card on the client page was set in the big-number size, so
+ the long status filled the card in huge type — it is now a small text
+ size. The scan error stayed even with CLAMAV_HOST empty because the
+ line was "CLAMAV_HOST=  # set to: clamav": Docker Compose reads the
+ comment as the value when the value is empty, so the portal saw
+ CLAMAV_HOST="# set to: clamav" and kept scanning. On the server, make
+ the line bare (CLAMAV_HOST=, nothing after it) and run
+ "docker compose up -d". See README section 109.
+
+==============================================================================
  REVENUE ASSURANCE FORWARD / REJECT + EVERYONE CAN UPLOAD (2026-11-19)
 ==============================================================================
  Client onboarding: after the Sales admin approves, the client goes to
