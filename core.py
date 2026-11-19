@@ -90,17 +90,10 @@ def display_record_value(col, value):
 
 def can_use_record_attachments(user):
     """May this user add an Attachment column to their own Mine tab and
-    upload files into it (build 61)? The portal admin always can; anyone
-    else only when the portal admin or a permission user ticked them on
-    the User Attachment Access page (users.can_ddb_attachment)."""
-    if user is None:
-        return False
-    if is_portal_admin(user):
-        return True
-    try:
-        return bool(user["can_ddb_attachment"])
-    except Exception:
-        return False
+    upload files into it? Since build 89 everyone can — the User Attachment
+    Access page and its tick are gone, so this is always True for a
+    logged-in user. Kept as a helper so the call sites read the same."""
+    return user is not None
 
 
 def options_of(col):

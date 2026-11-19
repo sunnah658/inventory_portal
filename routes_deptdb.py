@@ -218,20 +218,19 @@ def _row(rid):
 
 
 def _can_create_attachment(user, dept_id=None):
-    """Portal admin always; a dept admin only if the portal admin gave them
-    access. A delegate inherits it when a dept admin of his department has it."""
+    """Portal admin always; any dept admin (a delegate too) can create
+    attachment columns since build 89 — the access tick is gone."""
     db = get_db()
     if is_portal_admin(user):
         return True
     try:
-        if user["is_dept_admin"] and user["can_ddb_attachment"]:
+        if user["is_dept_admin"]:
             return True
     except Exception:
         return False
     dept_id = dept_id or user["department_id"]
     if dept_id and ddb_is_tab_admin(db, user, dept_id):
-        return db.execute("SELECT 1 FROM users WHERE department_id=? AND is_dept_admin=1 AND can_ddb_attachment=1",
-                          (dept_id,)).fetchone() is not None
+        return True
     return False
 
 

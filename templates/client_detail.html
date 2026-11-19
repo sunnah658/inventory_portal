@@ -34,13 +34,27 @@
 
 {% if perm.approve %}
 <div class="card"><h2>Approval</h2>
-  <p class="hint">Approve the client so Revenue Assurance, Transmission, Core and Technical support can see it, or reject it with a reason and it goes back to the Sales user.</p>
+  <p class="hint">Approve the client so Revenue Assurance can see it, or reject it with a reason and it goes back to the Sales user. Revenue Assurance then forwards it to Transmission, Core and Technical support.</p>
   <div class="acts">
     <form method="post" action="{{ url_for('clients.approve', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b p" type="submit">Approve</button></form>
   </div>
   <form method="post" action="{{ url_for('clients.reject', cid=c['id']) }}" style="margin-top:12px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fd"><label for="reason">Reason for rejecting <span class="req">*</span></label><input id="reason" name="reason" type="text" maxlength="1000" required></div>
     <button class="b dg" type="submit">Reject</button></form>
+</div>
+{% endif %}
+
+{% if perm.forward %}
+<div class="card"><h2>Revenue Assurance decision</h2>
+  <p class="hint">Forward the client to Transmission, Core and Technical support, or reject it with a reason and it goes back to the Sales user.</p>
+  <form method="post" action="{{ url_for('clients.ra_decision', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fd"><label for="decision">Decision <span class="req">*</span></label><select id="decision" name="decision" required onchange="document.getElementById('ra_reason').required = (this.value == 'reject');">
+      <option value="">Choose…</option>
+      <option value="forward">Forward to Transmission, Core and Technical support</option>
+      <option value="reject">Reject — send it back to the Sales user</option>
+    </select></div>
+    <div class="fd"><label for="ra_reason">Reason for rejecting <span class="req">*</span></label><input id="ra_reason" name="reason" type="text" maxlength="1000" placeholder="Only needed when rejecting"></div>
+    <button class="b p" type="submit">Send decision</button></form>
 </div>
 {% endif %}
 

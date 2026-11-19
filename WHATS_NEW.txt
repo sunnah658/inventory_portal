@@ -1,4 +1,19 @@
 ==============================================================================
+ REVENUE ASSURANCE FORWARD / REJECT + EVERYONE CAN UPLOAD (2026-11-19)
+==============================================================================
+ Client onboarding: after the Sales admin approves, the client goes to
+ Revenue Assurance only. The Revenue Assurance admin forwards it (or
+ rejects it with a reason) from a dropdown on the client page — only
+ after the forward can Transmission, Core and Technical support see it
+ and upload the SAN report. A rejected client goes back to the Sales
+ user with the reason shown. Clients already approved stay approved
+ until Revenue Assurance forwards or rejects them.
+ Attachment access is gone: the "User Attachment Access" page and the
+ tick on the Add/Edit user form are removed — every user can now upload
+ attachments. To turn the virus scanner off, empty the CLAMAV_HOST
+ line in the LIVE .env and restart the portal. See README section 108.
+
+==============================================================================
  DELETED USERS' DATA TAB (2026-11-18)
 ==============================================================================
  Recycle Bin, new tab "Deleted users' data" (true portal admin only):

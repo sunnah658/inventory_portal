@@ -814,7 +814,7 @@ CREATE TABLE IF NOT EXISTS client_onboardings (
     notes              TEXT,
     account_manager_id INT,
     status             VARCHAR(255) NOT NULL DEFAULT 'pending'
-                       CHECK (status IN ('pending','rejected','approved','san_uploaded','completed')),
+                       CHECK (status IN ('pending','rejected','approved','forwarded','san_uploaded','completed')),
     reject_reason      TEXT,
     decided_by         INT,
     decided_at         DATETIME,
@@ -1008,6 +1008,38 @@ def _upgrade_ddb_attachment_type(conn):
         return
     conn.execute("ALTER TABLE ddb_columns MODIFY COLUMN col_type VARCHAR(255) NOT NULL "
                  "CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment'))")
+
+
+def _upgrade_client_status(conn):
+    """Build 89: the client flow gained the "forwarded" status (Revenue
+    Assurance forwards an approved client to Transmission, Core and
+    Technical support). Old client_onboardings tables have a CHECK without
+    it. Widening it in place takes DROP CHECK + ADD CHECK: MODIFY COLUMN
+    only ADDS a second CHECK and the old one would still block 'forwarded'
+    (error 3819). The new CHECK is a superset of the old one, so no
+    existing row can violate it. (A fresh database already has 'forwarded'
+    in the CHECK from SCHEMA, so this is a no-op there.)"""
+    if not _table_exists(conn, "client_onboardings"):
+        return
+    try:
+        rows = conn.execute(
+            "SELECT tc.CONSTRAINT_NAME AS cname, cc.CHECK_CLAUSE AS clause "
+            "FROM information_schema.TABLE_CONSTRAINTS tc "
+            "JOIN information_schema.CHECK_CONSTRAINTS cc "
+            "  ON cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND cc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA "
+            "WHERE tc.TABLE_SCHEMA = DATABASE() AND tc.TABLE_NAME = 'client_onboardings' "
+            "AND tc.CONSTRAINT_TYPE = 'CHECK'").fetchall()
+    except Exception:
+        return
+    widened = False
+    for r in rows:
+        if "'forwarded'" in (r["clause"] or ""):
+            widened = True
+        else:
+            conn.execute("ALTER TABLE client_onboardings DROP CHECK `" + r["cname"] + "`")
+    if not widened:
+        conn.execute("ALTER TABLE client_onboardings ADD CHECK (status IN "
+                     "('pending','rejected','approved','forwarded','san_uploaded','completed'))")
 
 
 def _upgrade_columns_user_columns(conn):
@@ -1241,6 +1273,7 @@ def init_db():
         _upgrade_public_codes(conn)
         _upgrade_ddb_attachment_type(conn)
         _upgrade_columns_user_columns(conn)
+        _upgrade_client_status(conn)
         _upgrade_ddb_tabs(conn)
         _upgrade_remove_row_shares(conn)
         _upgrade_invoice_tax_tick(conn)

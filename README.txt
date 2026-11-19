@@ -5591,3 +5591,69 @@
  stays, and a Bin user posted to Delete all is left untouched. Full
  regression suite: 633/633 checks (619 from build 87 plus 14 new b88
  checks).
+
+==============================================================================
+108. REVENUE ASSURANCE FORWARD / REJECT + ATTACHMENT ACCESS REMOVED
+     (build 89, 2026-11-19)
+==============================================================================
+ (A) Client onboarding: Revenue Assurance must forward first. After the
+ Sales & Marketing admin approves a client, the client is now visible
+ ONLY to Revenue Assurance (view only). It does not go to Transmission,
+ Core or Technical support yet. The Revenue Assurance department admin
+ (portal admin too, as with the Sales approval) decides on the client
+ page, with a dropdown: "Forward to Transmission, Core and Technical
+ support" or "Reject — send it back to the Sales user". Forwarding
+ moves the client to a new status, "forwarded": only then can
+ Transmission, Core and Technical support see the full record, and only
+ then can one of them upload the SAN report. Rejecting asks for a
+ reason (required): the client goes back to the Sales user with the
+ reason shown on the page ("Rejected by ...: ..."), who fixes it and
+ saves again to send it back for approval. The "Where it is in the
+ flow" list on the client page gained the forward step between
+ "Revenue Assurance sees it first" and "Transmission, Core, Technical
+ support". The Sales admin's approval message no longer tells the
+ three technical departments at once — they are told when Revenue
+ Assurance forwards. Clients already approved before this build stay
+ approved until the Revenue Assurance admin forwards or rejects them
+ from their client page; until then Transmission, Core and Technical
+ support cannot see them. The status list gained "forwarded"; the
+ database CHECK on client_onboardings.status is widened on upgrade
+ (DROP CHECK + ADD CHECK — MODIFY COLUMN only adds a second CHECK and
+ the old one would still block 'forwarded', error 3819). No new
+ tables, still 51 tables.
+
+ (B) Attachment access is gone. The "User Attachment Access" page
+ (Admin > Users button, menu link, route /admin/user-attachment-access
+ and the old /admin/ddb-attachment-access redirect) and its code are
+ removed, and the "Can use attachment columns" tick on the Add/Edit
+ user form is removed. From now on EVERY user can upload attachments
+ and add an Attachment column to their own My records, and every
+ department admin can create attachment columns in the Department
+ Database — no tick anywhere. The users.can_ddb_attachment column
+ stays in the database, unused; the CSV import still writes it, which
+ has no effect now.
+
+ (C) Virus scanning (no code change). The "could not be scanned"
+ error on every upload means the live server has CLAMAV_HOST set
+ (usually "clamav") while the ClamAV container is not running, so the
+ name does not resolve and every upload is refused. To turn scanning
+ off: in the LIVE .env, make the CLAMAV_HOST line empty (CLAMAV_HOST=)
+ or delete the line, then restart the portal (docker compose up -d).
+ With CLAMAV_HOST empty, uploads skip the scanner entirely. To keep
+ scanning instead, start the scanner: COMPOSE_PROFILES=scan docker
+ compose up -d (the first start downloads the virus database, so
+ allow a few minutes before uploading). The .env inside this zip
+ already has CLAMAV_HOST empty, and the live .env must still not be
+ overwritten by the zip's .env.
+
+ Tested: 16 new b89 client-flow checks against real MySQL 8.0 — the
+ CHECK upgrade on an older database, approval shows the client to
+ Revenue Assurance only, Transmission gets 404 before the forward,
+ the dropdown is on the page, the forward makes it visible and lets
+ the SAN upload through, rejecting without a reason is refused,
+ rejecting with a reason goes back to the Sales user with the reason
+ shown, and a decided client cannot be decided again. Full regression
+ suite: 630/630 checks (619 from build 87, 14 from build 88, and the
+ build-61 attachment-access checks rewritten for the removal: the
+ pages are 404, the tick is gone, and an unticked user adds an
+ Attachment column and uploads a file).

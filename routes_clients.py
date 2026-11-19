@@ -59,12 +59,14 @@ REVIEW_ROLES = ("revenue_assurance",) + SAN_ROLES            # see a client once
 STATUS_LABEL = {
     "pending": "Waiting for approval",
     "rejected": "Rejected",
-    "approved": "Approved · waiting for SAN report",
+    "approved": "Approved · waiting for Revenue Assurance",
+    "forwarded": "Forwarded by Revenue Assurance · waiting for SAN report",
     "san_uploaded": "SAN report uploaded · waiting for activation date",
     "completed": "Completed",
 }
 ALL_STATUSES = tuple(STATUS_LABEL)
-APPROVED_STATES = ("approved", "san_uploaded", "completed")
+APPROVED_STATES = ("approved", "forwarded", "san_uploaded", "completed")
+FORWARDED_STATES = ("forwarded", "san_uploaded", "completed")  # Transmission, Core, Technical see it from here on
 MAX_ROWS = 30   # contacts and services per client
 
 
@@ -148,6 +150,14 @@ def _is_sales_admin(db, user):
     return bool(sales) and ddb_is_tab_admin(db, user, sales)
 
 
+def _is_ra_admin(db, user):
+    """Portal admin, or a department admin / delegate of the Revenue Assurance department."""
+    ra = flow_depts(db).get("revenue_assurance")
+    if is_portal_admin(user):
+        return True
+    return bool(ra) and ddb_is_tab_admin(db, user, ra)
+
+
 def _sales_admin_ids(db):
     sales = _sales_dept_id(db)
     ids = set()
@@ -171,7 +181,9 @@ def _members(db, role):
 def _can_view(user, roles, c):
     if is_portal_admin(user) or "sales" in roles or c["owner_id"] == user["id"]:
         return True
-    if c["status"] in APPROVED_STATES and roles.intersection(REVIEW_ROLES):
+    if c["status"] in APPROVED_STATES and "revenue_assurance" in roles:
+        return True
+    if c["status"] in FORWARDED_STATES and roles.intersection(SAN_ROLES):
         return True
     if c["status"] == "completed" and "finance" in roles:
         return True
@@ -183,8 +195,10 @@ def _visible_sql(user, roles, alias="c"):
     if is_portal_admin(user) or "sales" in roles:
         return "1=1", []
     parts, params = [f"{alias}.owner_id=?"], [user["id"]]
-    if roles.intersection(REVIEW_ROLES):
-        parts.append(f"{alias}.status IN ('approved','san_uploaded','completed')")
+    if "revenue_assurance" in roles:
+        parts.append(f"{alias}.status IN ('approved','forwarded','san_uploaded','completed')")
+    if roles.intersection(SAN_ROLES):
+        parts.append(f"{alias}.status IN ('forwarded','san_uploaded','completed')")
     if "finance" in roles:
         parts.append(f"{alias}.status='completed'")
     return "(" + " OR ".join(parts) + ")", params
@@ -198,7 +212,8 @@ def _perms(db, user, roles, c):
     return {
         "approve": status == "pending" and sales_admin,
         "edit": status == "rejected" and (owner or sales_admin),
-        "upload_san": status == "approved" and not c["san_file"]
+        "forward": status == "approved" and _is_ra_admin(db, user),
+        "upload_san": status == "forwarded" and not c["san_file"]
                       and (bool(roles.intersection(SAN_ROLES)) or is_portal_admin(user)),
         "remove_san": bool(c["san_file"]) and status == "san_uploaded" and is_portal_admin(user),
         "activation": status in ("san_uploaded", "completed") and "revenue_assurance" in roles,
@@ -258,9 +273,9 @@ def client_tab_view(db, dept, is_admin, args):
     todo_parts.append("(c.status='rejected' AND c.owner_id=?)")
     todo_params.append(g.user["id"])
     if roles.intersection(SAN_ROLES) or is_portal_admin(g.user):
-        todo_parts.append("(c.status='approved' AND c.san_file IS NULL)")
+        todo_parts.append("(c.status='forwarded' AND c.san_file IS NULL)")
     if "revenue_assurance" in roles:
-        todo_parts.append("c.status='san_uploaded'")
+        todo_parts.append("c.status IN ('approved','san_uploaded')")
     todo_sql = "(" + " OR ".join(todo_parts) + ")"
 
     def count(extra="", extra_params=()):
@@ -302,7 +317,7 @@ def client_tab_view(db, dept, is_admin, args):
     # The dropdown of approved clients (everyone who can see them)
     approved = db.execute(
         "SELECT c.id, c.client_name FROM client_onboardings c WHERE " + vis +
-        " AND c.status IN ('approved','san_uploaded','completed') ORDER BY c.client_name, c.id",
+        " AND c.status IN ('approved','forwarded','san_uploaded','completed') ORDER BY c.client_name, c.id",
         vparams).fetchall()
 
     keep = {k: v for k, v in args.items() if k not in ("page",)}
@@ -353,10 +368,12 @@ def _timeline(db, c):
          {"pending": "Waiting for the Sales admin", "rejected": "Rejected: back to the Sales user"}.get(st, "Approved"),
          "now" if st == "pending" else "bad" if st == "rejected" else "done"),
         (f"{names['revenue_assurance']} sees it first", "View only", "done" if approved else "todo"),
+        (f"{names['revenue_assurance']} forwards it", "Forward to Transmission, Core and Technical support, or reject it with a reason",
+         "now" if st == "approved" else "done" if st in FORWARDED_STATES else "todo"),
         (f"{names['transmission']}, {names['core']}, {names['technical']}", "View the full record",
-         "done" if approved else "todo"),
+         "done" if st in FORWARDED_STATES else "todo"),
         ("SAN report uploaded", "One upload only, by any of those three departments",
-         "done" if st in ("san_uploaded", "completed") else "now" if st == "approved" else "todo"),
+         "done" if st in ("san_uploaded", "completed") else "now" if st == "forwarded" else "todo"),
         (f"{names['revenue_assurance']} and {names['sales']} receive the SAN report", "",
          "done" if st in ("san_uploaded", "completed") else "todo"),
         ("Activation date set", f"Only {names['revenue_assurance']} edits it",
@@ -633,13 +650,13 @@ def approve(cid):
         log(db, "client_approve", f"{client_no(cid)} {c['client_name']}")
         text = f"The client '{c['client_name']}' was approved."
         notify(db, [c["owner_id"]], text, _link(cid), skip=g.user["id"])
-        # Revenue Assurance sees it first (view only); the three technical departments see the full record.
-        notify(db, _members(db, "revenue_assurance"), text + " You can view it (view only).", _link(cid), skip=g.user["id"])
-        for role in SAN_ROLES:
-            notify(db, _members(db, role), text + " View the record; one of you uploads the SAN report.",
-                   _link(cid), skip=g.user["id"])
+        # Revenue Assurance sees it first (view only). The three technical departments
+        # see it only once Revenue Assurance forwards it, so they are told then.
+        notify(db, _members(db, "revenue_assurance"),
+               text + " You can view it (view only). Forward it to Transmission, Core and Technical support when ready, or reject it with a reason.",
+               _link(cid), skip=g.user["id"])
         db.commit()
-        flash("Approved. The client is saved and Revenue Assurance, Transmission, Core and Technical support can see it.", "ok")
+        flash("Approved. Revenue Assurance can see it; Transmission, Core and Technical support will see it once Revenue Assurance forwards it.", "ok")
     else:
         db.rollback()
         flash("This client was already decided.", "error")
@@ -671,6 +688,56 @@ def reject(cid):
     return redirect(_link(cid))
 
 
+# ---------------------------------------------------------------- Revenue Assurance decision: forward or reject
+@bp.route("/<int:cid>/ra-decision", methods=["POST"])
+@login_required
+def ra_decision(cid):
+    """The Revenue Assurance admin forwards the approved client to
+    Transmission, Core and Technical support, or rejects it with a reason
+    and it goes back to the Sales user (build 89)."""
+    db, c, roles = _load(cid)
+    if not _perms(db, g.user, roles, c)["forward"]:
+        abort(403)
+    decision = (request.form.get("decision") or "").strip()
+    if decision == "forward":
+        done = db.execute("UPDATE client_onboardings SET status='forwarded', decided_by=?, "
+                          "decided_at=datetime('now','localtime'), updated_at=datetime('now','localtime') "
+                          "WHERE id=? AND status='approved'", (g.user["id"], cid)).rowcount
+        if done:
+            _history(db, cid, g.user, "forwarded")
+            log(db, "client_forward", f"{client_no(cid)} {c['client_name']}")
+            text = f"The client '{c['client_name']}' was forwarded by Revenue Assurance."
+            for role in SAN_ROLES:
+                notify(db, _members(db, role), text + " View the record; one of you uploads the SAN report.",
+                       _link(cid), skip=g.user["id"])
+            db.commit()
+            flash("Forwarded. Transmission, Core and Technical support can now see it.", "ok")
+        else:
+            db.rollback()
+            flash("This client was already decided.", "error")
+    elif decision == "reject":
+        reason = " ".join((request.form.get("reason") or "").split())[:1000]
+        if not reason:
+            flash("Type the reason, so the Sales user knows what to fix.", "error")
+            return redirect(_link(cid))
+        done = db.execute("UPDATE client_onboardings SET status='rejected', reject_reason=?, decided_by=?, "
+                          "decided_at=datetime('now','localtime'), updated_at=datetime('now','localtime') "
+                          "WHERE id=? AND status='approved'", (reason, g.user["id"], cid)).rowcount
+        if done:
+            _history(db, cid, g.user, "rejected", reason)
+            log(db, "client_reject", f"{client_no(cid)} {c['client_name']}")
+            notify(db, [c["owner_id"]], f"The client '{c['client_name']}' was rejected by Revenue Assurance: {reason}",
+                   _link(cid), skip=g.user["id"])
+            db.commit()
+            flash("Rejected. It went back to the Sales user.", "ok")
+        else:
+            db.rollback()
+            flash("This client was already decided.", "error")
+    else:
+        flash("Choose Forward or Reject.", "error")
+    return redirect(_link(cid))
+
+
 # ---------------------------------------------------------------- SAN report: one upload only
 @bp.route("/<int:cid>/san", methods=["POST"])
 @login_required
@@ -693,7 +760,7 @@ def san_upload(cid):
         # The WHERE makes the upload atomic: of two people uploading at the same moment only one wins.
         done = db.execute("UPDATE client_onboardings SET san_file=?, san_by=?, san_at=datetime('now','localtime'), "
                           "status='san_uploaded', updated_at=datetime('now','localtime') "
-                          "WHERE id=? AND status='approved' AND san_file IS NULL", (file_json, g.user["id"], cid)).rowcount
+                          "WHERE id=? AND status='forwarded' AND san_file IS NULL", (file_json, g.user["id"], cid)).rowcount
         if not done:
             db.rollback()
             _remove_files([stored])

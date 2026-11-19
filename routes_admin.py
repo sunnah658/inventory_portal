@@ -328,9 +328,9 @@ def user_add():
         else:
             password = password or generate_password()
             uid = db.execute("INSERT INTO users(full_name,designation,username,password_hash,department_id,role,"
-                             "must_change_password,is_dept_admin,can_ddb_attachment,can_portal_admin,created_by) VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+                             "must_change_password,is_dept_admin,can_portal_admin,created_by) VALUES (?,?,?,?,?,?,1,?,?,?)",
                              (full_name, designation, username, generate_password_hash(password), int(dept), role,
-                              1 if form.get("is_dept_admin") else 0, 1 if form.get("can_ddb_attachment") else 0,
+                              1 if form.get("is_dept_admin") else 0,
                               1 if (is_true_admin(g.user) and form.get("can_portal_admin")) else 0, g.user["id"])).lastrowid
             _save_view_departments(db, uid, form.getlist("view_dept"), int(dept))
             log(db, "user_add", username)
@@ -390,8 +390,8 @@ def user_edit(user_id):
             # admin; anyone else editing a user leaves the existing value untouched.
             new_permission = (1 if request.form.get("can_portal_admin") else 0) if is_true_admin(g.user) else row["can_portal_admin"]
             # Records stay in the department they were created in.
-            db.execute("UPDATE users SET full_name=?, designation=?, username=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_ddb_attachment=?, can_portal_admin=? WHERE id=?",
-                       (full_name, designation, username, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, 1 if request.form.get("can_ddb_attachment") else 0, new_permission, user_id))
+            db.execute("UPDATE users SET full_name=?, designation=?, username=?, department_id=?, role=?, is_active=?, is_dept_admin=?, can_portal_admin=? WHERE id=?",
+                       (full_name, designation, username, int(dept), role, active, 1 if request.form.get("is_dept_admin") else 0, new_permission, user_id))
             _save_view_departments(db, user_id, request.form.getlist("view_dept"), int(dept))
             if not active:
                 revoke_user_sessions(db, user_id)             # a disabled user is logged out at once
@@ -435,41 +435,6 @@ def user_reset(user_id):
     db.commit()
     flash(f"New temporary password for {row['username']}: {password}", "secret")
     return redirect(url_for("admin.users"))
-
-
-# ================================================================ user attachment access (portal admin + permission users)
-# (build 61) Was "Department DB attachment access" and listed dept admins
-# only; now "User Attachment Access" and lists every user. Ticking a user
-# lets them add an Attachment column to their own Mine tab and upload a
-# file into it. The same tick still lets a dept admin create attachment
-# columns in the Department Database — that rule is unchanged.
-@bp.route("/user-attachment-access", methods=["GET", "POST"])
-@admin_required
-def user_attachment_access():
-    """Portal admin / permission user gives (or removes) attachment access for users."""
-    db = get_db()
-    if request.method == "POST":
-        rows = db.execute("SELECT id FROM users WHERE is_active=1 AND is_deleted=0").fetchall()
-        for r in rows:
-            db.execute("UPDATE users SET can_ddb_attachment=? WHERE id=?",
-                       (1 if request.form.get(f"allow_{r['id']}") else 0, r["id"]))
-        log(db, "user_attachment_access", "portal admin updated user attachment access")
-        notify_admin_task(db, g.user,
-                          f"{g.user['full_name']} changed the User Attachment Access list.",
-                          url_for("admin.user_attachment_access"))
-        db.commit()
-        flash("Attachment access saved.", "ok")
-        return redirect(url_for("admin.user_attachment_access"))
-    rows = db.execute("SELECT u.*, d.name AS department_name FROM users u LEFT JOIN departments d ON d.id=u.department_id "
-                      "WHERE u.is_active=1 AND u.is_deleted=0 ORDER BY d.name, u.full_name").fetchall()
-    return render_template("admin_user_attachment.html", rows=rows)
-
-
-@bp.route("/ddb-attachment-access")
-@admin_required
-def ddb_attachment_access():
-    """Old address of the attachment access page — send it to the new name."""
-    return redirect(url_for("admin.user_attachment_access"))
 
 
 # ================================================================ departments
