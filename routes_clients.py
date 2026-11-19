@@ -733,6 +733,11 @@ def ra_decision(cid):
         else:
             db.rollback()
             flash("This client was already decided.", "error")
+        # A rejected client is invisible to Revenue Assurance (only Sales, its
+        # owner and the portal admin can open it), so sending them back to the
+        # client page would land on a 404. Take them to the Client onboarding
+        # page instead (build 91).
+        return redirect(url_for("ddb.index", tab="clients"))
     else:
         flash("Choose Forward or Reject.", "error")
     return redirect(_link(cid))

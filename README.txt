@@ -5692,3 +5692,71 @@
  89 plus the .env line check and the Status card class check). Full
  regression suite: 630/630 checks. The client page was rendered to a
  JPG proof (b90-client-status-font.jpg) showing the smaller status.
+
+------------------------------------------------------------------------------
+109. (build 90) CLIENT STATUS FONT + THE .env COMMENT THAT TURNED SCANNING ON
+------------------------------------------------------------------------------
+ (A) The Status card on the client page was set in the big-number KPI
+ size (1.9rem), so a long status phrase filled the whole card in huge
+ type. The Status KPI now uses a small text size (1.1rem) through a
+ new .k1.txt class; the other KPI values (Services, Contacts,
+ Activation date) stay at the big size.
+
+ (B) Why uploads still failed with the scan error even though the live
+ .env had CLAMAV_HOST empty: the line in the .env was
+ "CLAMAV_HOST=                   # set to: clamav". Docker Compose
+ reads a comment on the same line as an EMPTY value as the value
+ itself, so the running portal saw CLAMAV_HOST="# set to: clamav" —
+ scanning on, host unresolvable, every upload refused with
+ "[Errno -2] Name or service not known" (proved by
+ "docker compose exec portal env | grep CLAMAV" on the live server).
+ The other .env lines have a real value before their comment, so
+ theirs are fine; only an empty value has this trap. The fix on the
+ server: make the CLAMAV_HOST line bare ("CLAMAV_HOST=" with nothing
+ after it — or delete the line), then "docker compose up -d" to
+ recreate the container (a plain restart keeps the old container and
+ its old value). In this zip the comment moved to its own line above
+ CLAMAV_HOST=, so the shipped .env is genuinely empty. The value did
+ not change (still empty); the .env md5 changed because the line did.
+ Never put a comment on the same line as an empty value in the .env.
+ (The live .env also had TZ=Dhaka/Asia, which is backwards — the
+ correct name is Asia/Dhaka; see README section 100.)
+
+ Tested: 18 client-flow checks against real MySQL 8.0 (16 from build
+ 89 plus the .env line check and the Status card class check). Full
+ regression suite: 630/630 checks. The client page was rendered to a
+ JPG proof (b90-client-status-font.jpg) showing the smaller status.
+
+------------------------------------------------------------------------------
+110. (build 91) REJECTED CLIENT: REVENUE ASSURANCE LANDS ON THE CLIENT LIST
+------------------------------------------------------------------------------
+ After the Revenue Assurance admin rejected a client, the page sent
+ them back to that client — but a rejected client is invisible to
+ Revenue Assurance (only Sales, its owner and the portal admin can
+ open it), so the page came back "page not found" (404). Now the
+ reject sends the admin to the Client onboarding page (the clients
+ tab list), where the "Rejected. It went back to the Sales user."
+ message shows. A forward is unchanged: the admin can still open a
+ forwarded client, so it still goes back to the client page.
+
+ NOTE — if the portal container keeps restarting after applying a
+ build with "pymysql.err.OperationalError: (1045, \"Access denied
+ for user 'portal' ...\")": the live .env was overwritten by the
+ zip's .env when the zip was extracted over the project. The zip's
+ .env carries the placeholder MYSQL_PASSWORD=portal-change-me, which
+ does not match the password stored in the live database, so MySQL
+ refuses the portal's login and the container restarts forever. The
+ code in the build does not touch MySQL logins. To recover: check
+ "grep MYSQL_PASSWORD ~/inventory_portal/.env" — if it shows
+ portal-change-me, put the real password back (it is on the photo of
+ the live .env, or in any backup of it), and while there restore the
+ other live values the overwrite took (PORTAL_PORT=8100,
+ TZ=Asia/Dhaka, CLAMAV_HOST= bare, REMINDER_HOUR=7). Then
+ "docker compose up -d" to recreate the container. Never
+ "docker compose down -v" — that deletes the database. Before
+ applying any zip, back the live .env up first
+ ("cp .env .env.bak") and put it back after extracting.
+
+ Tested: 23 client-flow checks against real MySQL 8.0 (18 from build
+ 90 plus 5 new reject/forward redirect checks). Full regression
+ suite: 630/630 checks.

@@ -1,4 +1,19 @@
 ==============================================================================
+ REJECTED CLIENT GOES TO THE CLIENT LIST (2026-11-19)
+==============================================================================
+ After the Revenue Assurance admin rejected a client, the page sent
+ them back to that client — but a rejected client is invisible to
+ Revenue Assurance, so it came back "page not found". A reject now
+ takes the admin to the Client onboarding page instead. A forward is
+ unchanged. See README section 110.
+
+ NOTE: if the portal container keeps restarting with MySQL error
+ 1045 after applying a build, the live .env was overwritten by the
+ zip's .env (its MYSQL_PASSWORD is the placeholder
+ portal-change-me). Put the real password back in the live .env and
+ run "docker compose up -d". See README section 110.
+
+==============================================================================
  CLIENT STATUS FONT + SCAN ERROR ROOT CAUSE (2026-11-19)
 ==============================================================================
  The Status card on the client page was set in the big-number size, so
