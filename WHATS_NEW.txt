@@ -1,4 +1,13 @@
 ==============================================================================
+ THE 70% LOOK IS BACK, AND THE WHITE BAND CANNOT RETURN (2026-11-22)
+==============================================================================
+ The portal pages were still big at 100% browser zoom, while the
+ login band itself was fixed. The 70% look is back, with the zoom
+ on the body, and the login gradient moved onto the page body
+ itself, so the white band cannot come back at any zoom. See README
+ section 119.
+
+==============================================================================
  THE ZOOM RULE REMOVED — THE PORTAL IS RESPONSIVE NOW (2026-11-22)
 ==============================================================================
  The login page still showed the white band at 100% browser zoom,

@@ -23,6 +23,16 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:"Manrope","Se
    the browser is zoomed out, at 100% or zoomed in, and the narrow
    rules take over when the window (or the zoom) makes it narrow.
    The portal is back to its normal size at 100% browser zoom. */
+/* Build 100: the 70% look is back, but the band cannot come back
+   with it. The zoom sits on the body again (not the root element,
+   so the narrow rules still switch at the real window width), and
+   the login gradient moved off the .lgx panel onto the page body
+   itself: a body's background paints the whole canvas, so the
+   screen is gradient even if the panel's 100vh ever comes out
+   short at some zoom. The .lgx keeps its layout and is transparent
+   now, so the one gradient shows through it with no seam. */
+@media screen{body{zoom:.7}}
+@media screen{body.login-page{background:linear-gradient(140deg,#0d2437 0%,#0f5a7a 55%,#49c7f5 130%)}}
 a{color:var(--accent)} h1{font-size:1.6rem;margin:0 0 4px;font-weight:800;letter-spacing:-.01em} h2{font-size:1.05rem;margin:0 0 12px;font-weight:800} .card h3{font-size:1rem;margin:16px 0 8px;font-weight:800}
 .hint{color:var(--soft);margin:0;font-size:.93rem}.sub{font-size:.8rem;color:var(--soft);margin-top:4px}
 img,svg{max-width:100%}
@@ -203,7 +213,7 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--c
 .dz{border:2px dashed var(--accent);border-radius:12px;background:var(--hover);padding:16px}
 .urlbox{word-break:break-all;font-size:.78rem;background:var(--head);border-radius:8px;padding:8px 10px;margin:8px 0}
 /* ---------- login and public page (Frost 6: frosted card left, hero text right) */
-.lgx{position:relative;display:flex;min-height:100vh;overflow:hidden;background:linear-gradient(140deg,#0d2437 0%,#0f5a7a 55%,#49c7f5 130%)}
+.lgx{position:relative;display:flex;min-height:100vh;overflow:hidden}
 .blob{position:absolute;border-radius:50%;opacity:.5}
 .blob.b1{width:480px;height:480px;background:#49c7f5;left:-120px;top:-140px}
 .blob.b2{width:380px;height:380px;background:#0d86b8;right:-90px;bottom:-110px}

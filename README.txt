@@ -6113,3 +6113,33 @@
  980px rule and is judged in real Chrome. 114 client-flow checks
  and the full 630/630 regression suite against real MySQL 8.0, on
  the work copy and on a fresh extract of the zip.
+
+ Superseded by build 100 (section 119): the 70% look is back, with
+ the login gradient on the page body so the band cannot return.
+
+==============================================================================
+119. THE 70% LOOK IS BACK, AND THE WHITE BAND CANNOT RETURN
+    (build 100, 2026-11-22)
+==============================================================================
+ The user showed the portal pages are still big at 100% browser
+ zoom, while the login band itself was fixed. The 70% look is back:
+ the zoom sits on the body again, screen only. It sits on the body
+ and not the root element this time, so the narrow rules still
+ switch at the real window width. And the band cannot come back
+ with it: the login gradient moved off the .lgx panel onto the page
+ body itself (a new bodyclass block in base.html, set to
+ login-page by the login template). A body's background paints the
+ whole canvas, so the screen is gradient even if the panel's 100vh
+ ever comes out short at some zoom; the .lgx keeps its layout and
+ is transparent now, so the one gradient shows through it with no
+ seam. The rule is screen only, so printing is unchanged.
+
+ Tested: the real login page rendered to JPG at 1440x900 and at
+ 700x900 — the gradient fills the whole page at both widths, no
+ white band (b100-login-desktop.jpg, b100-login-narrow.jpg). The
+ narrow render is WeasyPrint, which does not apply width media
+ queries, so it shows the gradient filling a narrow page but not
+ the column switch itself; the column switch is the existing
+ 980px rule and is judged in real Chrome. 114 client-flow checks
+ and the full 630/630 regression suite against real MySQL 8.0, on
+ the work copy and on a fresh extract of the zip.
