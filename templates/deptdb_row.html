@@ -4,7 +4,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ row['department_name'] }} database{% if tab %} · {{ tab['name'] }}{% endif %} · row #{{ row['id'] }}</h1>
-    <p class="hint keepprint">Added by {{ row['owner_name'] }} on {{ row['created_at'] }} · last changed {{ row['updated_at'] }}{% if row['source_record_id'] %} · copied from record #{{ row['source_record_id'] }}{% endif %}</p>
+    <p class="hint keepprint">Added by {{ row['owner_name'] }} on {{ row['created_at']|showdttz }} · last changed {{ row['updated_at']|showdttz }}{% if row['source_record_id'] %} · copied from record #{{ row['source_record_id'] }}{% endif %}</p>
     {% if tab_access %}<p class="hint keepprint">This tab was shared with you — {{ 'you can edit its rows' if tab_access == 'edit' else 'view only' }}.</p>{% endif %}</div>
   <div class="acts noprint">
     {% if can_edit %}<a class="b p" href="{{ url_for('ddb.edit_row', rid=row['id']) }}">Edit</a>{% endif %}

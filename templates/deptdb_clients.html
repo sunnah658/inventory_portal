@@ -51,12 +51,11 @@
 </div>
 {% if rows %}
   <div class="tb"><table>
-    <thead><tr><th>No.</th><th>Client</th><th>Account manager</th><th>Services</th><th>Added by</th><th>Status</th><th>Activation</th><th class="noprint"></th></tr></thead>
+    <thead><tr><th>No.</th><th>Client</th><th>Account manager</th><th>Services</th><th>Status</th><th>Activation</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}
       <tr class="r"><td><b>{{ r['id']|client_no }}</b></td><td>{{ r['client_name'] }}</td><td>{{ r['am_name'] or '—' }}</td><td class="num">{{ r['sof_count'] }}</td>
-        <td>{{ r['owner_name'] or '—' }}</td>
         <td><span class="s {{ 'g' if r['status'] == 'completed' else 'r' if r['status'] == 'rejected' else 'a' }}">{{ status_label[r['status']] }}</span></td>
-        <td>{{ (r['activation_date']|string)[:10] if r['activation_date'] else '—' }}</td>
+        <td>{{ r['sof_dates'] or '—' }}</td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('clients.detail', cid=r['id']) }}">Open</a></td></tr>
     {% endfor %}</tbody></table></div>
   {{ pager(page, pages, 'ddb.index', keep) }}

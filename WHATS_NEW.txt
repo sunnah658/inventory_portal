@@ -1,4 +1,31 @@
 ==============================================================================
+ CLIENT PAGE FIXES: SERIAL NUMBERS, TIMES IN DHAKA, DOWNLOAD SOF,
+ HIDDEN HISTORY, ACCOUNT-MANAGER TABLE AND WATCHERS (2026-11-22)
+==============================================================================
+ Client numbers are plain serials from 1 ("5", not "CL-0005"). The
+ "Added by" column is gone from the Client onboarding list and the
+ client page, but the Sales admin still gets the notification when a
+ client is added. The list shows every SOF's activation date. Every
+ time the portal shows is now in the TZ from your .env file. A SOF
+ number cannot repeat. Each SOF row has a "Download SOF" button for
+ the uploaded file. History is hidden behind a "Show history"
+ button. The client page has an "Account manager" table with the
+ manager's name, designation, phone and email. And once a client is
+ added, the account manager and the Sales admin get every
+ notification about it. See README section 115.
+
+==============================================================================
+ DELETE A DEFAULT FIELD IN THE CLIENT FORM SETUP (2026-11-22)
+==============================================================================
+ The Add Client form setup page now has a Delete button on the right
+ of every field row, and the Sales & Marketing admin can delete a
+ default field too. The five structural fields (Client name, Contact
+ name, SOF number, Service, Activation date) still cannot be deleted.
+ Deleting a field also deletes everything entered in it; a deleted
+ default can be added back, but its old values are gone.
+ See README section 114.
+
+==============================================================================
  SOF PDF WITHOUT SIGNATURE BLOCKS (2026-11-19)
 ==============================================================================
  The SOF PDF no longer carries any signature or approval format —

@@ -11,7 +11,7 @@
 <div class="tw"><div>
 <form class="tools" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search user, action, details or IP" aria-label="Search"><button class="b" type="submit">Search</button>{% if q %}<a href="{{ url_for('admin.activity') }}">Clear</a>{% endif %}</form>
 <div class="tb">{% if rows %}<table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th><th>IP address</th></tr></thead><tbody>
-{% for r in rows %}<tr class="r"><td>{{ r['created_at'] }}</td><td>{{ r['username'] or '' }}</td><td>{% if r['action'] in ('login_failed', 'login_blocked', 'virus_blocked', 'scan_error') %}<span class="s r">{{ r['action'] }}</span>{% else %}{{ r['action'] }}{% endif %}</td><td>{{ r['details'] or '' }}</td><td>{{ r['ip'] or '' }}</td></tr>{% endfor %}</tbody></table>
+{% for r in rows %}<tr class="r"><td>{{ r['created_at']|showdttz }}</td><td>{{ r['username'] or '' }}</td><td>{% if r['action'] in ('login_failed', 'login_blocked', 'virus_blocked', 'scan_error') %}<span class="s r">{{ r['action'] }}</span>{% else %}{{ r['action'] }}{% endif %}</td><td>{{ r['details'] or '' }}</td><td>{{ r['ip'] or '' }}</td></tr>{% endfor %}</tbody></table>
 {% else %}<div class="empty">Nothing recorded yet.</div>{% endif %}</div>
 </div>
 <div class="stack rail">

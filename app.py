@@ -23,7 +23,7 @@ import config
 import models
 from auth import bp as auth_bp
 from branding import bp as brand_bp, logo_version
-from core import design_rail, options_of, purge_expired, send_ddb_meeting_notifications, send_reminder_notifications, send_signature_reminder_notifications, show_when
+from core import design_rail, options_of, purge_expired, send_ddb_meeting_notifications, send_reminder_notifications, send_signature_reminder_notifications, show_server_dt, show_when
 from models import get_db, setting_get
 from utils import is_portal_admin, user_name_class
 from routes_admin import bp as admin_bp
@@ -89,6 +89,7 @@ def create_app():
         return g.share_people
     app.jinja_env.globals["share_people"] = share_people
     app.jinja_env.filters["showdt"] = show_when           # '2026-11-04 3:30 PM' in templates
+    app.jinja_env.filters["showdttz"] = show_server_dt    # stored server (UTC) time in the portal's TZ
     if os.environ.get("PORTAL_NO_SCHEDULER") != "1":      # tests switch the helper off
         threading.Thread(target=_reminder_loop, name="reminders", daemon=True).start()
 

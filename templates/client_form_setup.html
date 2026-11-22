@@ -5,7 +5,7 @@
 <div class="tw"><div>
 <div class="card medium">
   <h1>Add Client form setup</h1>
-  <p class="hint" style="margin-bottom:14px">Set the three Add Client pages' fields: each field's column name, input type, and whether it is required. The fields the client was built with are the defaults — their names can change, but their type cannot, and the structural ones (client name, contact name, SOF number, service, activation date) stay required. Your own fields can be renamed, moved, given options, or removed.</p>
+  <p class="hint" style="margin-bottom:14px">Set the three Add Client pages' fields: each field's column name, input type, and whether it is required. The fields the client was built with are the defaults — their names can change, but their type cannot. Every field has a Delete button on its right, except the structural ones (client name, contact name, SOF number, service, activation date), which stay required and cannot be deleted. Deleting a field also deletes everything entered in it; a deleted default can be added back with + Add field under the same name, but its old values are gone.</p>
   {% for page, title, hint in [(1, 'Page 1 · Client', 'The client itself. The activation date is not a client field any more — it lives on every SOF.'), (2, 'Page 2 · Contacts', 'One row per contact person. The account manager dropdown and the manager’s information stay as they are.'), (3, 'Page 3 · Services', 'One row per SOF. The SOF file upload stays as it is.')] %}
   <h2 style="margin-top:18px">{{ title }}</h2>
   <p class="hint">{{ hint }}</p>
@@ -17,7 +17,7 @@
       <td>{% if fld.is_default %}{{ type_labels[fld.field_type] }}{% else %}<select name="type_{{ fld.id }}">{% for t, l in types %}<option value="{{ t }}"{{ ' selected' if fld.field_type == t }}>{{ l }}</option>{% endfor %}</select>{% endif %}</td>
       <td><input type="checkbox" name="req_{{ fld.id }}"{{ ' checked' if fld.required }}{% if fld.field_key in structural %} disabled{% endif %}>{% if fld.field_key in structural %} <span class="sub">always</span>{% endif %}</td>
       <td>{% if fld.is_default %}—{% else %}<textarea name="opts_{{ fld.id }}" rows="2" placeholder="One option per line">{{ fld.options or '' }}</textarea>{% endif %}</td>
-      <td style="white-space:nowrap"><button class="b sm" type="submit" name="action" value="move_up_{{ fld.id }}">↑</button> <button class="b sm" type="submit" name="action" value="move_down_{{ fld.id }}">↓</button>{% if not fld.is_default %} <button class="b sm dg" type="submit" name="action" value="remove_{{ fld.id }}" onclick="return confirm('Remove the field ‘{{ fld.name }}’ and everything entered in it?');">Remove</button>{% endif %}</td>
+      <td style="white-space:nowrap"><button class="b sm" type="submit" name="action" value="move_up_{{ fld.id }}">↑</button> <button class="b sm" type="submit" name="action" value="move_down_{{ fld.id }}">↓</button>{% if fld.field_key not in structural %} <button class="b sm dg" type="submit" name="action" value="remove_{{ fld.id }}" onclick="return confirm('Delete the field ‘{{ fld.name }}’ and everything entered in it?');">Delete</button>{% endif %}</td>
     </tr>{% endfor %}
     </tbody></table></div>
     <div class="fm" style="margin-top:10px">
@@ -32,6 +32,6 @@
   <div class="acts" style="margin-top:16px"><a class="b" href="{{ url_for('ddb.index', tab='clients') }}">Back to Client onboarding</a></div>
 </div></div>
 <div class="stack rail"><div class="card"><h2>Good to know</h2>
-  <p class="hint">A field you remove takes its entered values with it. A Dropdown field only accepts one of its listed options. A Yes-No field is a Yes/No choice. Changing a field here changes the Add Client form for every Sales user from now on; clients already sent keep the values they were made with.</p></div>
+  <p class="hint">A field you delete takes its entered values with it — a deleted default field can be added back with + Add field under the same name, but its old values are gone. A Dropdown field only accepts one of its listed options. A Yes-No field is a Yes/No choice. Changing a field here changes the Add Client form for every Sales user from now on; clients already sent keep the values they were made with.</p></div>
   {{ quick_card([('Back to Client onboarding', url_for('ddb.index', tab='clients'), True)]) }}</div></div>
 {% endblock %}

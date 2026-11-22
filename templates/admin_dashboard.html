@@ -59,7 +59,7 @@
 </div>
 {% if dsettings.show.logged_in or dsettings.show.reminders or dsettings.show.quick %}<div class="stack rail">
   {% if dsettings.show.logged_in %}<div class="card"><h2>Logged in now · {{ stats.sessions }} <a href="{{ url_for('admin.sessions') }}" style="float:right;font-size:.82rem">See all</a></h2>
-    {% if logged_in %}{% for s in logged_in %}<div class="ritem"><span class="dot"></span><span><b>{{ s['full_name'] }}</b><small>{{ s['dept_name'] }} · {{ s['last_seen'][11:16] }}</small></span></div>{% endfor %}
+    {% if logged_in %}{% for s in logged_in %}<div class="ritem"><span class="dot"></span><span><b>{{ s['full_name'] }}</b><small>{{ s['dept_name'] }} · {{ (s['last_seen']|showdttz)[11:] }}</small></span></div>{% endfor %}
     {% else %}<p class="hint">Nobody is logged in right now.</p>{% endif %}</div>{% endif %}
   {% if dsettings.show.reminders %}<div class="card"><h2>Reminders coming up</h2>
     {% if soon %}{% for r in soon[:3] %}<div class="fup"><span class="date">{{ r['day'] }}<small>{{ r['mon'] }}</small></span><span><b><a href="{{ url_for('records.detail', rid=r['id']) }}">{{ r['summary'] }}</a></b><small>{{ r['department_name'] }} · {{ r['reminder_date']|showdt }}</small></span></div>{% endfor %}

@@ -80,8 +80,8 @@ MAX_ROWS = 30   # contacts and services per client
 
 @bp.app_template_filter("client_no")
 def client_no(cid):
-    """CL-0007 for client #7."""
-    return f"CL-{int(cid):04d}"
+    """The client's serial number, from 1 (build 96): plain '5', no 'CL-'."""
+    return str(int(cid))
 
 
 @bp.app_template_filter("client_status")
@@ -180,6 +180,16 @@ def _sales_admin_ids(db):
     return ids
 
 
+def _client_watchers(db, c):
+    """The account manager of this client plus the Sales admins: they get
+    every notification about the client once it has been added (build 96).
+    The actor is never told about their own action — notify() skips them."""
+    ids = set(_sales_admin_ids(db))
+    if c.get("account_manager_id"):
+        ids.add(c["account_manager_id"])
+    return ids
+
+
 def _members(db, role):
     did = flow_depts(db).get(role)
     return dept_member_ids(db, did) if did else []
@@ -245,6 +255,21 @@ def _perms(db, user, roles, c):
 FIELD_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                ("date", "Date"), ("dropdown", "Dropdown"), ("yesno", "Yes-No")]
 STRUCTURAL_REQUIRED = {"client_name", "contact_name", "sof_number", "sof_service", "sof_activation_date"}
+
+# Build 95: where a deletable default field's values live. Deleting the
+# field clears them, so the field is really gone (custom fields live in
+# client_field_values; defaults live in these real columns).
+DEFAULT_FIELD_COLUMNS = {
+    "business_type": ("client_onboardings", "business_type"),
+    "address": ("client_onboardings", "address"),
+    "phone": ("client_onboardings", "phone"),
+    "email": ("client_onboardings", "email"),
+    "notes": ("client_onboardings", "notes"),
+    "contact_designation": ("client_contacts", "designation"),
+    "contact_phone": ("client_contacts", "phone"),
+    "contact_email": ("client_contacts", "email"),
+    "sof_details": ("client_services", "details"),
+}
 
 
 def _form_fields(db, page=None):
@@ -390,7 +415,11 @@ def client_tab_view(db, dept, is_admin, args):
     page, pages, offset = page_info(total, args.get("page", 1, type=int), config.PER_PAGE)
     rows = db.execute(
         "SELECT c.*, u.full_name AS owner_name, am.full_name AS am_name, "
-        "(SELECT COUNT(*) FROM client_services s WHERE s.client_id=c.id) AS sof_count "
+        "(SELECT COUNT(*) FROM client_services s WHERE s.client_id=c.id) AS sof_count, "
+        # Build 96: the list shows EVERY SOF's activation date (the
+        # client-level activation_date is stale since build 93).
+        "(SELECT GROUP_CONCAT(DISTINCT s.activation_date ORDER BY s.activation_date SEPARATOR ', ') "
+        "FROM client_services s WHERE s.client_id=c.id AND s.activation_date IS NOT NULL) AS sof_dates "
         + base + sql_where + " ORDER BY c.id DESC LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
 
     # The dropdown of approved clients (everyone who can see them)
@@ -473,11 +502,14 @@ def detail(cid):
     services = db.execute("SELECT * FROM client_services WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()
     history = db.execute("SELECT * FROM client_history WHERE client_id=? ORDER BY id DESC", (cid,)).fetchall()
     san = _file_info(c["san_file"])
+    _fields = {p: _form_fields(db, p) for p in (1, 2, 3)}
     return render_template(
         "client_detail.html", c=c, contacts=contacts, services=services, history=history,
         sof=[(s, _file_info(s["sof_file"])) for s in services], san=san,
         perm=_perms(db, g.user, roles, c), timeline=_timeline(db, c),
-        fields={p: _form_fields(db, p) for p in (1, 2, 3)}, custom=_load_custom(db, cid),
+        fields=_fields,
+        fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
+        custom=_load_custom(db, cid),
         back=url_for("ddb.index", tab="clients", **({"dept": g.user["department_id"]} if not is_portal_admin(g.user) else {})))
 
 
@@ -694,6 +726,26 @@ def _read_form(db, existing):
     for sid, old in existing.items():                    # a service row the user deleted from the form
         if sid not in used_old and old["sof_file"]:
             delete_old.append((_file_info(old["sof_file"]) or {}).get("stored"))
+    # Build 96: a SOF number must not repeat — not twice in this client,
+    # and not on any other client. The client's own SOFs (being edited)
+    # do not count as repeats. The number is named in the error.
+    _reported = set()
+    for row in services:
+        num = (row["sof_number"] or "").strip()
+        if not num or num.lower() in _reported:
+            continue
+        if sum(1 for r in services if (r["sof_number"] or "").strip().lower() == num.lower()) > 1:
+            errors.append(f"Page 3: SOF number {num} is used twice.")
+            _reported.add(num.lower())
+    _nums = [(r["sof_number"] or "").strip() for r in services if (r["sof_number"] or "").strip()]
+    if _nums:
+        _holders = ",".join("?" for _ in _nums)
+        for _sid, _num in db.execute(
+                "SELECT id, sof_number FROM client_services WHERE LOWER(sof_number) IN (" + _holders + ")",
+                [n.lower() for n in _nums]).fetchall():
+            if _sid not in existing and _num.lower() not in _reported:
+                errors.append(f"Page 3: SOF number {_num} is already used on another client.")
+                _reported.add(_num.lower())
     if not services:
         errors.append("Page 3: add at least one service with its SOF number.")
     form["services"] = services or _blank_form()["services"]
@@ -733,9 +785,15 @@ def _show_form(db, form, cid=None, c=None, errors=None):
                            back=url_for("ddb.index", tab="clients"))
 
 
-def _send_for_approval_notice(db, cid, name, resubmitted):
+def _send_for_approval_notice(db, cid, name, resubmitted, am_id=None):
     verb = "sent the corrected client" if resubmitted else "sent a new client"
-    notify(db, _sales_admin_ids(db), f"{g.user['full_name']} {verb} '{name}' for approval.",
+    ids = set(_sales_admin_ids(db))
+    if resubmitted and am_id:
+        # A re-save is a change after the client was added, so the account
+        # manager is told too (build 96). The first add tells the Sales
+        # admin only.
+        ids.add(am_id)
+    notify(db, ids, f"{g.user['full_name']} {verb} '{name}' for approval.",
            _link(cid), skip=g.user["id"])
 
 
@@ -814,7 +872,7 @@ def edit(cid):
         _write_children(db, cid, contacts, services, form["custom1"])
         _history(db, cid, g.user, "saved again and sent for approval")
         log(db, "client_edit", f"{client_no(cid)} {form['client_name']}")
-        _send_for_approval_notice(db, cid, form["client_name"], True)
+        _send_for_approval_notice(db, cid, form["client_name"], True, form["account_manager_id"])
         db.commit()
     except Exception:
         db.rollback()
@@ -839,10 +897,10 @@ def approve(cid):
         _history(db, cid, g.user, "approved")
         log(db, "client_approve", f"{client_no(cid)} {c['client_name']}")
         text = f"The client '{c['client_name']}' was approved."
-        notify(db, [c["owner_id"]], text, _link(cid), skip=g.user["id"])
+        notify(db, {c["owner_id"]} | _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
         # Revenue Assurance sees it first (view only). The three technical departments
         # see it only once Revenue Assurance forwards it, so they are told then.
-        notify(db, _members(db, "revenue_assurance"),
+        notify(db, set(_members(db, "revenue_assurance")) | _client_watchers(db, c),
                text + " You can view it (view only). Forward it to Transmission, Core and Technical support when ready, or reject it with a reason.",
                _link(cid), skip=g.user["id"])
         db.commit()
@@ -869,7 +927,7 @@ def reject(cid):
     if done:
         _history(db, cid, g.user, "rejected", reason)
         log(db, "client_reject", f"{client_no(cid)} {c['client_name']}")
-        notify(db, [c["owner_id"]], f"The client '{c['client_name']}' was rejected: {reason}", _link(cid), skip=g.user["id"])
+        notify(db, {c["owner_id"]} | _client_watchers(db, c), f"The client '{c['client_name']}' was rejected: {reason}", _link(cid), skip=g.user["id"])
         db.commit()
         flash("Rejected. It went back to the Sales user.", "ok")
     else:
@@ -900,6 +958,9 @@ def ra_decision(cid):
             for role in SAN_ROLES:
                 notify(db, _members(db, role), text + " View the record; one of you uploads the SAN report.",
                        _link(cid), skip=g.user["id"])
+            # The account manager and the Sales admin are told once, not
+            # once per technical department (build 96).
+            notify(db, _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
             db.commit()
             flash("Forwarded. Transmission, Core and Technical support can now see it.", "ok")
         else:
@@ -916,7 +977,7 @@ def ra_decision(cid):
         if done:
             _history(db, cid, g.user, "rejected", reason)
             log(db, "client_reject", f"{client_no(cid)} {c['client_name']}")
-            notify(db, [c["owner_id"]], f"The client '{c['client_name']}' was rejected by Revenue Assurance: {reason}",
+            notify(db, {c["owner_id"]} | _client_watchers(db, c), f"The client '{c['client_name']}' was rejected by Revenue Assurance: {reason}",
                    _link(cid), skip=g.user["id"])
             db.commit()
             flash("Rejected. It went back to the Sales user.", "ok")
@@ -964,7 +1025,7 @@ def san_upload(cid):
         _history(db, cid, g.user, "SAN report uploaded", _file_info(file_json)["original"])
         log(db, "client_san", f"{client_no(cid)} {c['client_name']}")
         text = f"The SAN report of '{c['client_name']}' was uploaded by {g.user['full_name']}."
-        ids = set(_members(db, "revenue_assurance")) | set(_members(db, "sales")) | {c["owner_id"]}
+        ids = set(_members(db, "revenue_assurance")) | set(_members(db, "sales")) | {c["owner_id"]} | _client_watchers(db, c)
         notify(db, ids, text, _link(cid), skip=g.user["id"])
         db.commit()
     except Exception:
@@ -987,6 +1048,9 @@ def san_remove(cid):
                "updated_at=datetime('now','localtime') WHERE id=? AND status='san_uploaded'", (cid,))
     _history(db, cid, g.user, "SAN report removed", (info or {}).get("original"))
     log(db, "client_san_remove", f"{client_no(cid)} {c['client_name']}")
+    notify(db, _client_watchers(db, c),
+           f"The SAN report of '{c['client_name']}' was removed by {g.user['full_name']}.",
+           _link(cid), skip=g.user["id"])
     db.commit()
     if info:
         _remove_files([info["stored"]])
@@ -1027,10 +1091,14 @@ def sof_activation(cid, sid):
     if c["status"] == "completed":
         # The record is already with Finance: tell Finance (and the owner) the date moved.
         text = f"The activation date of SOF {row['sof_number']} of '{c['client_name']}' changed to {day.isoformat()}."
-        notify(db, set(_members(db, "finance")) | {c["owner_id"]}, text, _link(cid), skip=g.user["id"])
+        notify(db, set(_members(db, "finance")) | {c["owner_id"]} | _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
         db.commit()
         flash("Activation date changed. Finance was told.", "ok")
     else:
+        # The date moved before the record reached Finance: nobody was told
+        # before — the account manager and the Sales admin are told now.
+        text = f"The activation date of SOF {row['sof_number']} of '{c['client_name']}' {'changed to' if old else 'was set to'} {day.isoformat()}."
+        notify(db, _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
         db.commit()
         flash("Activation date saved. Finance has not received the record yet — forward it below when ready.", "ok")
     return redirect(_link(cid))
@@ -1065,7 +1133,7 @@ def forward_finance(cid):
     _history(db, cid, g.user, "forwarded to finance", days)
     log(db, "client_forward_finance", f"{client_no(cid)} {c['client_name']} {days}")
     text = f"The final record of '{c['client_name']}' is ready: activation dates {days}."
-    notify(db, set(_members(db, "finance")) | {c["owner_id"]}, text, _link(cid), skip=g.user["id"])
+    notify(db, set(_members(db, "finance")) | {c["owner_id"]} | _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
     db.commit()
     flash("Sent to Finance. Finance can now see the final record.", "ok")
     return redirect(_link(cid))
@@ -1195,8 +1263,11 @@ def form_setup():
     """The Sales & Marketing admin sets the three Add Client pages' fields:
     each field's column name, input type, required or not. The fields the
     client was built with are the defaults; the admin adds his own on top.
-    Structural defaults (client name, contact name, SOF number, service,
-    activation date) stay required and keep their type."""
+    Every field except the structural ones can be deleted from the right
+    of its row (build 95): deleting a field also deletes everything
+    entered in it. Structural defaults (client name, contact name, SOF
+    number, service, activation date) stay required, keep their type,
+    and cannot be removed."""
     db = get_db()
     if not _is_sales_admin(db, g.user):
         abort(403)
@@ -1248,14 +1319,17 @@ def form_setup():
             except (ValueError, IndexError):
                 fid = None
             row = next((fld for fld in fields if fld["id"] == fid), None) if fid else None
-            if row and not row["is_default"]:
+            if row and row["field_key"] not in STRUCTURAL_REQUIRED:
                 db.execute("DELETE FROM client_field_values WHERE field_id=?", (fid,))
+                _col = DEFAULT_FIELD_COLUMNS.get(row["field_key"])
+                if _col:
+                    db.execute("UPDATE %s SET %s=NULL" % (_col[0], _col[1]))
                 db.execute("DELETE FROM client_form_fields WHERE id=?", (fid,))
                 db.commit()
                 log(db, "client_form_field_remove", f"page {page} {row['name']}")
                 flash("Field removed.", "ok")
             elif row:
-                flash("A default field cannot be removed.", "error")
+                flash("A structural field cannot be removed.", "error")
         elif action == "save":
             names = [fld["name"].lower() for fld in fields]
             for fld in fields:

@@ -14,8 +14,7 @@
 .kv b{flex:0 0 150px;color:var(--soft);font-weight:500}
 </style>{% endblock %}
 {% block content %}
-<div class="hd"><div><h1>{{ c['id']|client_no }} · {{ c['client_name'] }}</h1>
-  <p class="hint">Added by {{ c['owner_name'] or '—' }} · {{ c['created_at']|showdt }}</p></div>
+<div class="hd"><div><h1>{{ c['id']|client_no }} · {{ c['client_name'] }}</h1></div>
   <div class="acts noprint">
     {% if perm.edit %}<a class="b p" href="{{ url_for('clients.edit', cid=c['id']) }}">Change and save again</a>{% endif %}
     <a class="b" href="{{ back }}">Back to Client onboarding</a>
@@ -76,42 +75,43 @@
 
 <div class="card"><h2>Client</h2>
   <div class="kv"><b>Client name</b><span>{{ c['client_name'] }}</span></div>
-  <div class="kv"><b>Business type</b><span>{{ c['business_type'] or '—' }}</span></div>
-  <div class="kv"><b>Phone</b><span>{{ c['phone'] or '—' }}</span></div>
-  <div class="kv"><b>Email</b><span>{{ c['email'] or '—' }}</span></div>
-  <div class="kv"><b>Address</b><span style="white-space:pre-wrap">{{ c['address'] or '—' }}</span></div>
-  <div class="kv"><b>Notes</b><span style="white-space:pre-wrap">{{ c['notes'] or '—' }}</span></div>
-  <div class="kv"><b>Account manager</b><span>{{ c['am_full_name'] or c['am_name'] or '—' }}{% if c['am_designation'] %} · {{ c['am_designation'] }}{% endif %}</span></div>
-  {% if c['am_phone'] %}<div class="kv"><b>Account manager phone</b><span>{{ c['am_phone'] }}</span></div>{% endif %}
-  {% if c['am_email'] %}<div class="kv"><b>Account manager email</b><span>{{ c['am_email'] }}</span></div>{% endif %}
+  {% if 'business_type' in fmap %}<div class="kv"><b>Business type</b><span>{{ c['business_type'] or '—' }}</span></div>{% endif %}
+  {% if 'phone' in fmap %}<div class="kv"><b>Phone</b><span>{{ c['phone'] or '—' }}</span></div>{% endif %}
+  {% if 'email' in fmap %}<div class="kv"><b>Email</b><span>{{ c['email'] or '—' }}</span></div>{% endif %}
+  {% if 'address' in fmap %}<div class="kv"><b>Address</b><span style="white-space:pre-wrap">{{ c['address'] or '—' }}</span></div>{% endif %}
+  {% if 'notes' in fmap %}<div class="kv"><b>Notes</b><span style="white-space:pre-wrap">{{ c['notes'] or '—' }}</span></div>{% endif %}
   {% for fld in fields[1] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('client', c['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}
 </div>
 
+<div class="card"><h2>Account manager</h2>
+  <div class="tb"><table><thead><tr><th>Name</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
+    <tr class="r"><td>{{ c['am_full_name'] or c['am_name'] or '—' }}</td><td>{{ c['am_designation'] or '—' }}</td><td>{{ c['am_phone'] or '—' }}</td><td>{{ c['am_email'] or '—' }}</td></tr>
+  </tbody></table></div></div>
+
 <div class="card"><h2>Contacts</h2>
-  {% if contacts %}<div class="tb"><table><thead><tr><th>Name</th><th>Designation</th><th>Phone</th><th>Email</th>{% for fld in fields[2] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
-    {% for r in contacts %}<tr class="r"><td>{{ r['name'] }}</td><td>{{ r['designation'] or '' }}</td><td>{{ r['phone'] or '' }}</td><td>{{ r['email'] or '' }}</td>{% for fld in fields[2] %}{% if not fld.is_default %}<td>{{ custom.get(('contact', r['id'], fld.id), '') }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody></table></div>
+  {% if contacts %}<div class="tb"><table><thead><tr><th>Name</th>{% if 'contact_designation' in fmap %}<th>Designation</th>{% endif %}{% if 'contact_phone' in fmap %}<th>Phone</th>{% endif %}{% if 'contact_email' in fmap %}<th>Email</th>{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
+    {% for r in contacts %}<tr class="r"><td>{{ r['name'] }}</td>{% if 'contact_designation' in fmap %}<td>{{ r['designation'] or '' }}</td>{% endif %}{% if 'contact_phone' in fmap %}<td>{{ r['phone'] or '' }}</td>{% endif %}{% if 'contact_email' in fmap %}<td>{{ r['email'] or '' }}</td>{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<td>{{ custom.get(('contact', r['id'], fld.id), '') }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody></table></div>
   {% else %}<p class="hint">No contacts.</p>{% endif %}</div>
 
 <div class="card"><h2>Services (SOF)</h2>
-  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Details</th>{% for fld in fields[3] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}<th>Activation date</th><th class="noprint">SOF file</th><th class="noprint">PDF</th></tr></thead><tbody>
-    {% for s, f in sof %}<tr class="r"><td><b>{{ s['sof_number'] }}</b></td><td>{{ s['service'] }}</td><td style="white-space:pre-wrap">{{ s['details'] or '' }}</td>
+  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th>{% if 'sof_details' in fmap %}<th>Details</th>{% endif %}{% for fld in fields[3] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}<th>Activation date</th><th class="noprint">Download SOF</th></tr></thead><tbody>
+    {% for s, f in sof %}<tr class="r"><td><b>{{ s['sof_number'] }}</b></td><td>{{ s['service'] }}</td>{% if 'sof_details' in fmap %}<td style="white-space:pre-wrap">{{ s['details'] or '' }}</td>{% endif %}
       {% for fld in fields[3] %}{% if not fld.is_default %}<td>{{ custom.get(('service', s['id'], fld.id), '') }}</td>{% endif %}{% endfor %}
       <td>{% if perm.sof_activation %}<span class="print-only">{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}</span><form class="noprint" method="post" action="{{ url_for('clients.sof_activation', cid=c['id'], sid=s['id']) }}" style="display:flex;gap:4px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="activation_date" type="date" required value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" style="max-width:150px"><button class="b sm" type="submit">Save</button></form>{% else %}{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}{% endif %}</td>
-      <td class="noprint">{% if f %}<a href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">{{ f['original'] }}</a>{% else %}—{% endif %}</td>
-      <td class="noprint"><a class="b sm" href="{{ url_for('clients.sof_pdf', cid=c['id'], sid=s['id']) }}">Download PDF</a></td></tr>{% endfor %}</tbody></table></div>
+      <td class="noprint">{% if f %}<a class="b sm" href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">Download SOF</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>
   {% else %}<p class="hint">No services.</p>{% endif %}</div>
 
 <div class="card"><h2>SAN report</h2>
   {% if san %}
     <p><a class="b" href="{{ url_for('clients.san_download', cid=c['id']) }}">Download {{ san['original'] }}</a></p>
-    <p class="hint">Uploaded by {{ c['san_name'] or '—' }} · {{ c['san_at']|showdt }}</p>
+    <p class="hint">Uploaded by {{ c['san_name'] or '—' }} · {{ c['san_at']|showdttz }}</p>
     {% if perm.remove_san %}<form method="post" action="{{ url_for('clients.san_remove', cid=c['id']) }}" onsubmit="return confirm('Remove the SAN report so a new one can be uploaded?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove (portal admin)</button></form>{% endif %}
   {% else %}<p class="hint">{% if c['status'] in ('pending','rejected') %}Not available until the client is approved.{% else %}Not uploaded yet.{% endif %}</p>{% endif %}
 </div>
 
-<div class="card"><h2>History</h2>
-  {% if history %}<div class="tb"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>
-    {% for h in history %}<tr class="r"><td>{{ h['at']|showdt }}</td><td>{{ h['full_name'] or '—' }}</td><td>{{ h['action'] }}</td><td>{{ h['detail'] or '' }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2>History</h2>{% if history %}<button class="b sm noprint" type="button" onclick="var d=document.getElementById('histBody');d.hidden=!d.hidden;this.textContent=d.hidden?'Show history':'Hide history';">Show history</button>{% endif %}</div>
+  {% if history %}<div id="histBody" hidden><div class="tb"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>
+    {% for h in history %}<tr class="r"><td>{{ h['at']|showdttz }}</td><td>{{ h['full_name'] or '—' }}</td><td>{{ h['action'] }}</td><td>{{ h['detail'] or '' }}</td></tr>{% endfor %}</tbody></table></div></div>
   {% else %}<p class="hint">No history yet.</p>{% endif %}</div>
 </div>
 <div class="stack rail">

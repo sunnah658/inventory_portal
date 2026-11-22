@@ -5893,3 +5893,117 @@
  93 plus 1 new build-94 check: no Prepared By / Checked By /
  Approved By text in the SOF PDF). Full regression suite: 630/630
  checks.
+
+------------------------------------------------------------------------------
+114. (build 95) DELETE BUTTON ON EVERY FIELD IN THE CLIENT FORM SETUP
+------------------------------------------------------------------------------
+ The Add Client form setup page now has a Delete button on the right
+ of every field row, not only on the fields the Sales admin added
+ himself. The Sales & Marketing admin can delete a default field too:
+ the old refusal ("A default field cannot be removed.") is gone.
+
+ The five structural fields still cannot be deleted — Client name,
+ Contact name, SOF number, Service, and Activation date — because the
+ Add Client form cannot work without them. Trying to delete one is
+ refused with "A structural field cannot be removed." The other nine
+ defaults can be deleted: Business type, Address, Phone, Email, Notes
+ (page 1); Designation, Phone, Email (page 2, contacts); Details
+ (page 3, services).
+
+ Deleting a field works the same for a default as for a field the
+ admin added: the field disappears from the Add Client form and from
+ the client page, and everything already entered in it is deleted
+ with it. Default fields keep their values in the real columns
+ (Business type, Address, Phone, Email, Notes on the client; the
+ contact's Designation, Phone, Email; the SOF's Details), so deleting
+ one clears those columns for every client. A deleted default can be
+ added back with + Add field under the same name, but its old values
+ are gone. Nothing else changes: default fields still cannot change
+ type, the structural ones stay required, and only the Sales admin
+ (or the portal admin) can open the form setup page.
+
+ Tested: 77 client-flow checks against real MySQL 8.0 (70 from build
+ 94 plus 7 new build-95 checks: the Delete button on a default row
+ and none on a structural row, the test client's values in the
+ default fields, deleting a default clears its values and hides it
+ from the form and the client page, a structural field cannot be
+ deleted, a deleted default can be added back with its old values
+ gone, deleting a contact / SOF default clears its column and hides
+ its column). Full regression suite: 630/630 checks.
+
+==============================================================================
+115. CLIENT PAGE FIXES: SERIAL NUMBERS, TIMES IN THE PORTAL TIMEZONE,
+    DOWNLOAD SOF, HIDDEN HISTORY, ACCOUNT-MANAGER TABLE AND WATCHERS
+    (build 96, 2026-11-22)
+==============================================================================
+ (A) Client numbers are plain serials from 1: the list, the client
+     page heading and the SOF PDF show "5" instead of "CL-0005". The
+     search box still finds a client by typing "5" or "CL-0005", and a
+     number is never reused after a client is deleted.
+ (B) "Added by" is gone from the Client onboarding list and from the
+     client page, but the notification when a client is added still
+     goes to the Sales admin: "sales user sent a new client 'X' for
+     approval."
+ (C) The list's Activation column shows every SOF's activation date
+     for that client (for example "2026-11-18, 2026-12-01"). It used
+     to show the stale client-level activation_date, which has been
+     unused since build 93 and is empty on new clients.
+ (D) Every date and time the portal shows is now in the TZ from the
+     .env file (Asia/Dhaka). The database container runs on UTC, so
+     every time it stores (notifications, history, activity, sessions,
+     comments, record dates) is read as UTC and shown in the portal's
+     timezone through the new showdttz filter. Dates and times a user
+     typed (DeptDB date columns, reminder dates, meeting times) are
+     shown exactly as typed and are never shifted. Watch tomorrow
+     07:00 and tell us whether the signature reminder arrives at
+     07:00 Dhaka — the reminder itself was already set to go from
+     07:00, and it fired at 09:32 on 2026-11-22 only because the
+     portal was first opened after 07:00 that morning.
+ (E) A SOF number cannot repeat: saving a client is refused when a
+     SOF number is used twice in the same client or is already used on
+     another client, and the error names the number. Editing a client
+     and keeping its own SOF numbers still works.
+ (F) Every SOF row has a "Download SOF" button that downloads the
+     file uploaded as the attachment in the services part of the form.
+     When no file was uploaded the row shows "—". The SOF PDF itself
+     is unchanged and still downloads from the public share-code page.
+ (G) History on the client page is hidden when the page opens. A
+     "Show history" button on the right of the History heading shows
+     it; clicking again hides it.
+ (H) The client page has its own "Account manager" section with a
+     table of the manager's contact details: Name, Designation,
+     Phone, Email. The three account-manager rows are no longer in
+     the Client card.
+ (I) Once a Sales user has added a client, the account manager of
+     that client and the Sales admin get every notification about
+     it: approval, rejection by the Sales admin or by Revenue
+     Assurance, the Revenue Assurance forward, the SAN upload, an
+     activation date being set or changed, and the forward to
+     Finance. The people who got those notifications before still
+     get them (the owner, Revenue Assurance, Transmission / Core /
+     Technical support, Finance), and nobody is told about their own
+     action. Two things told nobody before and tell the account
+     manager and the Sales admin now: removing the SAN report, and
+     changing an activation date before the record is completed. The
+     very first "client added" notice still goes to the Sales admin
+     only; the account manager starts getting them from the approval
+     onwards, and a re-save (edit) tells the account manager too.
+
+ Tested: 99 client-flow checks against real MySQL 8.0 (77 from build
+ 95 plus 22 new build-96 checks: the client with two SOFs is created
+ and the add notice goes to the Sales admin only; the plain serial
+ number on the client page, the list and the SOF PDF; no Added by
+ column or line; the list shows both SOF dates; a stored UTC time is
+ shown in Dhaka time on the Notifications page, in History and on
+ the SAN line, while a date-only value is unchanged; a repeated SOF
+ number is refused in the same client and on another client and the
+ error names the number, while keeping your own numbers on edit
+ works; the Download SOF button downloads the uploaded file, no
+ button when no file was uploaded, and the SOF PDF is still on the
+ code page; History is hidden with a Show history button; the
+ Account manager table shows name, designation, phone and email; the
+ account manager and the Sales admin are told about the approval,
+ the rejection, the re-save, the forward, the SAN upload, the
+ activation date change, the SAN removal and the forward to Finance
+ — and the forward tells them once, not once per technical
+ department). Full regression suite: 630/630 checks.

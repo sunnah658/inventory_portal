@@ -761,6 +761,45 @@ def show_when(value):
     return f"{day} {clock_text(clock)}".strip() if clock else day
 
 
+def portal_tz():
+    """The zoneinfo timezone the portal is set to — the TZ in the .env
+    file. None when the TZ is missing or zoneinfo cannot read it."""
+    tz_name = (os.environ.get("TZ") or "").strip() or "UTC"
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(tz_name)
+    except Exception:
+        return None
+
+
+def show_server_dt(value):
+    """How a stored server time is shown, in the portal's timezone:
+    '2026-11-22 11:31 AM' (build 96). The database runs on UTC, so a
+    stored time is read as UTC and shown in the TZ from the .env. A
+    date-only value is shown as-is — dates are never shifted. Only for
+    times the system stored (notifications, history, activity, sessions);
+    dates and times a user typed keep show_when, as they were typed."""
+    if isinstance(value, datetime):
+        text = value.strftime("%Y-%m-%d %H:%M:%S")
+    elif isinstance(value, date):
+        return value.isoformat()
+    else:
+        text = (value or "").strip()
+    day, clock = split_when(text)
+    if not clock:
+        return day
+    try:
+        dt = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return show_when(text)
+    tz = portal_tz()
+    if tz is None:
+        return show_when(text)
+    from datetime import timezone
+    local = dt.replace(tzinfo=timezone.utc).astimezone(tz).replace(tzinfo=None)
+    return show_when(local.strftime("%Y-%m-%d %H:%M"))
+
+
 def parse_when(value):
     """(date, time or None) from a stored value, or None when it is not a valid date."""
     day, clock = split_when(value)

@@ -5,7 +5,7 @@
 {% block content %}
 <div class="hd">
   <div><h1>{{ rec['department_name'] }} record #{{ rec['id'] }}</h1>
-    <p class="hint keepprint">Owner: <span class="{{ user_name_class(rec) }}">{{ rec['owner_name'] }}</span> · last changed {{ rec['updated_at'] }}<span class="noprint">{% if level == 'shared' %} · shared with you (you can edit){% elif level == 'shared_view' %} · shared with you (view only){% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</span></p></div>
+    <p class="hint keepprint">Owner: <span class="{{ user_name_class(rec) }}">{{ rec['owner_name'] }}</span> · last changed {{ rec['updated_at']|showdttz }}<span class="noprint">{% if level == 'shared' %} · shared with you (you can edit){% elif level == 'shared_view' %} · shared with you (view only){% elif level == 'supervisor' %} · you view this as department admin{% elif level == 'viewer' %} · you can view this department{% endif %}</span></p></div>
   <div class="acts noprint">
     {% if can_edit %}<a class="b p" href="{{ url_for('records.edit_record', rid=rec['id']) }}">Edit</a>{% endif %}
     <details class="dt"><summary class="b">PDF</summary>
@@ -75,7 +75,7 @@
     </div>{% endif %}
 
     <div class="card noprint" id="comments"><h2>Comments and suggestions</h2>
-      {% for c in comments %}<div class="cm"><span class="who">{{ c['full_name'] }}</span> {% if c['kind'] == 'suggestion' %}<span class="pill b2">Suggestion</span>{% endif %} <small>{{ c['created_at'] }}</small>
+      {% for c in comments %}<div class="cm"><span class="who">{{ c['full_name'] }}</span> {% if c['kind'] == 'suggestion' %}<span class="pill b2">Suggestion</span>{% endif %} <small>{{ c['created_at']|showdttz }}</small>
         {% if c['user_id'] == g.user['id'] or g.user['role'] == 'admin' %}<form method="post" action="{{ url_for('flow.delete_comment', cid=c['id']) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit" style="float:right">Delete</button></form>{% endif %}
         <p>{{ c['text'] }}</p></div>
       {% else %}<p class="hint">No comments yet.</p>{% endfor %}
