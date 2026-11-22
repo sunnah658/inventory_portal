@@ -13,26 +13,21 @@ html[data-theme=dark]{--ink:#e7eff5;--soft:#9db3c2;--paper:#0e1a22;--card:#15232
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"Manrope","Segoe UI",system-ui,sans-serif;line-height:1.5}
-/* Build 99: the zoom rule is GONE. Builds 97 and 98 both tried a fixed
-   70% zoom (on body, then on the root element) and the login page
-   still came out wrong — its 100vh background stopped at 70% of the
-   screen with a white band below it. A fixed zoom can never be
-   responsive: it fights the browser's own zoom instead of following
-   it. With no zoom rule, 100vh is the visual viewport at EVERY
-   browser zoom, so the login background fills the screen whether
-   the browser is zoomed out, at 100% or zoomed in, and the narrow
-   rules take over when the window (or the zoom) makes it narrow.
-   The portal is back to its normal size at 100% browser zoom. */
-/* Build 100: the 70% look is back, but the band cannot come back
-   with it. The zoom sits on the body again (not the root element,
-   so the narrow rules still switch at the real window width), and
-   the login gradient moved off the .lgx panel onto the page body
-   itself: a body's background paints the whole canvas, so the
-   screen is gradient even if the panel's 100vh ever comes out
-   short at some zoom. The .lgx keeps its layout and is transparent
-   now, so the one gradient shows through it with no seam. */
+/* Build 101: the login band is fixed by making the panel taller, not
+   by moving the gradient. Build 100 put the gradient on the page
+   body, but a body's background is sized to the body's own box
+   (100vh in layout pixels) and painted scaled by the zoom, so it
+   covered only the top 70% of the screen and then repeated dark
+   below it — the band the user photographed. The gradient is back
+   on the .lgx panel, and the panel is min-height calc(100vh / .7):
+   100vh inside the zoomed body is 70% of the screen, so a panel
+   1 / .7 times as tall is exactly the full screen once the zoom
+   paints it. The gradient is drawn over that taller panel, so it
+   reads a touch darker than the no-zoom login (same colours, same
+   angle, no seam). The zoom stays on the body (not the root
+   element), so the narrow rules still switch at the real window
+   width. The narrow login column is stretched the same way. */
 @media screen{body{zoom:.7}}
-@media screen{body.login-page{background:linear-gradient(140deg,#0d2437 0%,#0f5a7a 55%,#49c7f5 130%)}}
 a{color:var(--accent)} h1{font-size:1.6rem;margin:0 0 4px;font-weight:800;letter-spacing:-.01em} h2{font-size:1.05rem;margin:0 0 12px;font-weight:800} .card h3{font-size:1rem;margin:16px 0 8px;font-weight:800}
 .hint{color:var(--soft);margin:0;font-size:.93rem}.sub{font-size:.8rem;color:var(--soft);margin-top:4px}
 img,svg{max-width:100%}
@@ -213,7 +208,7 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--c
 .dz{border:2px dashed var(--accent);border-radius:12px;background:var(--hover);padding:16px}
 .urlbox{word-break:break-all;font-size:.78rem;background:var(--head);border-radius:8px;padding:8px 10px;margin:8px 0}
 /* ---------- login and public page (Frost 6: frosted card left, hero text right) */
-.lgx{position:relative;display:flex;min-height:100vh;overflow:hidden}
+.lgx{position:relative;display:flex;min-height:calc(100vh / .7);overflow:hidden;background:linear-gradient(140deg,#0d2437 0%,#0f5a7a 55%,#49c7f5 130%)}
 .blob{position:absolute;border-radius:50%;opacity:.5}
 .blob.b1{width:480px;height:480px;background:#49c7f5;left:-120px;top:-140px}
 .blob.b2{width:380px;height:380px;background:#0d86b8;right:-90px;bottom:-110px}
@@ -249,7 +244,7 @@ html[data-theme=dark] .pubhead img{background:#fff;border-radius:8px;padding:3px
 @keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* ---------- tablet */
-@media (max-width:980px){.tw,.g3{grid-template-columns:1fr}.lgx{flex-direction:column}.hero{display:none}.fm{grid-template-columns:1fr}.side{width:100%;min-height:100vh}}
+@media (max-width:980px){.tw,.g3{grid-template-columns:1fr}.lgx{flex-direction:column}.hero{display:none}.fm{grid-template-columns:1fr}.side{width:100%;min-height:calc(100vh / .7)}}
 /* ---------- phone: menu button, cards instead of tables, one column, big touch targets */
 @media (max-width:720px){
  main{padding:14px}

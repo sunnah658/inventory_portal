@@ -6143,3 +6143,34 @@
  980px rule and is judged in real Chrome. 114 client-flow checks
  and the full 630/630 regression suite against real MySQL 8.0, on
  the work copy and on a fresh extract of the zip.
+
+ Superseded by build 101 (section 120): the band came back, so the
+ gradient is back on the panel, made taller to fill the screen.
+
+==============================================================================
+120. THE LOGIN BAND IS FIXED BY A TALLER PANEL (build 101, 2026-11-22)
+==============================================================================
+ The login page still showed a band at the bottom: the gradient
+ stopped at about 70% of the screen and a darker band sat below
+ it. The cause is the body's background: it is sized to the body's
+ own box (100vh in layout pixels) and painted scaled by the zoom,
+ so it covered only the top 70% of the screen and then repeated
+ dark below it. The gradient is back on the .lgx panel, and the
+ panel is min-height calc(100vh / .7) — 100vh inside the zoomed
+ body is 70% of the screen, so a panel 1 / .7 times as tall is
+ exactly the full screen once the zoom paints it. The narrow login
+ column is stretched the same way. The body gradient, the
+ bodyclass block in base.html and the login-page class are all
+ gone. The zoom stays on the body (not the root element), so the
+ narrow rules still switch at the real window width. The gradient
+ is drawn over the taller panel, so it reads a touch darker than
+ the no-zoom login — same colours, same angle, no seam.
+
+ Tested: the real login page rendered to JPG at 1440x1286 (the
+ panel's full height, as the browser shows it scaled to the
+ screen) — the gradient fills the whole panel with no seam, card
+ and hero centred (b101-login-desktop.jpg). WeasyPrint ignores the
+ zoom, so a 900px-high render cuts the tall panel in half; the
+ 1286px render is the honest one. 114 client-flow checks and the
+ full 630/630 regression suite against real MySQL 8.0, on the work
+ copy and on a fresh extract of the zip.

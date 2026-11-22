@@ -1,4 +1,13 @@
 ==============================================================================
+ THE LOGIN BAND IS FIXED BY A TALLER PANEL (2026-11-22)
+==============================================================================
+ The login page still showed a band at the bottom. The gradient is
+ back on the login panel, and the panel is made taller by the same
+ amount as the zoom shrinks it, so it fills the screen exactly.
+ The body gradient that repeated below the panel is gone. See
+ README section 120.
+
+==============================================================================
  THE 70% LOOK IS BACK, AND THE WHITE BAND CANNOT RETURN (2026-11-22)
 ==============================================================================
  The portal pages were still big at 100% browser zoom, while the
