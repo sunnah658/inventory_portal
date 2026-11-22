@@ -36,6 +36,7 @@ Templates: deptdb_clients, client_form, client_detail, client_setup, client_form
 """
 import json
 import os
+import re
 from datetime import datetime
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, url_for
@@ -76,6 +77,12 @@ ALL_STATUSES = tuple(STATUS_LABEL)
 APPROVED_STATES = ("approved", "forwarded", "san_uploaded", "completed")
 FORWARDED_STATES = ("forwarded", "san_uploaded", "completed")  # Transmission, Core, Technical see it from here on
 MAX_ROWS = 30   # contacts and services per client
+
+# Build 102: every SOF has its own state. Pending (yellow) while its
+# change is going through the flow again, Activated (green) once it is
+# live, Terminated (red) once its termination has taken effect.
+SOF_STATUSES = ("pending", "activated", "terminated")
+SOF_STATUS_LABEL = {"pending": "Pending", "activated": "Activated", "terminated": "Terminated"}
 
 
 @bp.app_template_filter("client_no")
@@ -253,13 +260,19 @@ def _perms(db, user, roles, c):
         # is undated gets the "set the date first" message, not a 403.
         "forward_finance_admin": status == "san_uploaded" and _is_ra_admin(db, user),
         "sof_dated": sof_ok,
+        "portal_admin": is_portal_admin(user),
+        # Build 102: on a finished client the account manager may add
+        # services and edit activated SOFs (through the approval below);
+        # the portal admin may do the same. The client itself stays finished.
+        "add_services": (status == "completed" and am) or is_portal_admin(user),
     }
 
 
 # ---------------------------------------------------------------- the configurable Add Client form (build 93)
 FIELD_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                ("date", "Date"), ("dropdown", "Dropdown"), ("yesno", "Yes-No")]
-STRUCTURAL_REQUIRED = {"client_name", "contact_name", "sof_number", "sof_service", "sof_activation_date"}
+STRUCTURAL_REQUIRED = {"client_name", "contact_name", "sof_number", "sof_service", "sof_service_type",
+                       "sof_service_description", "sof_activation_date"}
 
 # Build 95: where a deletable default field's values live. Deleting the
 # field clears them, so the field is really gone (custom fields live in
@@ -274,6 +287,8 @@ DEFAULT_FIELD_COLUMNS = {
     "contact_phone": ("client_contacts", "phone"),
     "contact_email": ("client_contacts", "email"),
     "sof_details": ("client_services", "details"),
+    "sof_service_type": ("client_services", "service_type"),
+    "sof_service_description": ("client_services", "service_description"),
 }
 
 
@@ -334,6 +349,41 @@ def _history(db, cid, user, action, detail=None):
                (cid, user["id"] if user else None, user["full_name"] if user else None, action, detail))
 
 
+def _sof_snapshot(row):
+    """The fields a SOF change carries, as a plain dict (JSON-safe)."""
+    return {"sof_number": row["sof_number"] or "", "service": row["service"] or "",
+            "service_type": row.get("service_type") or "",
+            "service_description": row.get("service_description") or "",
+            "details": row["details"] or "",
+            "termination_date": str(row["termination_date"])[:10] if row.get("termination_date") else "",
+            "commercial_impact_date": str(row["commercial_impact_date"])[:10] if row.get("commercial_impact_date") else "",
+            "termination_reason": row.get("termination_reason") or ""}
+
+
+_SOF_FIELD_LABELS = {"sof_number": "SOF number", "service": "Service", "service_type": "Service type",
+                     "service_description": "Service description", "details": "Details",
+                     "termination_date": "Termination date",
+                     "commercial_impact_date": "Commercial impact date",
+                     "termination_reason": "Termination reason"}
+
+
+def _sof_change_text(old, new):
+    """'Service type: internet -> IPTSP; Termination date: — -> 2026-12-01'
+    — one line per field that actually changed."""
+    parts = []
+    for key, label in _SOF_FIELD_LABELS.items():
+        o, n = (old or {}).get(key, ""), (new or {}).get(key, "")
+        if o != n:
+            parts.append(f"{label}: {o or '—'} -> {n or '—'}")
+    return "; ".join(parts) or "No fields changed."
+
+
+def _sof_new_text(new):
+    """'New SOF — SOF number: SOF-999; Service: Internet; …' for an added SOF."""
+    parts = [f"{label}: {new.get(key, '')}" for key, label in _SOF_FIELD_LABELS.items() if new.get(key)]
+    return "New SOF — " + "; ".join(parts)
+
+
 def _link(cid):
     return url_for("clients.detail", cid=cid)
 
@@ -374,6 +424,16 @@ def client_tab_view(db, dept, is_admin, args):
         view = "all"
     status = args.get("status") or ""
     q = " ".join((args.get("q") or "").split())
+    # Build 102 filters: the account manager, and one month with
+    # Activation or Termination — the list then shows only the clients
+    # with an activation (or a termination) in that month.
+    am = args.get("am", type=int)
+    month = (args.get("month") or "").strip()
+    mtype = args.get("mtype") or "activation"
+    if mtype not in ("activation", "termination"):
+        mtype = "activation"
+    if month and not re.fullmatch(r"\d{4}-\d{2}", month):
+        month = ""
 
     # "To do": what is waiting for this viewer
     todo_parts, todo_params = [], []
@@ -403,6 +463,19 @@ def client_tab_view(db, dept, is_admin, args):
         where.append(todo_sql); params += todo_params
     if status in ALL_STATUSES:
         where.append("c.status=?"); params.append(status)
+    elif status in ("sof_pending", "sof_activated", "sof_terminated"):
+        # A SOF state, not a client state: clients with at least one SOF in it.
+        where.append("EXISTS (SELECT 1 FROM client_services s WHERE s.client_id=c.id AND s.status=?)")
+        params.append(status[4:])
+    if am:
+        where.append("c.account_manager_id=?"); params.append(am)
+    if month:
+        # A client matches when one of its SOFs was activated (or
+        # terminated) in the chosen month.
+        col = "activation_date" if mtype == "activation" else "termination_date"
+        where.append(f"EXISTS (SELECT 1 FROM client_services s WHERE s.client_id=c.id "
+                     f"AND DATE_FORMAT(s.{col},'%Y-%m')=?)")
+        params.append(month)
     if q:
         like = like_pattern(q)
         digits = q.upper().replace("CL-", "").strip()
@@ -421,11 +494,19 @@ def client_tab_view(db, dept, is_admin, args):
     rows = db.execute(
         "SELECT c.*, u.full_name AS owner_name, am.full_name AS am_name, "
         "(SELECT COUNT(*) FROM client_services s WHERE s.client_id=c.id) AS sof_count, "
-        # Build 96: the list shows EVERY SOF's activation date (the
-        # client-level activation_date is stale since build 93).
-        "(SELECT GROUP_CONCAT(DISTINCT s.activation_date ORDER BY s.activation_date SEPARATOR ', ') "
-        "FROM client_services s WHERE s.client_id=c.id AND s.activation_date IS NOT NULL) AS sof_dates "
-        + base + sql_where + " ORDER BY c.id DESC LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
+        # Build 102: the Status column counts the SOFs by their own state.
+        "(SELECT COUNT(*) FROM client_services s WHERE s.client_id=c.id AND s.status='activated') AS n_activated, "
+        "(SELECT COUNT(*) FROM client_services s WHERE s.client_id=c.id AND s.status='terminated') AS n_terminated, "
+        "(SELECT COUNT(*) FROM client_services s WHERE s.client_id=c.id AND s.status='pending') AS n_pending, "
+        # Build 102: each date carries its short service name (the service
+        # type) in brackets, oldest first.
+        "(SELECT GROUP_CONCAT(DISTINCT CONCAT(s.activation_date, ' (', s.service_type, ')') "
+        "ORDER BY s.activation_date SEPARATOR ', ') FROM client_services s "
+        "WHERE s.client_id=c.id AND s.activation_date IS NOT NULL) AS sof_activations, "
+        "(SELECT GROUP_CONCAT(DISTINCT CONCAT(s.termination_date, ' (', s.service_type, ')') "
+        "ORDER BY s.termination_date SEPARATOR ', ') FROM client_services s "
+        "WHERE s.client_id=c.id AND s.status='terminated' AND s.termination_date IS NOT NULL) AS sof_terminations "
+        + base + sql_where + " ORDER BY c.id ASC LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
 
     # The dropdown of approved clients (everyone who can see them)
     approved = db.execute(
@@ -440,11 +521,13 @@ def client_tab_view(db, dept, is_admin, args):
     return render_template(
         "deptdb_clients.html", dept=dept, is_admin=is_admin,
         tabs=routes_deptdb._tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user)),
-        rows=rows, counts=counts, view=view, status=status, q=q, total=total, page=page, pages=pages,
+        rows=rows, counts=counts, view=view, status=status, q=q, am=am, month=month, mtype=mtype,
+        managers=_account_managers(db), total=total, page=page, pages=pages,
         keep=keep, approved=approved, can_create=can_create, roles=roles,
         flow=flow_depts(db), role_label=ROLE_LABEL,
         can_setup=is_portal_admin(g.user), can_form_setup=_is_sales_admin(db, g.user),
-        statuses=ALL_STATUSES, status_label=STATUS_LABEL)
+        statuses=ALL_STATUSES, status_label=STATUS_LABEL,
+        sof_statuses=SOF_STATUSES, sof_status_label=SOF_STATUS_LABEL)
 
 
 # ---------------------------------------------------------------- one client
@@ -508,13 +591,26 @@ def detail(cid):
     history = db.execute("SELECT * FROM client_history WHERE client_id=? ORDER BY id DESC", (cid,)).fetchall()
     san = _file_info(c["san_file"])
     _fields = {p: _form_fields(db, p) for p in (1, 2, 3)}
+    # Build 102: the SOF changes waiting for the Sales admin to approve,
+    # with the field-by-field change already worked out for the page.
+    edits = []
+    for e in db.execute("SELECT e.*, u.full_name AS editor_name FROM client_sof_edits e "
+                        "LEFT JOIN users u ON u.id=e.editor_id "
+                        "WHERE e.client_id=? AND e.status='awaiting' ORDER BY e.id", (cid,)).fetchall():
+        new = json.loads(e["new_values"])
+        old = json.loads(e["old_values"]) if e["old_values"] else {}
+        edits.append({"id": e["id"], "editor_name": e["editor_name"] or "—",
+                      "created_at": e["created_at"], "is_new": not e["service_id"],
+                      "num": old.get("sof_number") or new.get("sof_number") or "",
+                      "change": _sof_new_text(new) if not e["service_id"] else _sof_change_text(old, new)})
     return render_template(
         "client_detail.html", c=c, contacts=contacts, services=services, history=history,
         sof=[(s, _file_info(s["sof_file"])) for s in services], san=san,
         perm=_perms(db, g.user, roles, c), timeline=_timeline(db, c),
         fields=_fields,
         fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
-        custom=_load_custom(db, cid),
+        custom=_load_custom(db, cid), edits=edits, sof_status_label=SOF_STATUS_LABEL,
+        can_approve_sof=_is_sales_admin(db, g.user),
         back=url_for("ddb.index", tab="clients", **({"dept": g.user["department_id"]} if not is_portal_admin(g.user) else {})))
 
 
@@ -545,7 +641,8 @@ def _blank_form():
             "account_manager_id": None, "am_full_name": "", "am_designation": "", "am_phone": "", "am_email": "",
             "custom1": {},
             "contacts": [{"name": "", "designation": "", "phone": "", "email": "", "custom": {}}],
-            "services": [{"id": "", "sof_number": "", "service": "", "details": "", "file_name": "",
+            "services": [{"id": "", "sof_number": "", "service": "", "service_type": "",
+                          "service_description": "", "details": "", "file_name": "",
                           "activation_date": "", "public_code": "", "custom": {}}]}
 
 
@@ -567,6 +664,8 @@ def _form_from_db(db, c):
                         for r in db.execute("SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id",
                                             (c["id"],)).fetchall()] or _blank_form()["contacts"]
     form["services"] = [dict(id=r["id"], sof_number=r["sof_number"] or "", service=r["service"] or "",
+                             service_type=r.get("service_type") or "",
+                             service_description=r.get("service_description") or "",
                              details=r["details"] or "",
                              activation_date=str(r["activation_date"])[:10] if r["activation_date"] else "",
                              public_code=r["public_code"] or "",
@@ -582,12 +681,18 @@ def _pick(lst, i):
     return lst[i] if i < len(lst) else ""
 
 
-def _read_form(db, existing):
+def _read_form(db, existing, am_mode=False):
     """Read and check the posted form.
     Returns (form for redisplay, errors, contacts, services, new files saved, old files to delete after commit).
     `existing` is {service id: row} of the client being edited (empty for a new client).
     The activation date lives on every SOF (page 3, build 93) — never on the
-    client page. The admin's fields are read by their id (cf1_/cf2_/cf3_)."""
+    client page. The admin's fields are read by their id (cf1_/cf2_/cf3_).
+    `am_mode` (build 102) is the Add-services save on a finished client:
+    page 1 is not changed by the account manager, and the activation date
+    of a SOF is the Revenue Assurance department's — so neither is
+    required here; a new SOF may be added without a date, and Revenue
+    Assurance sets it once the change is approved."""
+
     f = request.form
     form = {k: _clean(f.get(k), 255) for k in ("client_name", "business_type", "phone", "email")}
     form["address"] = (f.get("address") or "").strip()[:2000]
@@ -604,6 +709,8 @@ def _read_form(db, existing):
     # ---- page 1 (the fields the admin set: name, type, required or not)
     fields1 = _form_fields(db, 1)
     for fld in fields1:
+        if am_mode:
+            continue
         err = _check_value(form.get(fld["field_key"], ""), fld, "Page 1: " + fld["name"])
         if err:
             errors.append(err)
@@ -617,6 +724,8 @@ def _read_form(db, existing):
             continue
         val = _clean(f.get(f"cf1_{fld['id']}"), 2000)
         custom1[fld["id"]] = val
+        if am_mode:
+            continue
         err = _check_value(val, fld, "Page 1: " + fld["name"])
         if err:
             errors.append(err)
@@ -657,7 +766,9 @@ def _read_form(db, existing):
     if form["account_manager_id"] is None or db.execute(
             "SELECT 1 FROM users WHERE id=? AND is_active=1 AND is_deleted=0",
             (form["account_manager_id"],)).fetchone() is None:
-        errors.append("Page 2: pick the account manager.")
+        if not am_mode:
+            # In Add-services mode the account manager stays as it is.
+            errors.append("Page 2: pick the account manager.")
 
     # ---- page 3
     fields3 = _form_fields(db, 3)
@@ -672,10 +783,16 @@ def _read_form(db, existing):
         sid = int(sid_raw) if str(sid_raw).isdigit() and int(sid_raw) in existing else None
         row = {"id": sid or "", "sof_number": _clean(numbers[i]),
                "service": _clean(_pick(f.getlist("sof_service"), i)),
+               # Build 102: the service type is the short service name the
+               # tab shows in brackets; the description is the SOF's own.
+               "service_type": _clean(_pick(f.getlist("sof_service_type"), i)),
+               "service_description": (_pick(f.getlist("sof_service_description"), i) or "").strip()[:2000],
                "details": (_pick(f.getlist("sof_details"), i) or "").strip()[:2000], "file_name": "",
                "custom": {fid: _clean(_pick(vals, i), 2000) for fid, vals in custom3.items()}}
         # The activation date of THIS SOF: the Sales user sets it here, and
-        # it is required on every SOF.
+        # it is required on every SOF — except in Add-services mode, where
+        # a new SOF has no date yet and Revenue Assurance sets it once the
+        # change is approved.
         raw_day = (_pick(f.getlist("sof_activation_date"), i) or "").strip()
         row["activation_date"] = ""
         bad_day = False
@@ -689,7 +806,8 @@ def _read_form(db, existing):
         upload = files[i] if i < len(files) else None
         has_upload = bool(upload and upload.filename)
         old_file = existing[sid]["sof_file"] if sid else None
-        if not (row["sof_number"] or row["service"] or row["details"] or row["activation_date"]
+        if not (row["sof_number"] or row["service"] or row["service_type"] or row["service_description"]
+                or row["details"] or row["activation_date"]
                 or has_upload or sid or any(row["custom"].values())):
             continue
         if sid:
@@ -698,9 +816,10 @@ def _read_form(db, existing):
         if bad_day:
             errors.append(f"Page 3: the activation date of service {n} does not look right.")
         _skey = {"sof_number": "sof_number", "sof_service": "service",
+                 "sof_service_type": "service_type", "sof_service_description": "service_description",
                  "sof_details": "details", "sof_activation_date": "activation_date"}
         for fld in fields3:
-            if fld["field_key"] == "sof_activation_date" and bad_day:
+            if fld["field_key"] == "sof_activation_date" and (bad_day or am_mode):
                 continue
             val = row.get(_skey.get(fld["field_key"], ""), "")
             err = _check_value(val, fld, f"Page 3: {fld['name']} of service {n}")
@@ -759,6 +878,11 @@ def _read_form(db, existing):
 
 def _write_children(db, cid, contacts, services, custom1):
     db.execute("DELETE FROM client_contacts WHERE client_id=?", (cid,))
+    # A re-save rebuilds the SOF rows, so each rebuilt row keeps the old
+    # row's own state (build 102): its short name, description, status
+    # and any termination the account manager set. A new client has no
+    # old rows, so a fresh SOF starts pending.
+    old_sof = {r["id"]: r for r in db.execute("SELECT * FROM client_services WHERE client_id=?", (cid,)).fetchall()}
     db.execute("DELETE FROM client_services WHERE client_id=?", (cid,))
     db.execute("DELETE FROM client_field_values WHERE client_id=?", (cid,))
     for i, r in enumerate(contacts):
@@ -767,15 +891,34 @@ def _write_children(db, cid, contacts, services, custom1):
         _save_custom(db, cid, "contact", nid, r.get("custom") or {})
     for i, r in enumerate(services):
         code = r.get("public_code") or new_random_code_text(db)
-        nid = db.execute("INSERT INTO client_services(client_id,position,sof_number,service,details,sof_file,"
-                         "activation_date,public_code) VALUES (?,?,?,?,?,?,?,?)",
-                         (cid, i, r["sof_number"], r["service"], r["details"] or None, r.get("file_json"),
-                          r.get("activation_date") or None, code)).lastrowid
+        old = old_sof.get(r["id"]) if r.get("id") else None
+        nid = db.execute("INSERT INTO client_services(client_id,position,sof_number,service,service_type,"
+                         "service_description,details,sof_file,activation_date,termination_date,"
+                         "commercial_impact_date,termination_reason,status,public_code) "
+                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (cid, i, r["sof_number"], r["service"], r["service_type"],
+                          r["service_description"] or None, r["details"] or None, r.get("file_json"),
+                          r.get("activation_date") or None,
+                          (old["termination_date"] if old else None),
+                          (old["commercial_impact_date"] if old else None),
+                          (old["termination_reason"] if old else None),
+                          (old["status"] if old else "pending"), code)).lastrowid
         _save_custom(db, cid, "service", nid, r.get("custom") or {})
     _save_custom(db, cid, "client", cid, custom1 or {})
 
 
-def _show_form(db, form, cid=None, c=None, errors=None):
+def _write_contacts(db, cid, contacts):
+    """Rewrite only the contact persons (build 102, Add services): the
+    services and the client's own fields are untouched."""
+    db.execute("DELETE FROM client_contacts WHERE client_id=?", (cid,))
+    db.execute("DELETE FROM client_field_values WHERE client_id=? AND target_type='contact'", (cid,))
+    for i, r in enumerate(contacts):
+        nid = db.execute("INSERT INTO client_contacts(client_id,position,name,designation,phone,email) VALUES (?,?,?,?,?,?)",
+                         (cid, i, r["name"], r["designation"] or None, r["phone"] or None, r["email"] or None)).lastrowid
+        _save_custom(db, cid, "contact", nid, r.get("custom") or {})
+
+
+def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_locked=False):
     managers = _account_managers(db)
     managers_info = {m["id"]: {"full_name": m["full_name"] or "", "designation": m["designation"] or "",
                                "phone": m["phone"] or "", "email": m["email"] or ""} for m in managers}
@@ -786,7 +929,7 @@ def _show_form(db, form, cid=None, c=None, errors=None):
     fmap = {fld["field_key"]: fld for p in (1, 2, 3) for fld in fields[p] if fld["field_key"]}
     return render_template("client_form.html", form=form, cid=cid, c=c, errors=errors or [],
                            managers=managers, managers_info=managers_info, max_rows=MAX_ROWS,
-                           fields=fields, fmap=fmap,
+                           fields=fields, fmap=fmap, am_mode=am_mode, page1_locked=page1_locked,
                            back=url_for("ddb.index", tab="clients"))
 
 
@@ -843,14 +986,126 @@ def new():
     return redirect(_link(cid))
 
 
+def _edit_services(db, c, roles):
+    """Build 102: Add services on a finished client (the account manager,
+    or the portal admin). The client itself stays finished. Contact
+    changes apply at once. Every service change — a new SOF, or a changed
+    one — waits for the Sales admin to approve it; the portal admin's
+    changes apply at once. The SOF file and the activation date are not
+    changed here (the file is set at creation, the date is Revenue
+    Assurance's)."""
+    cid = c["id"]
+    portal_admin = is_portal_admin(g.user)
+    if request.method == "GET":
+        return _show_form(db, _form_from_db(db, c), cid=cid, c=c, am_mode=True, page1_locked=not portal_admin)
+    existing = {r["id"]: r for r in db.execute("SELECT * FROM client_services WHERE client_id=?", (cid,)).fetchall()}
+    form, errors, contacts, services, saved_new, delete_old = _read_form(db, existing, am_mode=True)
+    if errors:
+        _remove_files(saved_new)
+        return _show_form(db, form, cid=cid, c=c, errors=errors, am_mode=True, page1_locked=not portal_admin)
+    try:
+        if portal_admin:
+            # The portal admin is the authority: page 1 applies at once.
+            db.execute("UPDATE client_onboardings SET client_name=?, business_type=?, address=?, phone=?, email=?, "
+                       "notes=?, account_manager_id=?, am_full_name=?, am_designation=?, am_phone=?, am_email=?, "
+                       "updated_at=datetime('now','localtime') WHERE id=?",
+                       (form["client_name"], form["business_type"] or None, form["address"] or None,
+                        form["phone"] or None, form["email"] or None, form["notes"] or None,
+                        form["account_manager_id"], form["am_full_name"] or None, form["am_designation"] or None,
+                        form["am_phone"] or None, form["am_email"] or None, cid))
+            _save_custom(db, cid, "client", cid, form["custom1"])
+        old_contacts = [(r["name"] or "", r["designation"] or "", r["phone"] or "", r["email"] or "")
+                        for r in db.execute("SELECT name, designation, phone, email FROM client_contacts "
+                                           "WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()]
+        _write_contacts(db, cid, contacts)
+        contacts_changed = ([(r["name"], r["designation"], r["phone"], r["email"]) for r in contacts]
+                            != old_contacts)
+        added, changed = [], []
+        for row in services:
+            sid = row.get("id")
+            if not sid:
+                new = {"sof_number": row["sof_number"], "service": row["service"],
+                       "service_type": row["service_type"], "service_description": row["service_description"],
+                       "details": row["details"], "termination_date": "", "commercial_impact_date": "",
+                       "termination_reason": ""}
+                if portal_admin:
+                    pos = db.execute("SELECT COALESCE(MAX(position), -1)+1 FROM client_services WHERE client_id=?",
+                                     (cid,)).fetchone()[0]
+                    db.execute("INSERT INTO client_services(client_id,position,sof_number,service,service_type,"
+                               "service_description,details,sof_file,activation_date,public_code,status) "
+                               "VALUES (?,?,?,?,?,?,?,NULL,NULL,?,'pending')",
+                               (cid, pos, new["sof_number"], new["service"], new["service_type"],
+                                new["service_description"] or None, new["details"] or None,
+                                new_random_code_text(db)))
+                    _history(db, cid, g.user, f"SOF {new['sof_number']} added by the portal admin",
+                             "Pending — Revenue Assurance sets its activation date.")
+                else:
+                    db.execute("INSERT INTO client_sof_edits(client_id,service_id,editor_id,old_values,new_values)"
+                               " VALUES (?,?,?,NULL,?)",
+                               (cid, None, g.user["id"], json.dumps(new)))
+                    _history(db, cid, g.user, f"SOF {new['sof_number']} added — sent for approval")
+                    notify(db, set(_sales_admin_ids(db)),
+                           f"{g.user['full_name']} added SOF {new['sof_number']} to '{c['client_name']}'. "
+                           "Approve or reject it from the client page.", _link(cid), skip=g.user["id"])
+                added.append(new["sof_number"])
+                continue
+            old = existing[sid]
+            new = _sof_snapshot(old)
+            new.update({"sof_number": row["sof_number"], "service": row["service"],
+                        "service_type": row["service_type"], "service_description": row["service_description"],
+                        "details": row["details"]})
+            diff = _sof_change_text(_sof_snapshot(old), new)
+            if diff == "No fields changed.":
+                continue
+            if portal_admin:
+                db.execute("UPDATE client_services SET sof_number=?, service=?, service_type=?, "
+                           "service_description=?, details=? WHERE id=?",
+                           (new["sof_number"], new["service"], new["service_type"],
+                            new["service_description"] or None, new["details"] or None, sid))
+                _history(db, cid, g.user, f"SOF {old['sof_number']} changed by the portal admin", diff)
+            else:
+                db.execute("INSERT INTO client_sof_edits(client_id,service_id,editor_id,old_values,new_values)"
+                           " VALUES (?,?,?,?,?)",
+                           (cid, sid, g.user["id"], json.dumps(_sof_snapshot(old)), json.dumps(new)))
+                _history(db, cid, g.user, f"SOF {old['sof_number']} change sent for approval", diff)
+                notify(db, set(_sales_admin_ids(db)),
+                       f"{g.user['full_name']} changed SOF {old['sof_number']} of '{c['client_name']}'. "
+                       "Approve or reject it from the client page.", _link(cid), skip=g.user["id"])
+            changed.append(old["sof_number"])
+        if contacts_changed:
+            _history(db, cid, g.user, "contacts changed by the portal admin" if portal_admin
+                     else "contacts changed by the account manager")
+        log(db, "client_services_edit", f"{client_no(cid)} {c['client_name']}")
+        db.commit()
+    except Exception:
+        db.rollback()
+        _remove_files(saved_new)
+        raise
+    if portal_admin:
+        flash("Saved. The changes apply at once.", "ok")
+    elif added or changed:
+        flash("Saved. The Sales admin will approve or reject the service changes.", "ok")
+    else:
+        flash("Saved.", "ok")
+    return redirect(_link(cid))
+
+
 @bp.route("/<int:cid>/edit", methods=["GET", "POST"])
 @login_required
 def edit(cid):
     db, c, roles = _load(cid)
-    if not _perms(db, g.user, roles, c)["edit"]:
+    perms = _perms(db, g.user, roles, c)
+    am_services = perms["add_services"]
+    if not perms["edit"] and not am_services:
         flash("Only a rejected client can be changed, by the Sales user who made it or the Sales admin — "
-              "or a client still waiting for approval, by its account manager.", "error")
+              "or a client still waiting for approval, by its account manager. "
+              "On a finished client the account manager adds services from the client page.", "error")
         return redirect(_link(cid))
+    if am_services and not perms["edit"]:
+        # Build 102: Add services on a finished client. The client itself
+        # stays finished; the account manager changes contacts and
+        # services, and every service change waits for the Sales admin.
+        return _edit_services(db, c, roles)
     if request.method == "GET":
         return _show_form(db, _form_from_db(db, c), cid=cid, c=c)
     existing = {r["id"]: r for r in db.execute("SELECT * FROM client_services WHERE client_id=?", (cid,)).fetchall()}
@@ -1099,18 +1354,30 @@ def sof_activation(cid, sid):
         flash("Pick the activation date.", "error")
         return redirect(_link(cid))
     old = str(row["activation_date"])[:10] if row["activation_date"] else None
-    if old == day.isoformat():
+    if old == day.isoformat() and not (row["status"] == "pending" and c["status"] == "completed"):
+        # The same date again changes nothing — except on a pending SOF of
+        # a finished client, where saving the date finishes its flow.
         flash("The activation date is already that day.", "ok")
         return redirect(_link(cid))
     db.execute("UPDATE client_services SET activation_date=? WHERE id=? AND client_id=?",
                (day.isoformat(), sid, cid))
+    # Build 102: setting the date on a pending SOF finishes its flow —
+    # it becomes activated, or terminated when a termination was set
+    # (a termination only takes effect after the flow has run again).
+    finished = None
+    if row["status"] == "pending" and c["status"] == "completed":
+        finished = "terminated" if row.get("termination_date") else "activated"
+        db.execute("UPDATE client_services SET status=? WHERE id=?", (finished, sid))
     _history(db, cid, g.user,
              f"activation date set on {row['sof_number']}" if not old else f"activation date changed on {row['sof_number']}",
-             f"{old} -> {day.isoformat()}" if old else day.isoformat())
+             (f"{old} -> {day.isoformat()}" if old else day.isoformat())
+             + (f" — SOF is now {finished}" if finished else ""))
     log(db, "client_activation", f"{client_no(cid)} {c['client_name']} {row['sof_number']} {day.isoformat()}")
     if c["status"] == "completed":
         # The record is already with Finance: tell Finance (and the owner) the date moved.
         text = f"The activation date of SOF {row['sof_number']} of '{c['client_name']}' changed to {day.isoformat()}."
+        if finished:
+            text += f" The SOF is now {finished}."
         notify(db, set(_members(db, "finance")) | {c["owner_id"]} | _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
         db.commit()
         flash("Activation date changed. Finance was told.", "ok")
@@ -1121,6 +1388,176 @@ def sof_activation(cid, sid):
         notify(db, _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
         db.commit()
         flash("Activation date saved. Finance has not received the record yet — forward it below when ready.", "ok")
+    return redirect(_link(cid))
+
+
+# ---------------------------------------------------------------- one SOF: edit, approve, reject (build 102)
+@bp.route("/<int:cid>/sof/<int:sid>/edit", methods=["GET", "POST"])
+@login_required
+def sof_edit(cid, sid):
+    """The account manager edits ONE activated SOF on a finished client —
+    its fields, and its termination date, commercial impact date and
+    termination reason. The change waits for the Sales admin to approve
+    it; the SOF itself is untouched until then. The portal admin's change
+    applies at once."""
+    db, c, roles = _load(cid)
+    row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
+    if row is None:
+        abort(404)
+    am = c.get("account_manager_id") == g.user["id"]
+    portal_admin = is_portal_admin(g.user)
+    if c["status"] != "completed" or not (portal_admin or (am and row["status"] == "activated")):
+        abort(403)
+    if request.method == "GET":
+        return render_template("sof_edit.html", c=c, s=row, back=_link(cid),
+                               portal_admin=portal_admin)
+    new = {"sof_number": _clean(request.form.get("sof_number"), 255),
+           "service": _clean(request.form.get("service"), 255),
+           "service_type": _clean(request.form.get("service_type"), 255),
+           "service_description": (request.form.get("service_description") or "").strip()[:2000],
+           "details": (request.form.get("details") or "").strip()[:2000],
+           "termination_date": (request.form.get("termination_date") or "").strip(),
+           "commercial_impact_date": (request.form.get("commercial_impact_date") or "").strip(),
+           "termination_reason": (request.form.get("termination_reason") or "").strip()[:2000]}
+    errors = []
+    for key, label in (("sof_number", "SOF number"), ("service", "Service"),
+                       ("service_type", "Service type"), ("service_description", "Service description")):
+        if not new[key]:
+            errors.append(f"{label} is required.")
+    for key, label in (("termination_date", "Termination date"),
+                       ("commercial_impact_date", "Commercial impact date")):
+        if new[key]:
+            try:
+                datetime.strptime(new[key], "%Y-%m-%d")
+            except ValueError:
+                errors.append(f"{label} does not look like a date.")
+    if new["sof_number"] and new["sof_number"].lower() != (row["sof_number"] or "").lower():
+        clash = db.execute("SELECT id FROM client_services WHERE LOWER(sof_number)=? AND id<>?",
+                           (new["sof_number"].lower(), sid)).fetchone()
+        if clash:
+            errors.append(f"SOF number {new['sof_number']} is already used on another client.")
+    if errors:
+        for e in errors:
+            flash(e, "error")
+        return render_template("sof_edit.html", c=c, s={**dict(row), **new}, back=_link(cid),
+                               portal_admin=portal_admin)
+    old = _sof_snapshot(row)
+    diff = _sof_change_text(old, new)
+    if diff == "No fields changed.":
+        flash("Nothing changed.", "ok")
+        return redirect(_link(cid))
+    if portal_admin:
+        # The portal admin is the authority: the change applies at once,
+        # and a termination takes effect at once.
+        status = "terminated" if new["termination_date"] else ("activated" if row["activation_date"] else "pending")
+        db.execute("UPDATE client_services SET sof_number=?, service=?, service_type=?, service_description=?, "
+                   "details=?, termination_date=?, commercial_impact_date=?, termination_reason=?, status=? "
+                   "WHERE id=? AND client_id=?",
+                   (new["sof_number"], new["service"], new["service_type"],
+                    new["service_description"] or None, new["details"] or None,
+                    new["termination_date"] or None, new["commercial_impact_date"] or None,
+                    new["termination_reason"] or None, status, sid, cid))
+        _history(db, cid, g.user, f"SOF {row['sof_number']} changed by the portal admin", diff)
+        notify(db, {c["account_manager_id"]} | set(_sales_admin_ids(db)),
+               f"The portal admin changed SOF {row['sof_number']} of '{c['client_name']}': {diff}",
+               _link(cid), skip=g.user["id"])
+        db.commit()
+        flash("Saved. The change applies at once.", "ok")
+        return redirect(_link(cid))
+    db.execute("INSERT INTO client_sof_edits(client_id,service_id,editor_id,old_values,new_values)"
+               " VALUES (?,?,?,?,?)",
+               (cid, sid, g.user["id"], json.dumps(old), json.dumps(new)))
+    _history(db, cid, g.user, f"SOF {row['sof_number']} change sent for approval", diff)
+    notify(db, set(_sales_admin_ids(db)),
+           f"{g.user['full_name']} changed SOF {row['sof_number']} of '{c['client_name']}'. "
+           "Approve or reject it from the client page.", _link(cid), skip=g.user["id"])
+    db.commit()
+    flash("Saved. The Sales admin will approve or reject this SOF change.", "ok")
+    return redirect(_link(cid))
+
+
+@bp.route("/<int:cid>/sof-edit/<int:eid>/approve", methods=["POST"])
+@login_required
+def sof_edit_approve(cid, eid):
+    """The Sales admin approves one SOF change (build 102). Only that
+    SOF goes to pending — never the whole client. Revenue Assurance then
+    sets its activation date to finish the flow; a termination takes
+    effect only then."""
+    db, c, roles = _load(cid)
+    if not _is_sales_admin(db, g.user):
+        abort(403)
+    edit = db.execute("SELECT * FROM client_sof_edits WHERE id=? AND client_id=? AND status='awaiting'",
+                      (eid, cid)).fetchone()
+    if edit is None:
+        flash("This SOF change was already decided.", "error")
+        return redirect(_link(cid))
+    new = json.loads(edit["new_values"])
+    if edit["service_id"]:
+        row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?",
+                         (edit["service_id"], cid)).fetchone()
+        if row is None:
+            abort(404)
+        num = row["sof_number"]
+        db.execute("UPDATE client_services SET sof_number=?, service=?, service_type=?, service_description=?, "
+                   "details=?, termination_date=?, commercial_impact_date=?, termination_reason=?, status='pending' "
+                   "WHERE id=?",
+                   (new["sof_number"], new["service"], new["service_type"],
+                    new["service_description"] or None, new["details"] or None,
+                    new["termination_date"] or None, new["commercial_impact_date"] or None,
+                    new["termination_reason"] or None, edit["service_id"]))
+    else:
+        num = new["sof_number"]
+        pos = db.execute("SELECT COALESCE(MAX(position), -1)+1 FROM client_services WHERE client_id=?",
+                         (cid,)).fetchone()[0]
+        db.execute("INSERT INTO client_services(client_id,position,sof_number,service,service_type,"
+                   "service_description,details,sof_file,activation_date,public_code,status) "
+                   "VALUES (?,?,?,?,?,?,?,NULL,NULL,?,'pending')",
+                   (cid, pos, new["sof_number"], new["service"], new["service_type"],
+                    new["service_description"] or None, new["details"] or None, new_random_code_text(db)))
+    db.execute("UPDATE client_sof_edits SET status='approved', decided_by=?, "
+               "decided_at=datetime('now','localtime') WHERE id=?", (g.user["id"], eid))
+    tail = (" The termination takes effect once Revenue Assurance sets the activation date."
+            if new.get("termination_date") else "")
+    _history(db, cid, g.user, f"SOF {num} change approved",
+             f"The SOF is now pending — Revenue Assurance sets its activation date to finish the flow.{tail}")
+    log(db, "client_sof_approve", f"{client_no(cid)} {c['client_name']} {num}")
+    notify(db, {edit["editor_id"]} | set(_members(db, "revenue_assurance")) | _client_watchers(db, c),
+           f"The SOF {num} change on '{c['client_name']}' was approved. It is now pending — "
+           "Revenue Assurance sets its activation date.", _link(cid), skip=g.user["id"])
+    db.commit()
+    flash(f"SOF {num} approved. It is now pending — Revenue Assurance sets its activation date.", "ok")
+    return redirect(_link(cid))
+
+
+@bp.route("/<int:cid>/sof-edit/<int:eid>/reject", methods=["POST"])
+@login_required
+def sof_edit_reject(cid, eid):
+    """The Sales admin rejects one SOF change (build 102). The SOF keeps
+    its old values and its old state; the account manager is told why."""
+    db, c, roles = _load(cid)
+    if not _is_sales_admin(db, g.user):
+        abort(403)
+    edit = db.execute("SELECT * FROM client_sof_edits WHERE id=? AND client_id=? AND status='awaiting'",
+                      (eid, cid)).fetchone()
+    if edit is None:
+        flash("This SOF change was already decided.", "error")
+        return redirect(_link(cid))
+    reason = (request.form.get("reason") or "").strip()
+    if not reason:
+        flash("Give a reason for rejecting this SOF change.", "error")
+        return redirect(_link(cid))
+    new = json.loads(edit["new_values"])
+    old = json.loads(edit["old_values"]) if edit["old_values"] else {}
+    num = old.get("sof_number") or new.get("sof_number") or ""
+    db.execute("UPDATE client_sof_edits SET status='rejected', reason=?, decided_by=?, "
+               "decided_at=datetime('now','localtime') WHERE id=?", (reason, g.user["id"], eid))
+    _history(db, cid, g.user, f"SOF {num} change rejected", reason)
+    log(db, "client_sof_reject", f"{client_no(cid)} {c['client_name']} {num}")
+    notify(db, {edit["editor_id"]},
+           f"Your change to SOF {num} of '{c['client_name']}' was rejected by {g.user['full_name']}: {reason}",
+           _link(cid), skip=g.user["id"])
+    db.commit()
+    flash(f"SOF {num} change rejected. The account manager was told why.", "ok")
     return redirect(_link(cid))
 
 
@@ -1150,6 +1587,9 @@ def forward_finance(cid):
         db.rollback()
         flash("This client cannot be sent to Finance now.", "error")
         return redirect(_link(cid))
+    # Build 102: the SOFs that have their activation date are live now.
+    db.execute("UPDATE client_services SET status='activated' WHERE client_id=? AND status='pending' "
+               "AND activation_date IS NOT NULL", (cid,))
     _history(db, cid, g.user, "forwarded to finance", days)
     log(db, "client_forward_finance", f"{client_no(cid)} {c['client_name']} {days}")
     text = f"The final record of '{c['client_name']}' is ready: activation dates {days}."

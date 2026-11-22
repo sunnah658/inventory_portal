@@ -25,9 +25,16 @@
   <input type="hidden" name="view" value="{{ view }}">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by client, number or person" aria-label="Search clients">
   <select name="status" aria-label="Filter by status"><option value="">All statuses</option>
-    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ status_label[s] }}</option>{% endfor %}</select>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ status_label[s] }}</option>{% endfor %}
+    <option value="sof_pending" {{ 'selected' if status == 'sof_pending' }}>Pending SOF</option>
+    <option value="sof_activated" {{ 'selected' if status == 'sof_activated' }}>Activated SOF</option>
+    <option value="sof_terminated" {{ 'selected' if status == 'sof_terminated' }}>Terminated SOF</option></select>
+  <select name="am" aria-label="Filter by account manager"><option value="">All account managers</option>
+    {% for m in managers %}<option value="{{ m['id'] }}" {{ 'selected' if am == m['id'] }}>{{ m['full_name'] }}</option>{% endfor %}</select>
+  <input type="month" name="month" value="{{ month }}" aria-label="Filter by month">
+  <select name="mtype" aria-label="Month filter shows"><option value="activation" {{ 'selected' if mtype == 'activation' }}>Activation in month</option><option value="termination" {{ 'selected' if mtype == 'termination' }}>Termination in month</option></select>
   <button class="b" type="submit">Apply</button>
-  {% if q or status %}<a href="{{ url_for('ddb.index', tab='clients', view=view, **({'dept': keep.dept} if keep.dept else {})) }}">Clear</a>{% endif %}
+  {% if q or status or am or month %}<a href="{{ url_for('ddb.index', tab='clients', view=view, **({'dept': keep.dept} if keep.dept else {})) }}">Clear</a>{% endif %}
 </form>
 {% if approved %}
 <form class="tools" method="get" action="{{ url_for('clients.go') }}">
@@ -45,22 +52,24 @@
   <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients') }}">Client onboarding</a>
 </div>
 <div class="tabs" style="margin-top:8px">
-  <a class="tab {{ 'on' if view == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='all', status=status, q=q) }}">All clients · {{ counts.all }}</a>
-  {% if 'sales' in roles %}<a class="tab {{ 'on' if view == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='mine', status=status, q=q) }}">My clients · {{ counts.mine }}</a>{% endif %}
-  <a class="tab {{ 'on' if view == 'todo' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='todo', status=status, q=q) }}">To do · {{ counts.todo }}</a>
+  <a class="tab {{ 'on' if view == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='all', status=status, q=q, am=am, month=month, mtype=mtype) }}">All clients · {{ counts.all }}</a>
+  {% if 'sales' in roles %}<a class="tab {{ 'on' if view == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='mine', status=status, q=q, am=am, month=month, mtype=mtype) }}">My clients · {{ counts.mine }}</a>{% endif %}
+  <a class="tab {{ 'on' if view == 'todo' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='todo', status=status, q=q, am=am, month=month, mtype=mtype) }}">To do · {{ counts.todo }}</a>
 </div>
 {% if rows %}
   <div class="tb"><table>
-    <thead><tr><th>No.</th><th>Client</th><th>Account manager</th><th>Services</th><th>Status</th><th>Activation</th><th class="noprint"></th></tr></thead>
+    <thead><tr><th>No.</th><th>Client</th><th>Account manager</th><th>Services</th><th>Status</th><th>Flow</th><th>Activation</th><th>Terminated</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}
       <tr class="r"><td><b>{{ r['id']|client_no }}</b></td><td>{{ r['client_name'] }}</td><td>{{ r['am_name'] or '—' }}</td><td class="num">{{ r['sof_count'] }}</td>
+        <td><span class="s g">Activated {{ r['n_activated'] }}</span> <span class="s r">Terminated {{ r['n_terminated'] }}</span>{% if r['n_pending'] %} <span class="s a">Pending {{ r['n_pending'] }}</span>{% endif %}</td>
         <td><span class="s {{ 'g' if r['status'] == 'completed' else 'r' if r['status'] == 'rejected' else 'a' }}">{{ status_label[r['status']] }}</span></td>
-        <td>{{ r['sof_dates'] or '—' }}</td>
+        <td>{{ r['sof_activations'] or '—' }}</td>
+        <td>{{ r['sof_terminations'] or '—' }}</td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('clients.detail', cid=r['id']) }}">Open</a></td></tr>
     {% endfor %}</tbody></table></div>
   {{ pager(page, pages, 'ddb.index', keep) }}
 {% else %}
-  <div class="tb"><div class="empty">{% if q or status %}Nothing matches your filter.{% elif view == 'todo' %}Nothing is waiting for you.{% elif flow.sales is none %}The Sales department is not set yet.{% if can_setup %} <a href="{{ url_for('clients.setup') }}">Open the setup</a>.{% else %} Ask the portal admin.{% endif %}{% else %}No clients yet.{% if can_create %} Click “+ New client” to add the first one.{% endif %}{% endif %}</div></div>
+  <div class="tb"><div class="empty">{% if q or status or am or month %}Nothing matches your filter.{% elif view == 'todo' %}Nothing is waiting for you.{% elif flow.sales is none %}The Sales department is not set yet.{% if can_setup %} <a href="{{ url_for('clients.setup') }}">Open the setup</a>.{% else %} Ask the portal admin.{% endif %}{% else %}No clients yet.{% if can_create %} Click “+ New client” to add the first one.{% endif %}{% endif %}</div></div>
 {% endif %}
 </div>
 <div class="stack rail">

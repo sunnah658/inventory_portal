@@ -1,4 +1,24 @@
 ==============================================================================
+ EACH SERVICE HAS ITS OWN STATUS, AND THE ACCOUNT MANAGER CAN ADD OR
+ EDIT SERVICES ON A FINISHED CLIENT (2026-11-22)
+==============================================================================
+ The Client onboarding list now sorts ascending and shows, per
+ client, how many services are activated (green), terminated (red)
+ and pending (yellow); the client's own status moved to a new Flow
+ column, the Activation column shows each date with the short
+ service name in brackets, and a new Terminated column shows the
+ termination date the same way. New filters: account manager, and
+ monthwise (pick a month, then activation or termination). Each
+ SOF now has a service type (the short name) and a description,
+ both required. On a finished client the account manager can add
+ services (+ Add services) or edit an activated SOF (Edit on the
+ row, with termination date, commercial impact date and reason);
+ the Sales department admin approves that one SOF with its edit
+ history, and only that SOF goes to pending while the client stays
+ finished. The Contacts card has its "Client contact person"
+ heading and aligned tables. See README section 121.
+
+==============================================================================
  THE LOGIN BAND IS FIXED BY A TALLER PANEL (2026-11-22)
 ==============================================================================
  The login page still showed a band at the bottom. The gradient is

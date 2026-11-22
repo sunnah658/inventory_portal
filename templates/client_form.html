@@ -14,21 +14,22 @@
 .aminfo{border:1px dashed var(--line);border-radius:var(--r);padding:12px 14px;margin:12px 0}
 </style>{% endblock %}
 {# One input for an admin-set field: name is the form name, value the current value. #}
-{% macro cfield(fld, name, value) %}
+{% macro cfield(fld, name, value, lock='') %}
 <div class="fd{% if fld.field_type == 'longtext' %} full{% endif %}"><label>{{ fld.name }}{% if fld.required %} <span class="req">*</span>{% endif %}</label>
-{%- if fld.field_type == 'longtext' %}<textarea name="{{ name }}" rows="2">{{ value }}</textarea>
-{%- elif fld.field_type == 'number' %}<input name="{{ name }}" type="number" step="any" value="{{ value }}"{% if fld.required %} required{% endif %}>
-{%- elif fld.field_type == 'date' %}<input name="{{ name }}" type="date" value="{{ value }}"{% if fld.required %} required{% endif %}>
-{%- elif fld.field_type == 'dropdown' %}<select name="{{ name }}"{% if fld.required %} required{% endif %}><option value="">Pick…</option>{% for o in fld.opts %}<option value="{{ o }}"{{ ' selected' if value == o }}>{{ o }}</option>{% endfor %}</select>
-{%- elif fld.field_type == 'yesno' %}<select name="{{ name }}"{% if fld.required %} required{% endif %}><option value="">Pick…</option><option value="Yes"{{ ' selected' if value == 'Yes' }}>Yes</option><option value="No"{{ ' selected' if value == 'No' }}>No</option></select>
-{%- else %}<input name="{{ name }}" type="text" maxlength="255" value="{{ value }}"{% if fld.required %} required{% endif %}>
+{%- if fld.field_type == 'longtext' %}<textarea name="{{ name }}" rows="2" {{ lock }}>{{ value }}</textarea>
+{%- elif fld.field_type == 'number' %}<input name="{{ name }}" type="number" step="any" value="{{ value }}"{% if fld.required %} required{% endif %} {{ lock }}>
+{%- elif fld.field_type == 'date' %}<input name="{{ name }}" type="date" value="{{ value }}"{% if fld.required %} required{% endif %} {{ lock }}>
+{%- elif fld.field_type == 'dropdown' %}<select name="{{ name }}"{% if fld.required %} required{% endif %} {{ lock }}><option value="">Pick…</option>{% for o in fld.opts %}<option value="{{ o }}"{{ ' selected' if value == o }}>{{ o }}</option>{% endfor %}</select>
+{%- elif fld.field_type == 'yesno' %}<select name="{{ name }}"{% if fld.required %} required{% endif %} {{ lock }}><option value="">Pick…</option><option value="Yes"{{ ' selected' if value == 'Yes' }}>Yes</option><option value="No"{{ ' selected' if value == 'No' }}>No</option></select>
+{%- else %}<input name="{{ name }}" type="text" maxlength="255" value="{{ value }}"{% if fld.required %} required{% endif %} {{ lock }}>
 {%- endif %}</div>
 {% endmacro %}
+{% set lock = 'disabled' if page1_locked else '' %}
 {% block content %}
 <div class="tw"><div>
 <div class="card medium">
   <h1>{{ 'Change client ' ~ (cid|client_no) if cid else 'New client' }}</h1>
-  <p class="hint" style="margin-bottom:14px">Three pages: the client, its contacts, and its services. When you click Save, the request goes to the Sales admin for approval. <span class="req">*</span> means required.</p>
+  <p class="hint" style="margin-bottom:14px">{% if am_mode %}Change the contacts and the services of this finished client. Contact changes apply at once; every service change goes to the Sales admin for approval.{% else %}Three pages: the client, its contacts, and its services. When you click Save, the request goes to the Sales admin for approval.{% endif %} <span class="req">*</span> means required.</p>
   {% if c and c['reject_reason'] %}<div class="alert"><b>Rejected:</b> {{ c['reject_reason'] }}</div>{% endif %}
   {% if errors %}<div class="msg error"><ul style="margin:0;padding-left:18px">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
   <div class="steps" id="steps" hidden>
@@ -40,13 +41,13 @@
     <section class="step on" data-step="1">
       <h2>Page 1 · Client</h2><p class="hint">Basic client information.</p>
       <div class="fm">
-        <div class="fd full"><label for="client_name">{{ fmap['client_name'].name }} <span class="req">*</span></label><input id="client_name" name="client_name" type="text" maxlength="255" required value="{{ form.client_name }}"></div>
-        {% if 'business_type' in fmap %}<div class="fd"><label for="business_type">{{ fmap['business_type'].name }}{% if fmap['business_type'].required %} <span class="req">*</span>{% endif %}</label><input id="business_type" name="business_type" type="text" maxlength="255" value="{{ form.business_type }}"{% if fmap['business_type'].required %} required{% endif %}></div>{% endif %}
-        {% if 'phone' in fmap %}<div class="fd"><label for="phone">{{ fmap['phone'].name }}{% if fmap['phone'].required %} <span class="req">*</span>{% endif %}</label><input id="phone" name="phone" type="text" maxlength="255" value="{{ form.phone }}"{% if fmap['phone'].required %} required{% endif %}></div>{% endif %}
-        {% if 'email' in fmap %}<div class="fd"><label for="email">{{ fmap['email'].name }}{% if fmap['email'].required %} <span class="req">*</span>{% endif %}</label><input id="email" name="email" type="text" maxlength="255" value="{{ form.email }}"{% if fmap['email'].required %} required{% endif %}></div>{% endif %}
-        {% if 'address' in fmap %}<div class="fd full"><label for="address">{{ fmap['address'].name }}{% if fmap['address'].required %} <span class="req">*</span>{% endif %}</label><textarea id="address" name="address" rows="2">{{ form.address }}</textarea></div>{% endif %}
-        {% if 'notes' in fmap %}<div class="fd full"><label for="notes">{{ fmap['notes'].name }}{% if fmap['notes'].required %} <span class="req">*</span>{% endif %}</label><textarea id="notes" name="notes" rows="2">{{ form.notes }}</textarea></div>{% endif %}
-        {% for fld in fields[1] %}{% if not fld.is_default %}{{ cfield(fld, 'cf1_' ~ fld.id, form.custom1.get(fld.id, '')) }}{% endif %}{% endfor %}
+        <div class="fd full"><label for="client_name">{{ fmap['client_name'].name }} <span class="req">*</span></label><input id="client_name" name="client_name" type="text" maxlength="255" required value="{{ form.client_name }}" {{ lock }}></div>
+        {% if 'business_type' in fmap %}<div class="fd"><label for="business_type">{{ fmap['business_type'].name }}{% if fmap['business_type'].required %} <span class="req">*</span>{% endif %}</label><input id="business_type" name="business_type" type="text" maxlength="255" value="{{ form.business_type }}"{% if fmap['business_type'].required %} required{% endif %} {{ lock }}></div>{% endif %}
+        {% if 'phone' in fmap %}<div class="fd"><label for="phone">{{ fmap['phone'].name }}{% if fmap['phone'].required %} <span class="req">*</span>{% endif %}</label><input id="phone" name="phone" type="text" maxlength="255" value="{{ form.phone }}"{% if fmap['phone'].required %} required{% endif %} {{ lock }}></div>{% endif %}
+        {% if 'email' in fmap %}<div class="fd"><label for="email">{{ fmap['email'].name }}{% if fmap['email'].required %} <span class="req">*</span>{% endif %}</label><input id="email" name="email" type="text" maxlength="255" value="{{ form.email }}"{% if fmap['email'].required %} required{% endif %} {{ lock }}></div>{% endif %}
+        {% if 'address' in fmap %}<div class="fd full"><label for="address">{{ fmap['address'].name }}{% if fmap['address'].required %} <span class="req">*</span>{% endif %}</label><textarea id="address" name="address" rows="2" {{ lock }}>{{ form.address }}</textarea></div>{% endif %}
+        {% if 'notes' in fmap %}<div class="fd full"><label for="notes">{{ fmap['notes'].name }}{% if fmap['notes'].required %} <span class="req">*</span>{% endif %}</label><textarea id="notes" name="notes" rows="2" {{ lock }}>{{ form.notes }}</textarea></div>{% endif %}
+        {% for fld in fields[1] %}{% if not fld.is_default %}{{ cfield(fld, 'cf1_' ~ fld.id, form.custom1.get(fld.id, ''), lock) }}{% endif %}{% endfor %}
       </div>
       <div class="stepnav"><span></span><button class="b p" type="button" data-go="2">Next: contacts</button></div>
     </section>
@@ -54,7 +55,7 @@
     <section class="step" data-step="2">
       <h2>Page 2 · Contacts</h2><p class="hint">The people at the client, and our account manager.</p>
       <div class="fd"><label for="account_manager_id">Account manager <span class="req">*</span></label>
-        <select id="account_manager_id" name="account_manager_id"><option value="">Pick the account manager…</option>
+        <select id="account_manager_id" name="account_manager_id" {{ lock }}><option value="">Pick the account manager…</option>
           {% for m in managers %}<option value="{{ m['id'] }}" {{ 'selected' if form.account_manager_id == m['id'] }}>{{ m['full_name'] }}{% if m['designation'] %} · {{ m['designation'] }}{% endif %}</option>{% endfor %}</select></div>
       <div class="aminfo">
         <p class="hint" style="margin:0 0 8px">The account manager's information, filled in from their account. You can change it here — it changes only for this client, never the manager's own profile.</p>
@@ -82,32 +83,35 @@
     </section>
 
     <section class="step" data-step="3">
-      <h2>Page 3 · Services</h2><p class="hint">One block per SOF (Service Order Form). Add as many as the client ordered. The SOF file is optional (PDF, Word, Excel or an image). Every SOF must have an activation date.</p>
+      <h2>Page 3 · Services</h2><p class="hint">One block per SOF (Service Order Form). Add as many as the client ordered. The SOF file is optional (PDF, Word, Excel or an image).{% if am_mode %} A new SOF has no activation date yet — Revenue Assurance sets it once the change is approved.{% else %} Every SOF must have an activation date.{% endif %}</p>
       <div id="serviceRows">
       {% for r in form.services %}
-        <div class="rowbox"><button class="b sm dg rm" type="button" data-remove>Remove</button>
+        <div class="rowbox">{% if not am_mode %}<button class="b sm dg rm" type="button" data-remove>Remove</button>{% endif %}
           <input type="hidden" name="sof_existing" value="{{ r.id }}">
           <div class="fm">
             <div class="fd"><label>{{ fmap['sof_number'].name }} <span class="req">*</span></label><input name="sof_number" type="text" maxlength="255" value="{{ r.sof_number }}"></div>
             <div class="fd"><label>{{ fmap['sof_service'].name }} <span class="req">*</span></label><input name="sof_service" type="text" maxlength="255" value="{{ r.service }}" placeholder="for example Internet 100 Mbps"></div>
-            <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date" value="{{ r.activation_date }}" required></div>
+            <div class="fd"><label>{{ fmap['sof_service_type'].name }} <span class="req">*</span></label><input name="sof_service_type" type="text" maxlength="255" value="{{ r.service_type }}" placeholder="the short name shown after the date"></div>
+            <div class="fd full"><label>{{ fmap['sof_service_description'].name }} <span class="req">*</span></label><textarea name="sof_service_description" rows="2">{{ r.service_description }}</textarea></div>
+            <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date" value="{{ r.activation_date }}" required{% if am_mode %} disabled{% endif %}></div>
             {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2">{{ r.details }}</textarea></div>{% endif %}
             {% for fld in fields[3] %}{% if not fld.is_default %}{{ cfield(fld, 'cf3_' ~ fld.id, r.custom.get(fld.id, '')) }}{% endif %}{% endfor %}
-            <div class="fd full"><label>SOF file</label><input name="sof_file" type="file">
-              {% if r.id and r.file_name %}<div class="sub">Now: {{ r.file_name }} — choose a file to replace it. <label class="ck"><input type="checkbox" name="sof_remove" value="{{ r.id }}"> Remove this file</label></div>{% endif %}</div>
+            <div class="fd full"><label>SOF file</label><input name="sof_file" type="file"{% if am_mode %} disabled{% endif %}>
+              {% if r.id and r.file_name %}<div class="sub">Now: {{ r.file_name }} — choose a file to replace it. <label class="ck"><input type="checkbox" name="sof_remove" value="{{ r.id }}"{% if am_mode %} disabled{% endif %}> Remove this file</label></div>{% endif %}</div>
           </div></div>
       {% endfor %}
       </div>
       <button class="b sm js-only" type="button" id="addService">+ Add another SOF</button>
       <div class="stepnav"><button class="b" type="button" data-go="2">Back</button>
-        <span><a class="b" href="{{ url_for('clients.detail', cid=cid) if cid else back }}">Cancel</a> <button class="b p" type="submit">Save and send for approval</button></span></div>
+        <span><a class="b" href="{{ url_for('clients.detail', cid=cid) if cid else back }}">Cancel</a> <button class="b p" type="submit">{% if am_mode %}Save services{% else %}Save and send for approval{% endif %}</button></span></div>
     </section>
   </form>
 </div>
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens next</h2>
-    <p class="hint">The Sales admin approves or rejects the client. A rejected client comes back to you with the reason; fix it here and save again.</p></div>
+    {% if am_mode %}<p class="hint">The client itself stays finished. Contact changes apply at once; every service change goes to the Sales admin for approval, and only that SOF goes to pending. Revenue Assurance then sets its activation date.</p>
+    {% else %}<p class="hint">The Sales admin approves or rejects the client. A rejected client comes back to you with the reason; fix it here and save again.</p>{% endif %}</div>
   {{ quick_card([('Back to Client onboarding', back, True)]) }}
 </div></div>
 
@@ -121,10 +125,12 @@
   <input type="hidden" name="sof_existing" value=""><div class="fm">
   <div class="fd"><label>{{ fmap['sof_number'].name }} <span class="req">*</span></label><input name="sof_number" type="text" maxlength="255"></div>
   <div class="fd"><label>{{ fmap['sof_service'].name }} <span class="req">*</span></label><input name="sof_service" type="text" maxlength="255" placeholder="for example Internet 100 Mbps"></div>
-  <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date" required></div>
+  <div class="fd"><label>{{ fmap['sof_service_type'].name }} <span class="req">*</span></label><input name="sof_service_type" type="text" maxlength="255" placeholder="the short name shown after the date"></div>
+  <div class="fd full"><label>{{ fmap['sof_service_description'].name }} <span class="req">*</span></label><textarea name="sof_service_description" rows="2"></textarea></div>
+  <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date"{% if not am_mode %} required{% endif %}{% if am_mode %} disabled{% endif %}></div>
   {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2"></textarea></div>{% endif %}
   {% for fld in fields[3] %}{% if not fld.is_default %}{{ cfield(fld, 'cf3_' ~ fld.id, '') }}{% endif %}{% endfor %}
-  <div class="fd full"><label>SOF file</label><input name="sof_file" type="file"></div></div></div></template>
+  <div class="fd full"><label>SOF file</label><input name="sof_file" type="file"{% if am_mode %} disabled{% endif %}></div></div></div></template>
 <script>
 (function(){
   var form=document.getElementById('clientForm'), max={{ max_rows }};

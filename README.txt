@@ -6174,3 +6174,93 @@
  1286px render is the honest one. 114 client-flow checks and the
  full 630/630 regression suite against real MySQL 8.0, on the work
  copy and on a fresh extract of the zip.
+
+121. EACH SERVICE HAS ITS OWN STATUS, AND THE ACCOUNT MANAGER CAN ADD
+    OR EDIT SERVICES ON A FINISHED CLIENT (build 102, 2026-11-22)
+==============================================================================
+ The Client onboarding list and the client page now treat each SOF
+ as its own service with its own status, and the account manager
+ can add a service or edit an activated one on a finished client
+ through the Sales department admin.
+
+ THE LIST
+ The clients sort in ascending order. The Status column counts the
+ client's services by their own state: "Activated n" in green,
+ "Terminated n" in red, and "Pending n" in yellow, shown only when
+ a pending edited SOF is in flow. The client's own status (Pending,
+ Approved, Forwarded, SAN uploaded, Completed, Rejected) moved to
+ a new Flow column. The Activation column shows each activation
+ date followed by the short service name in brackets, for example
+ "2026-11-18 (internet)". A new Terminated column shows the same
+ for terminated services: the termination date with the short
+ service name in brackets. The filters grew too: an account manager
+ filter, a month filter (pick a month, then Activation or
+ Termination, to see that month's activations or terminations),
+ and the status filter now also offers Pending SOF, Activated SOF
+ and Terminated SOF.
+
+ SERVICE TYPE AND DESCRIPTION
+ The SOF page has two new fields the user must fill: service type
+ and service description. The service type is the short service
+ name — it is what shows in brackets after the dates on the list
+ and on the client page. Both fields are structural on the Add
+ Client form setup (page 3), so they cannot be deleted like the
+ other defaults. On a database upgraded from an earlier build,
+ each existing SOF takes its service name as its service type, and
+ is marked activated where its client is finished and its
+ activation date is set, or terminated where it already has a
+ termination date.
+
+ ADD SERVICES
+ On a finished client, "+ Add services" sits on the right of
+ "Services (SOF)". It opens the same Add Client form for the
+ account manager, who can edit the client contact information and
+ add a new Service SOF; after adding, the flow continues as it
+ should. A contact change applies at once. A new SOF does not
+ appear on the client until the Sales department admin approves
+ it; after approval it is pending, and Revenue Assurance sets its
+ activation date, which makes it activated. The portal admin can
+ also use Add services, and a portal admin's changes apply at
+ once with no approval step.
+
+ EDITING A SOF
+ Each SOF row has an Edit button on its right. Only an activated
+ SOF can be edited — a terminated SOF cannot be edited at all,
+ and the account manager can edit again only after the full flow
+ has run. The edit page lets the account manager change the SOF
+ and add a termination date, a commercial impact date and a
+ termination reason (the reason is optional; the two dates are
+ only needed when the service is being terminated). Nothing
+ changes on the client while the edit waits: the SOF keeps its
+ old values and stays activated. The Sales department admin
+ receives a notification naming that specific SOF, with the edit
+ history showing what changed, and approves or rejects it from
+ the card on the client page (a rejection needs a reason). After
+ approval, only that specific SOF goes to pending — the client
+ stays finished and no other SOF is touched — and the full flow
+ starts again for that SOF. The termination itself takes effect
+ after the full flow: when Revenue Assurance sets the activation
+ date on the pending SOF, it becomes terminated, and the
+ termination date then shows on the list's Terminated column with
+ the short service name in brackets, and on the client page under
+ the SOF as "Terminated <date> · Commercial impact <date> ·
+ <reason>". The portal admin's own SOF edit applies at once, with
+ no approval step.
+
+ THE CLIENT PAGE
+ The Contacts card now has a "Client contact person" heading on
+ top of the contact-person information, and both the account
+ manager table and the contact-person table use the same fixed
+ column widths, so each column name lines up with its data. The
+ Services table gained a Type column (the short service name), a
+ Status column (the SOF's own pill: green Activated, yellow
+ Pending, red Terminated) and the Edit column, and shows the
+ service description under the service name.
+
+ Tested: the client page and the list rendered to JPG and read
+ back (b102-client-detail.jpg, b102-client-list.jpg) — the
+ heading, the aligned tables, the Services table and the
+ Status/Flow/Activation/Terminated columns are all as described.
+ 142 client-flow checks and the full 634/634 regression suite
+ against real MySQL 8.0, on the work copy and on a fresh extract
+ of the zip.

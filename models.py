@@ -859,19 +859,54 @@ CREATE TABLE IF NOT EXISTS client_contacts (
 -- added, changed by Revenue Assurance after the SAN report); the old
 -- client-level activation_date on client_onboardings is no longer used.
 -- public_code is the SOF's own share code (HRC-#####) for the QR on its PDF.
+-- service_type is the short service name the user types (build 102): it is
+-- what the Client onboarding tab shows in brackets after each date.
+-- service_description is the SOF's description, also typed by the user.
+-- status is the SOF's own state (build 102): pending until the flow has run
+-- for it, activated once it is live, terminated once its termination has
+-- taken effect. termination_date, commercial_impact_date and
+-- termination_reason are filled by the account manager when a service ends;
+-- the termination only takes effect after the SOF's flow has run again.
 CREATE TABLE IF NOT EXISTS client_services (
     id         INT AUTO_INCREMENT PRIMARY KEY,
     client_id  INT NOT NULL,
     position   INT NOT NULL DEFAULT 0,
     sof_number VARCHAR(255) NOT NULL,
     service    VARCHAR(255) NOT NULL,
+    service_type VARCHAR(255) NOT NULL DEFAULT '',
+    service_description TEXT,
     details    TEXT,
     sof_file   TEXT,
     activation_date DATE,
+    termination_date DATE,
+    commercial_impact_date DATE,
+    termination_reason TEXT,
+    status     VARCHAR(32) NOT NULL DEFAULT 'pending',
     public_code VARCHAR(255),
     public_enabled INT NOT NULL DEFAULT 1,
     public_views INT NOT NULL DEFAULT 0,
     FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A change the account manager made to a SOF on a finished client
+-- (build 102): the new values wait here until the Sales admin approves
+-- them. service_id is NULL for a brand-new SOF. old_values / new_values
+-- are JSON snapshots of the SOF row; status is awaiting, approved or
+-- rejected; reason is the Sales admin's reason when rejecting.
+CREATE TABLE IF NOT EXISTS client_sof_edits (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    client_id  INT NOT NULL,
+    service_id INT,
+    editor_id  INT NOT NULL,
+    old_values TEXT,
+    new_values TEXT NOT NULL,
+    status     VARCHAR(32) NOT NULL DEFAULT 'awaiting',
+    reason     TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    decided_by INT,
+    decided_at DATETIME,
+    FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE,
+    FOREIGN KEY (service_id) REFERENCES client_services(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- The Sales & Marketing admin's fields for the three Add Client pages.
@@ -1082,10 +1117,49 @@ def _seed_client_form_fields(conn):
         ("sof_service", 3, "Service", "text", 1, 1),
         ("sof_details", 3, "Details", "longtext", 0, 2),
         ("sof_activation_date", 3, "Activation date", "date", 1, 3),
+        # Build 102: the service type (the short name the tab shows in
+        # brackets) and the service description — both must be filled.
+        ("sof_service_type", 3, "Service type", "text", 1, 4),
+        ("sof_service_description", 3, "Service description", "longtext", 1, 5),
     ]
     for _key, _page, _name, _type, _req, _pos in _defaults:
         conn.execute("INSERT INTO client_form_fields(page,field_key,name,field_type,required,position,is_default)"
                      " VALUES (?,?,?,?,?,?,1)", (_page, _key, _name, _type, _req, _pos))
+
+
+def _upgrade_sof_type_fields(conn):
+    """Build 102 adds the Service type and Service description fields to
+    the Add Client form. The seed above only runs when the fields table
+    is empty, so a live database that already has fields needs these two
+    rows added here (they are structural, so the admin cannot remove them)."""
+    have = {r[0] for r in conn.execute("SELECT field_key FROM client_form_fields").fetchall()}
+    for _key, _name, _type, _pos in (("sof_service_type", "Service type", "text", 4),
+                                     ("sof_service_description", "Service description", "longtext", 5)):
+        if _key not in have:
+            conn.execute("INSERT INTO client_form_fields(page,field_key,name,field_type,required,position,is_default)"
+                         " VALUES (3,?,?,?,?,?,1)", (_key, _name, _type, 1, _pos))
+
+
+def _upgrade_sof_status(conn):
+    """Build 102 gives every SOF its own status and the new type /
+    description / termination columns. A SOF that already has a type
+    keeps it; one without takes the service name as its short name. A
+    SOF is activated when its client is already finished (completed)
+    and it has an activation date; every other SOF starts pending."""
+    for _col, _ddl in (("service_type", "VARCHAR(255) NOT NULL DEFAULT ''"),
+                       ("service_description", "TEXT"),
+                       ("termination_date", "DATE"),
+                       ("commercial_impact_date", "DATE"),
+                       ("termination_reason", "TEXT"),
+                       ("status", "VARCHAR(32) NOT NULL DEFAULT 'pending'")):
+        _ensure_column(conn, "client_services", _col, _ddl)
+    conn.execute("UPDATE client_services SET service_type=service "
+                 "WHERE service_type IS NULL OR service_type=''")
+    conn.execute("UPDATE client_services s JOIN client_onboardings c ON c.id=s.client_id "
+                 "SET s.status='activated' WHERE c.status='completed' AND s.activation_date IS NOT NULL "
+                 "AND (s.status IS NULL OR s.status='' OR s.status='pending')")
+    conn.execute("UPDATE client_services SET status='terminated' "
+                 "WHERE termination_date IS NOT NULL AND status<>'terminated'")
 
 
 def _upgrade_sof_dates(conn):
@@ -1366,6 +1440,8 @@ def init_db():
         _ensure_column(conn, "client_services", "public_enabled", "INT NOT NULL DEFAULT 1")
         _ensure_column(conn, "client_services", "public_views", "INT NOT NULL DEFAULT 0")
         _seed_client_form_fields(conn)
+        _upgrade_sof_type_fields(conn)
+        _upgrade_sof_status(conn)
         _upgrade_sof_dates(conn)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
