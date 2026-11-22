@@ -457,7 +457,6 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
     # left, 2 at the left and right, 3 at left, centre and right, 4 spread
     # evenly. The title, name and designation stay centred in respect to
     # the name inside each block.
-    story.append(Spacer(1, 12))
     _sig_table = _signatures_table(sigs, usable, font)
     if _sig_table is not None:
         story.append(_sig_table)
@@ -531,6 +530,135 @@ def invoice_pdf(title, subtitle, meta, bill_to, kind, colour, cols, rows, totals
             canvas.drawString(1.4 * cm, 0.8 * cm, f"Share code: {code}")
             # Smaller QR (1.9 cm, was 2.8 cm), directly on top of the
             # share code, at the bottom left corner of the page.
+            if qr_url:
+                try:
+                    _q = io.BytesIO()
+                    _segno.make(qr_url, error="m").save(_q, kind="png", scale=4, border=1)
+                    _q.seek(0)
+                    canvas.drawImage(ImageReader(_q), 1.4 * cm, 1.25 * cm, width=1.9 * cm, height=1.9 * cm, mask="auto")
+                except Exception:
+                    pass
+        canvas.restoreState()
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    return buf.getvalue()
+
+
+def sof_pdf(client, service, contacts, custom, code, company="",
+            company_address="", qr_url=""):
+    """One Service Order Form per SOF (approved in sof-format-v2.jpg):
+    top row: left logo + company name and address, right the title
+    "Service Order Form". Then meta in two columns — the client on the
+    left, the order (SOF number, date, activation date, account manager)
+    on the right — then the service block (service, details, the admin's
+    extra fields for this SOF), the contacts table, and notes. No
+    signature or approval blocks in the PDF (build 94). No amounts on
+    an SOF. The QR at the bottom left encodes qr_url and the share code
+    is printed under it; the page number sits at the bottom right, with
+    nothing in between."""
+    import segno as _segno
+    font = _fonts()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.4 * cm, rightMargin=1.4 * cm,
+                            topMargin=1.2 * cm, bottomMargin=1.4 * cm, title="Service Order Form")
+    accent = colors.HexColor("#0F7CA6")
+    small = ParagraphStyle("cell", fontName=font["regular"], fontSize=9, leading=12)
+    head = ParagraphStyle("head", fontName=font["bold"], fontSize=9, leading=12, textColor=colors.white)
+    h1 = ParagraphStyle("h1", fontName=font["bold"], fontSize=18, textColor=accent, leading=22, alignment=2)
+    sub = ParagraphStyle("sub", fontName=font["regular"], fontSize=9, textColor=colors.HexColor("#506A7B"), leading=12, alignment=2)
+    h2 = ParagraphStyle("h2", fontName=font["bold"], fontSize=11, textColor=colors.HexColor("#10283A"), leading=14, spaceBefore=10)
+    meta_s = ParagraphStyle("meta", fontName=font["regular"], fontSize=9, textColor=colors.HexColor("#506A7B"), leading=12)
+    meta_b = ParagraphStyle("metab", fontName=font["bold"], fontSize=10, textColor=colors.HexColor("#10283A"), leading=13)
+    story = []
+    usable = A4[0] - 2.8 * cm
+    logo = custom_logo_path() or os.path.join(current_app.static_folder, "logo.png")
+    _comp = Paragraph(f"<b>{_pdf_text(company)}</b><br/>"
+                      f"<font size='8.5' color='#506A7B'>{_pdf_text(company_address)}</font>",
+                      ParagraphStyle("comp", fontName=font["bold"], fontSize=11, leading=14))
+    _logo_cell = ""
+    try:
+        _logo_cell = Image(logo, width=2.6 * cm, height=1.6 * cm, kind="proportional")
+    except Exception:
+        pass
+    _left_t = Table([[_logo_cell, _comp]], colWidths=[3 * cm, usable - 7 * cm - 3 * cm],
+                    style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                           ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                           ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)])
+    _right_t = Table([[Paragraph("Service Order Form", h1)], [Paragraph("SOF · Client onboarding", sub)]],
+                     colWidths=[7 * cm],
+                     style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)])
+    story.append(Table([[ _left_t, _right_t]], colWidths=[usable - 7 * cm, 7 * cm],
+                       style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                              ("LINEBELOW", (0, 0), (-1, 0), 1.5, accent)]))
+    story.append(Spacer(1, 10))
+    # meta: the client on the left, the order on the right
+    _cl = []
+    _cl.append([Paragraph(f"<font color='#506A7B'>Client -</font> <font size='10'><b>{_pdf_text(client.get('client_name') or '')}</b></font>"
+                          + (f" · {_pdf_text(client.get('client_no') or '')}" if client.get('client_no') else ""), meta_s)])
+    if client.get("business_type"):
+        _cl.append([Paragraph(f"<font color='#506A7B'>Business type -</font> {_pdf_text(client['business_type'])}", meta_s)])
+    if client.get("phone"):
+        _cl.append([Paragraph(f"<font color='#506A7B'>Phone -</font> {_pdf_text(client['phone'])}", meta_s)])
+    if client.get("email"):
+        _cl.append([Paragraph(f"<font color='#506A7B'>Email -</font> {_pdf_text(client['email'])}", meta_s)])
+    if client.get("address"):
+        _cl.append([Paragraph(f"<font color='#506A7B'>Address -</font> {_pdf_text(client['address'])}", meta_s)])
+    _or = []
+    _or.append([Paragraph(f"<font color='#506A7B'>SOF No. -</font> <font size='10'><b>{_pdf_text(service.get('sof_number') or '')}</b></font>", meta_s)])
+    if service.get("created_at"):
+        _or.append([Paragraph(f"<font color='#506A7B'>Date -</font> {_pdf_text(str(service['created_at'])[:10])}", meta_s)])
+    _or.append([Paragraph(f"<font color='#506A7B'>Activation date -</font> <font size='10'><b>{_pdf_text(service.get('activation_date') or '—')}</b></font>", meta_s)])
+    if client.get("account_manager"):
+        _or.append([Paragraph(f"<font color='#506A7B'>Account manager -</font> {_pdf_text(client['account_manager'])}", meta_s)])
+    _left_meta = Table(_cl, colWidths=[usable / 2],
+                       style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
+    _right_meta = Table(_or, colWidths=[usable / 2],
+                        style=[("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)])
+    story.append(Table([[_left_meta, _right_meta]], colWidths=[usable / 2, usable / 2],
+                       style=[("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(Spacer(1, 6))
+    # the service itself, with the admin's extra fields for this SOF
+    story.append(Paragraph("Service", h2))
+    _svc = [[Paragraph(f"<b>{_pdf_text(service.get('service') or '')}</b>", meta_b)]]
+    if service.get("details"):
+        _svc.append([Paragraph(_pdf_text(service['details']), small)])
+    for _lab, _val in custom:
+        _svc.append([Paragraph(f"<font color='#506A7B'>{_pdf_text(_lab)} -</font> {_pdf_text(_val)}", small)])
+    story.append(Table(_svc, colWidths=[usable],
+                       style=[("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3F7FA")),
+                              ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#D3DBE0")),
+                              ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                              ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+    if contacts:
+        story.append(Paragraph("Contacts", h2))
+        _cols = ["Name", "Designation", "Phone", "Email"]
+        _data = [[Paragraph(_pdf_text(h), head) for h in _cols]]
+        for _ct in contacts:
+            _data.append([Paragraph(_pdf_text(_ct.get("name") or ""), small),
+                          Paragraph(_pdf_text(_ct.get("designation") or ""), small),
+                          Paragraph(_pdf_text(_ct.get("phone") or ""), small),
+                          Paragraph(_pdf_text(_ct.get("email") or ""), small)])
+        _t = Table(_data, colWidths=[usable / 4] * 4, repeatRows=1)
+        _t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), accent),
+                                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F7FA")]),
+                                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D3DBE0")),
+                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
+        story.append(_t)
+    if client.get("notes"):
+        story.append(Paragraph("Notes", h2))
+        story.append(Paragraph(_pdf_text(client["notes"]), small))
+    # No footer text: the QR and share code are drawn in the page footer
+    # at the bottom left (see _on_page) and the page number at the bottom
+    # right, with nothing in between — the same footer as the invoices.
+    def _on_page(canvas, _doc):
+        canvas.saveState(); canvas.setFont(font["regular"], 8); canvas.setFillColor(colors.HexColor("#506A7B"))
+        canvas.drawRightString(A4[0] - 1.4 * cm, 0.8 * cm, f"Page {canvas.getPageNumber()}")
+        if code:
+            canvas.setFont(font["bold"], 9); canvas.setFillColor(colors.HexColor("#10283A"))
+            canvas.drawString(1.4 * cm, 0.8 * cm, f"Share code: {code}")
             if qr_url:
                 try:
                     _q = io.BytesIO()

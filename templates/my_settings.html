@@ -10,6 +10,7 @@
     <div class="fd"><label for="username">Username</label><input id="username" name="username" type="text" maxlength="60" required value="{{ user['username'] }}"><div class="sub">Used to sign in. Changing it takes effect at once — use the new username the next time you sign in. It must be unique.</div></div>
     <div class="fd"><label for="designation">Designation</label><input id="designation" name="designation" type="text" maxlength="150" value="{{ user['designation'] or '' }}"><div class="sub">Shown under your name in the owner signature on your invoices and item requests.</div></div>
     <div class="fd"><label for="email">Email</label><input id="email" name="email" type="email" maxlength="255" value="{{ user['email'] or '' }}"><div class="sub">Your own mail address, used for portal mail. Leave it empty and you get no mail.</div></div>
+    <div class="fd"><label for="phone">Phone</label><input id="phone" name="phone" type="text" maxlength="255" value="{{ user['phone'] or '' }}"><div class="sub">Your own phone number. It fills in under the account manager on a client you manage.</div></div>
     <div class="acts"><button class="b p" type="submit">Save changes</button><a class="b" href="{{ url_for('records.home') }}">Cancel</a></div>
   </form>
 </div>

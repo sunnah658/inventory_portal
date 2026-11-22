@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>Share code {{ code }}{% if sof %} · {{ sof['sof_number'] }}{% endif %}</h1><p class="hint">This share code is only for scanning and searching — it is not the SOF number. Login is required to search a share code, view it and download its PDF. Without login, no view.</p></div>
+<div class="acts noprint">{% if status=='ok' %}<a class="b p" href="{{ url_for('clients.sof_code_pdf', code=code) }}">Download PDF</a><button class="b" type="button" onclick="window.print()">Print</button>{% endif %}<a class="b" href="{{ url_for('ddb.index', tab='clients') }}">Back to Client onboarding</a></div></div>
+{% if status=='missing' %}<div class="alert">No SOF with the share code <b>{{ code }}</b> exists.</div>
+{% elif status=='off' %}<div class="alert">The share code <b>{{ code }}</b> exists, but its public QR is off.</div>
+{% else %}
+<div class="card">
+<p><b>Client:</b> {{ client['client_name'] }}</p>
+<p><b>SOF number:</b> {{ sof['sof_number'] }} · <b>Service:</b> {{ sof['service'] }}</p>
+{% if sof['details'] %}<p style="white-space:pre-wrap">{{ sof['details'] }}</p>{% endif %}
+<p><b>Activation date:</b> {{ (sof['activation_date']|string)[:10] if sof['activation_date'] else '—' }}</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,4 +1,27 @@
 ==============================================================================
+ SOF PDF WITHOUT SIGNATURE BLOCKS (2026-11-19)
+==============================================================================
+ The SOF PDF no longer carries any signature or approval format —
+ the Prepared By / Checked By / Approved By blocks are gone.
+ Everything else in the PDF is unchanged. See README section 113.
+
+==============================================================================
+ CONFIGURABLE ADD CLIENT FORM, SOF DATES AND SOF PDF (2026-11-19)
+==============================================================================
+ The Sales & Marketing admin now sets the Add Client form's fields
+ (column name, input type, required or not) on each of the three
+ pages, from the new Form setup button on the Client onboarding tab.
+ The activation date moved from the client to every SOF: the Sales
+ person sets it per SOF when creating the record, Revenue Assurance
+ can change it per SOF after the SAN report, and Forward to Finance
+ needs a date on every SOF. Every SOF row has a Download PDF button
+ on its right, one PDF per SOF with its own share code. The account
+ manager's name, designation, phone and email show under the
+ dropdown and are filled in automatically; new users give those
+ details with their new password at first login. See README
+ section 112.
+
+==============================================================================
  ACTIVATION DATE: NO BOX ON TOP, SALES SETS IT, FINANCE WAITS FOR THE FORWARD (2026-11-19)
 ==============================================================================
  The Activation date box is gone from the top of the client page. The

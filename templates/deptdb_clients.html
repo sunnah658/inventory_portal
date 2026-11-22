@@ -8,6 +8,7 @@
     <p class="hint">Sales fills the client, its contacts and its services (SOF) and saves; the Sales admin approves or rejects. Once approved, Revenue Assurance sees the client first, then Transmission, Core and Technical support see the full record and one of them uploads the SAN report. Revenue Assurance sets the activation date and Finance receives the final record.</p></div>
   <div class="acts">
     {% if can_create %}<a class="b p" href="{{ url_for('clients.new') }}">+ New client</a>{% endif %}
+    {% if can_form_setup %}<a class="b" href="{{ url_for('clients.form_setup') }}">Form setup</a>{% endif %}
     {% if can_setup %}<a class="b" href="{{ url_for('clients.setup') }}">Setup</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>
   </div>
@@ -68,9 +69,10 @@
     {% for s in statuses %}<div class="drow" style="display:flex;padding:8px 0;border-top:1px solid var(--line)"><b style="flex:1;color:var(--soft);font-weight:500">{{ status_label[s] }}</b>{{ counts[s] }}</div>{% endfor %}
   </div>
   <div class="card"><h2>Who does what</h2>
-    <p class="hint">Sales creates the client. The Sales admin approves. Revenue Assurance, Transmission, Core and Technical support see it once approved; Finance sees it when the activation date is set.</p></div>
+    <p class="hint">Sales creates the client. The Sales admin approves. Revenue Assurance, Transmission, Core and Technical support see it once approved; Finance sees it once Revenue Assurance forwards it.</p></div>
   {{ quick_card([
     ('+ New client', url_for('clients.new'), True) if can_create else None,
+    ('Form setup', url_for('clients.form_setup'), False) if can_form_setup else None,
     ('Setup', url_for('clients.setup'), False) if can_setup else None,
   ] | select) }}
 </div></div>

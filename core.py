@@ -1221,8 +1221,8 @@ def parse_code_text(text):
 
 def new_random_code_text(db):
     """A random HRC-##### code not used by any public link, invoice,
-    item request or Department Database row (the Search QR page looks all
-    over for a code, so every code must be unique everywhere)."""
+    item request, Department Database row or SOF (the Search QR page
+    looks all over for a code, so every code must be unique everywhere)."""
     import secrets as _secrets
     for _ in range(200):
         cand = f"HRC-{_secrets.randbelow(90000) + 10000}"
@@ -1231,7 +1231,8 @@ def new_random_code_text(db):
                 if db.execute("SELECT 1 FROM invoices WHERE public_code=?", (cand,)).fetchone() is None:
                     if db.execute("SELECT 1 FROM item_requests WHERE public_code=?", (cand,)).fetchone() is None:
                         if db.execute("SELECT 1 FROM ddb_rows WHERE public_code=?", (cand,)).fetchone() is None:
-                            return cand
+                            if db.execute("SELECT 1 FROM client_services WHERE public_code=?", (cand,)).fetchone() is None:
+                                return cand
             except Exception:
                 return cand
     return None

@@ -138,12 +138,27 @@ def logout():
 @bp.route("/change-password", methods=["GET", "POST"])
 @login_required
 def change_password():
+    """A new user (must_change_password, set when the account was created)
+    gives their full name, designation, phone and email together with
+    their new password (build 93): the name and designation come pre-filled
+    from what the admin gave when the account was created, and the user
+    confirms or changes them here. A routine password change asks for the
+    password only."""
     if request.method == "POST":
         current = request.form.get("current") or ""
         new = request.form.get("new") or ""
         again = request.form.get("again") or ""
         db = get_db()
-        if not check_password_hash(g.user["password_hash"], current):
+        first = bool(g.user["must_change_password"])
+        info = {}
+        if first:
+            info = {k: (request.form.get(k) or "").strip()[:255]
+                    for k in ("full_name", "designation", "phone", "email")}
+        if first and not all(info.values()):
+            flash("Give your full name, designation, phone and email with your new password.", "error")
+        elif first and not valid_email(info["email"]):
+            flash("Type a valid mail address.", "error")
+        elif not check_password_hash(g.user["password_hash"], current):
             flash("Your current password is not correct.", "error")
         elif password_problem(new, g.user["username"]):
             flash(password_problem(new, g.user["username"]), "error")
@@ -154,6 +169,9 @@ def change_password():
         else:
             db.execute("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?",
                        (generate_password_hash(new), g.user["id"]))
+            if first:
+                db.execute("UPDATE users SET full_name=?, designation=?, phone=?, email=? WHERE id=?",
+                           (info["full_name"], info["designation"], info["phone"], info["email"], g.user["id"]))
             db.execute("UPDATE sessions SET revoked=1 WHERE user_id=? AND id != ?",
                        (g.user["id"], session.get("sid")))          # other logins of this user end
             log(db, "change_password")
@@ -333,6 +351,7 @@ def my_settings():
         designation = (request.form.get("designation") or "").strip()
         username = (request.form.get("username") or "").strip()
         email = (request.form.get("email") or "").strip()
+        phone = (request.form.get("phone") or "").strip()
         if not full_name or not username:
             flash("Full name and username are required.", "error")
         elif email and not valid_email(email):
@@ -341,8 +360,8 @@ def my_settings():
                         (username, g.user["id"])).fetchone():
             flash(f"The username '{username}' is already used.", "error")
         else:
-            db.execute("UPDATE users SET full_name=?, designation=?, username=?, email=? WHERE id=?",
-                       (full_name, designation, username, email, g.user["id"]))
+            db.execute("UPDATE users SET full_name=?, designation=?, username=?, email=?, phone=? WHERE id=?",
+                       (full_name, designation, username, email, phone, g.user["id"]))
             log(db, "my_settings", username)
             db.commit()
             flash("Your settings have been saved.", "ok")

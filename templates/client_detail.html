@@ -66,18 +66,9 @@
 </div>
 {% endif %}
 
-{% if perm.activation %}
-<div class="card"><h2>Activation date</h2>
-  <p class="hint">Only Revenue Assurance edits this. Saving it does not send the record to Finance — forward it below once it is ready.</p>
-  <form method="post" action="{{ url_for('clients.activation', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="fd"><label for="activation_date">Activation date</label><input id="activation_date" name="activation_date" type="date" required value="{{ (c['activation_date']|string)[:10] if c['activation_date'] else '' }}" style="max-width:220px"></div>
-    <button class="b p" type="submit">{{ 'Change activation date' if c['activation_date'] else 'Save activation date' }}</button></form>
-</div>
-{% endif %}
-
 {% if perm.forward_finance %}
 <div class="card"><h2>Forward to Finance</h2>
-  <p class="hint">Send the finished record to Finance. Only then can Finance see it.{% if not c['activation_date'] %} Set the activation date first.{% endif %}</p>
+  <p class="hint">Send the finished record to Finance. Only then can Finance see it.{% if not perm.sof_dated %} Set the activation date on every SOF first.{% endif %}</p>
   <form method="post" action="{{ url_for('clients.forward_finance', cid=c['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="b p" type="submit">Forward to Finance</button></form>
 </div>
@@ -90,19 +81,24 @@
   <div class="kv"><b>Email</b><span>{{ c['email'] or '—' }}</span></div>
   <div class="kv"><b>Address</b><span style="white-space:pre-wrap">{{ c['address'] or '—' }}</span></div>
   <div class="kv"><b>Notes</b><span style="white-space:pre-wrap">{{ c['notes'] or '—' }}</span></div>
-  <div class="kv"><b>Account manager</b><span>{{ c['am_name'] or '—' }}{% if c['am_designation'] %} · {{ c['am_designation'] }}{% endif %}</span></div>
-  <div class="kv"><b>Activation date</b><span>{{ (c['activation_date']|string)[:10] if c['activation_date'] else '—' }}</span></div>
+  <div class="kv"><b>Account manager</b><span>{{ c['am_full_name'] or c['am_name'] or '—' }}{% if c['am_designation'] %} · {{ c['am_designation'] }}{% endif %}</span></div>
+  {% if c['am_phone'] %}<div class="kv"><b>Account manager phone</b><span>{{ c['am_phone'] }}</span></div>{% endif %}
+  {% if c['am_email'] %}<div class="kv"><b>Account manager email</b><span>{{ c['am_email'] }}</span></div>{% endif %}
+  {% for fld in fields[1] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('client', c['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}
 </div>
 
 <div class="card"><h2>Contacts</h2>
-  {% if contacts %}<div class="tb"><table><thead><tr><th>Name</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
-    {% for r in contacts %}<tr class="r"><td>{{ r['name'] }}</td><td>{{ r['designation'] or '' }}</td><td>{{ r['phone'] or '' }}</td><td>{{ r['email'] or '' }}</td></tr>{% endfor %}</tbody></table></div>
+  {% if contacts %}<div class="tb"><table><thead><tr><th>Name</th><th>Designation</th><th>Phone</th><th>Email</th>{% for fld in fields[2] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
+    {% for r in contacts %}<tr class="r"><td>{{ r['name'] }}</td><td>{{ r['designation'] or '' }}</td><td>{{ r['phone'] or '' }}</td><td>{{ r['email'] or '' }}</td>{% for fld in fields[2] %}{% if not fld.is_default %}<td>{{ custom.get(('contact', r['id'], fld.id), '') }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody></table></div>
   {% else %}<p class="hint">No contacts.</p>{% endif %}</div>
 
 <div class="card"><h2>Services (SOF)</h2>
-  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Details</th><th class="noprint">SOF file</th></tr></thead><tbody>
+  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Details</th>{% for fld in fields[3] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}<th>Activation date</th><th class="noprint">SOF file</th><th class="noprint">PDF</th></tr></thead><tbody>
     {% for s, f in sof %}<tr class="r"><td><b>{{ s['sof_number'] }}</b></td><td>{{ s['service'] }}</td><td style="white-space:pre-wrap">{{ s['details'] or '' }}</td>
-      <td class="noprint">{% if f %}<a href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">{{ f['original'] }}</a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+      {% for fld in fields[3] %}{% if not fld.is_default %}<td>{{ custom.get(('service', s['id'], fld.id), '') }}</td>{% endif %}{% endfor %}
+      <td>{% if perm.sof_activation %}<span class="print-only">{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}</span><form class="noprint" method="post" action="{{ url_for('clients.sof_activation', cid=c['id'], sid=s['id']) }}" style="display:flex;gap:4px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="activation_date" type="date" required value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" style="max-width:150px"><button class="b sm" type="submit">Save</button></form>{% else %}{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}{% endif %}</td>
+      <td class="noprint">{% if f %}<a href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">{{ f['original'] }}</a>{% else %}—{% endif %}</td>
+      <td class="noprint"><a class="b sm" href="{{ url_for('clients.sof_pdf', cid=c['id'], sid=s['id']) }}">Download PDF</a></td></tr>{% endfor %}</tbody></table></div>
   {% else %}<p class="hint">No services.</p>{% endif %}</div>
 
 <div class="card"><h2>SAN report</h2>

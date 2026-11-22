@@ -161,8 +161,8 @@ def search_qr():
             status = "bad"
         else:
             # The Search QR page looks all over for the entered code: a
-            # record link, an invoice, an item request or a Department
-            # Database row. Whichever one matches opens its own page.
+            # record link, an invoice, an item request, a Department
+            # Database row or an SOF. Whichever one matches opens its own page.
             link = db.execute("SELECT * FROM public_links WHERE code_text=?", (_wanted,)).fetchone()
             if link is None:
                 # invoice public code: HRC-##### -> invoice code page. A
@@ -188,6 +188,13 @@ def search_qr():
                     _row = None
                 if _row is not None:
                     return redirect(url_for("ddb.row_code_page", code=_row["public_code"]))
+                # SOF public code: HRC-##### -> the SOF's code page (build 93)
+                try:
+                    _sof = db.execute("SELECT public_code FROM client_services WHERE public_code=?", (_wanted,)).fetchone()
+                except Exception:
+                    _sof = None
+                if _sof is not None:
+                    return redirect(url_for("clients.sof_code_page", code=_sof["public_code"]))
             if link is None or not link["enabled"]:
                 # Same generic answer whether the code does not exist or is off.
                 status = "unavailable"

@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS users (
     username             VARCHAR(255) NOT NULL UNIQUE,
     password_hash        VARCHAR(255) NOT NULL,
     email                VARCHAR(255),
+    phone                VARCHAR(255),
     department_id        INT,
     role                 VARCHAR(255) NOT NULL DEFAULT 'user' CHECK (role IN ('admin','user')),
     must_change_password INT NOT NULL DEFAULT 1,
@@ -813,6 +814,10 @@ CREATE TABLE IF NOT EXISTS client_onboardings (
     email              VARCHAR(255),
     notes              TEXT,
     account_manager_id INT,
+    am_full_name       VARCHAR(255),
+    am_designation     VARCHAR(255),
+    am_phone           VARCHAR(255),
+    am_email           VARCHAR(255),
     status             VARCHAR(255) NOT NULL DEFAULT 'pending'
                        CHECK (status IN ('pending','rejected','approved','forwarded','san_uploaded','completed')),
     reject_reason      TEXT,
@@ -850,6 +855,10 @@ CREATE TABLE IF NOT EXISTS client_contacts (
 
 -- The services of a client: one row per SOF (Service Order Form), several allowed.
 -- sof_file is the JSON {"stored":..., "original":...} the attachment helpers use.
+-- activation_date is the date for THIS SOF (set by Sales when the client is
+-- added, changed by Revenue Assurance after the SAN report); the old
+-- client-level activation_date on client_onboardings is no longer used.
+-- public_code is the SOF's own share code (HRC-#####) for the QR on its PDF.
 CREATE TABLE IF NOT EXISTS client_services (
     id         INT AUTO_INCREMENT PRIMARY KEY,
     client_id  INT NOT NULL,
@@ -858,7 +867,47 @@ CREATE TABLE IF NOT EXISTS client_services (
     service    VARCHAR(255) NOT NULL,
     details    TEXT,
     sof_file   TEXT,
+    activation_date DATE,
+    public_code VARCHAR(255),
+    public_enabled INT NOT NULL DEFAULT 1,
+    public_views INT NOT NULL DEFAULT 0,
     FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The Sales & Marketing admin's fields for the three Add Client pages.
+-- The fields the client was built with are the defaults (is_default=1,
+-- field_key = the fixed column they map to); the admin adds his own
+-- (field_key NULL) and can rename any field's column name, change a
+-- custom field's type, and set required or not. Structural defaults
+-- (client name, contact name, SOF number, service, activation date)
+-- stay required and keep their type.
+CREATE TABLE IF NOT EXISTS client_form_fields (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    page       INT NOT NULL,
+    field_key  VARCHAR(64),
+    name       VARCHAR(255) NOT NULL,
+    field_type VARCHAR(32) NOT NULL DEFAULT 'text',
+    required   INT NOT NULL DEFAULT 0,
+    options    TEXT,
+    position   INT NOT NULL DEFAULT 0,
+    is_default INT NOT NULL DEFAULT 0,
+    UNIQUE KEY ux_cff_key (field_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The values of the admin's custom fields. target_type is 'client'
+-- (a page-1 field, target_id = the client), 'contact' (a page-2 field,
+-- target_id = the contact row) or 'service' (a page-3 field, target_id =
+-- the service row). Default fields keep their fixed columns.
+CREATE TABLE IF NOT EXISTS client_field_values (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    client_id   INT NOT NULL,
+    target_type VARCHAR(16) NOT NULL DEFAULT 'client',
+    target_id   INT NOT NULL,
+    field_id    INT NOT NULL,
+    value       TEXT,
+    FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE,
+    FOREIGN KEY (field_id) REFERENCES client_form_fields(id) ON DELETE CASCADE,
+    KEY idx_cfv (client_id, target_type, target_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS client_history (
@@ -1010,6 +1059,50 @@ def _upgrade_ddb_attachment_type(conn):
                  "CHECK (col_type IN ('text','longtext','number','date','dropdown','yesno','attachment'))")
 
 
+def _seed_client_form_fields(conn):
+    """The Add Client form's default fields (build 93): the fields the
+    client was built with, one per page. The admin adds his own on top
+    and renames / toggles required on these; the table is only seeded
+    when it is empty, so an admin's changes are never overwritten."""
+    if conn.execute("SELECT COUNT(*) FROM client_form_fields").fetchone()[0]:
+        return
+    _defaults = [
+        # field_key, page, name, type, required, position
+        ("client_name", 1, "Client name", "text", 1, 0),
+        ("business_type", 1, "Business type", "text", 0, 1),
+        ("address", 1, "Address", "longtext", 0, 2),
+        ("phone", 1, "Phone", "text", 0, 3),
+        ("email", 1, "Email", "text", 0, 4),
+        ("notes", 1, "Notes", "longtext", 0, 5),
+        ("contact_name", 2, "Contact name", "text", 1, 0),
+        ("contact_designation", 2, "Designation", "text", 0, 1),
+        ("contact_phone", 2, "Phone", "text", 0, 2),
+        ("contact_email", 2, "Email", "text", 0, 3),
+        ("sof_number", 3, "SOF number", "text", 1, 0),
+        ("sof_service", 3, "Service", "text", 1, 1),
+        ("sof_details", 3, "Details", "longtext", 0, 2),
+        ("sof_activation_date", 3, "Activation date", "date", 1, 3),
+    ]
+    for _key, _page, _name, _type, _req, _pos in _defaults:
+        conn.execute("INSERT INTO client_form_fields(page,field_key,name,field_type,required,position,is_default)"
+                     " VALUES (?,?,?,?,?,?,1)", (_page, _key, _name, _type, _req, _pos))
+
+
+def _upgrade_sof_dates(conn):
+    """Build 93 moves the activation date from the client to each SOF.
+    A client that already has a client-level date keeps it on every SOF
+    that has none yet (so a completed client like CL-0003 keeps its
+    date); SOFs that already have a date are untouched."""
+    if "activation_date" not in _columns(conn, "client_services"):
+        return
+    rows = conn.execute("SELECT id, activation_date FROM client_onboardings"
+                        " WHERE activation_date IS NOT NULL").fetchall()
+    for _c in rows:
+        conn.execute("UPDATE client_services SET activation_date=?"
+                     " WHERE client_id=? AND activation_date IS NULL",
+                     (_c["activation_date"], _c["id"]))
+
+
 def _upgrade_client_status(conn):
     """Build 89: the client flow gained the "forwarded" status (Revenue
     Assurance forwards an approved client to Transmission, Core and
@@ -1033,7 +1126,14 @@ def _upgrade_client_status(conn):
         return
     widened = False
     for r in rows:
-        if "'forwarded'" in (r["clause"] or ""):
+        # NOTE (build 93): match the bare word, not "'forwarded'". MySQL
+        # stores the clause with the literals escaped (_utf8mb4\'forwarded\'),
+        # so the quoted form never matches and the widened CHECK was dropped
+        # and re-added on every upgrade. Worse, that second DROP on the same
+        # table inside one uncommitted init_db transaction can deadlock with
+        # InnoDB's dict_stats thread (it queues a SHARED lock behind the first
+        # DROP's TRANSACTION lock, and the second DROP then queues behind it).
+        if "forwarded" in (r["clause"] or ""):
             widened = True
         else:
             conn.execute("ALTER TABLE client_onboardings DROP CHECK `" + r["cname"] + "`")
@@ -1256,6 +1356,17 @@ def init_db():
         _ensure_column(conn, "users", "created_by", "INT REFERENCES users(id)")  # who created the account (2026-11-05)
         _ensure_column(conn, "users", "designation", "VARCHAR(255)")  # job title, for the owner signature (2026-11-10)
         _ensure_column(conn, "users", "email", "VARCHAR(255)")  # the user's own mail address, set in My settings (2026-11-16)
+        _ensure_column(conn, "users", "phone", "VARCHAR(255)")  # the user's own phone, set at first login (2026-11-19)
+        _ensure_column(conn, "client_onboardings", "am_full_name", "VARCHAR(255)")  # the account manager's information for THIS client only (2026-11-19)
+        _ensure_column(conn, "client_onboardings", "am_designation", "VARCHAR(255)")
+        _ensure_column(conn, "client_onboardings", "am_phone", "VARCHAR(255)")
+        _ensure_column(conn, "client_onboardings", "am_email", "VARCHAR(255)")
+        _ensure_column(conn, "client_services", "activation_date", "DATE")  # the activation date of THIS SOF (2026-11-19)
+        _ensure_column(conn, "client_services", "public_code", "VARCHAR(255)")  # the SOF's own share code HRC-##### for the QR on its PDF
+        _ensure_column(conn, "client_services", "public_enabled", "INT NOT NULL DEFAULT 1")
+        _ensure_column(conn, "client_services", "public_views", "INT NOT NULL DEFAULT 0")
+        _seed_client_form_fields(conn)
+        _upgrade_sof_dates(conn)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")

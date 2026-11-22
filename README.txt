@@ -5798,3 +5798,98 @@
  the record, Finance blind until the forward, the forward needing a
  date, Finance seeing the date after the forward). Full regression
  suite: 630/630 checks.
+
+------------------------------------------------------------------------------
+112. (build 93) CONFIGURABLE ADD CLIENT FORM, PER-SOF ACTIVATION DATE AND
+     SOF PDF, ACCOUNT MANAGER INFORMATION
+------------------------------------------------------------------------------
+ (a) The Add Client form's fields are now set by the Sales & Marketing
+ department admin: a new "Form setup" button on the Client onboarding
+ tab opens /clients/form-setup, where the admin sets, for each of the
+ three pages, each field's column name, input type and whether it is
+ required. Input types are the same as before (Text, Long text,
+ Number, Date, Dropdown, Yes-No). The fields that were there before
+ are the defaults; the admin adds fields on top of them or changes
+ them. A structural field (client name, contact name, SOF number,
+ SOF service, SOF activation date) cannot be made optional and its
+ type cannot be changed. A custom field can be renamed, moved up or
+ down, or removed (removing it deletes its saved values too). Custom
+ values are stored per client, per contact and per SOF (new tables
+ client_form_fields and client_field_values; 53 tables now).
+ (b) The activation date now lives on EVERY SOF, not on the client.
+ The Sales person sets it for each SOF when creating the record; a
+ SOF without a date is refused, and a date that is not a real date
+ is refused. There is no activation date box on the client page any
+ more and no date in the Client card. A client created before this
+ build keeps its old client-level date copied onto each of its SOFs
+ that has none (the old client_onboardings.activation_date column
+ stays in the database, unused).
+ (c) After the SAN report is uploaded, Revenue Assurance can change a
+ SOF's activation date from the date box on that SOF's row. Changing
+ it does not complete the record and does not tell Finance. Only the
+ Revenue Assurance admin (or the portal admin) can edit it — an
+ ordinary Revenue Assurance user cannot (build 92 let any Revenue
+ Assurance user edit the client-level date). Changing the date on a
+ record that is already with Finance still tells Finance, as before.
+ (d) Forwarding to Finance now needs an activation date on EVERY SOF.
+ Forwarding with a SOF that has none is refused ("Set the activation
+ date on every SOF first (… still has none)."). The Forward button
+ stays hidden until every SOF is dated, with the hint "Set the
+ activation date on every SOF first."
+ (e) Every SOF row has a Download PDF button on its right. One PDF per
+ SOF, in the Service Order Form format: HRC logo and company name
+ and address top left, "Service Order Form" top right, client and
+ SOF details (SOF number, date, activation date, account manager),
+ the service, the contacts, and the Prepared By / Checked By /
+ Approved By signature blocks (Checked By is whoever approved the
+ record, Approved By whoever forwarded it). The SOF has its own
+ public share code (HRC- plus a random five digits, unique across
+ invoices, requests, DeptDB rows and SOFs): the code page opens
+ without a login, and Search QR finds it.
+ (f) The account manager's information is shown under the account
+ manager dropdown on the contacts page: full name, designation,
+ phone and email. Full name and designation are filled in from the
+ information given when the manager's account was created; phone
+ and email come from what the manager gave at their first login.
+ Picking a manager fills all four in, and the Sales person can
+ change them on the form — the change is for THIS client only and
+ never touches the manager's profile. New users give their full
+ name, designation, phone and email together with their new password
+ on the forced change-password page at first login, and can change
+ them later in My settings (phone is a new column on the user).
+ (g) Side fixes in this build: the client-status CHECK upgrade in
+ models._upgrade_client_status matched the stored clause with the
+ quoted form "'forwarded'", which MySQL's escaped clause
+ (_utf8mb4\'forwarded\') never contains — so the widened CHECK was
+ dropped and re-added on every upgrade, and the second DROP on the
+ same table inside one uncommitted init_db transaction could
+ deadlock with InnoDB's statistics thread (seen once while testing
+ this build: init_db hung for minutes waiting on a metadata lock).
+ It now matches the bare word "forwarded". The "Who does what" hint
+ on the Client onboarding tab now reads "Finance sees it once
+ Revenue Assurance forwards it." The old client-level activation
+ route is gone; the date is edited per SOF.
+
+ Tested: 69 client-flow checks against real MySQL 8.0 (23 from build
+ 91 plus 46 new build-93 checks: form setup, per-SOF dates, SOF PDF
+ and code page, the RA per-SOF edit, the forward gate, first-login
+ information, the upgrade copy of the old date). Full regression
+ suite: 630/630 checks.
+
+------------------------------------------------------------------------------
+113. (build 94) NO SIGNATURE OR APPROVAL BLOCKS IN THE SOF PDF
+------------------------------------------------------------------------------
+ The SOF PDF no longer has any signature or approval format: the
+ Prepared By / Checked By / Approved By blocks are gone. Everything
+ else in the PDF is unchanged — the HRC logo and company name and
+ address, the "Service Order Form" title, the client and SOF details
+ (SOF number, date, activation date, account manager), the service,
+ the contacts, and the QR with the share code at the bottom left.
+ The signature lookup that only fed the SOF PDF is gone too, and the
+ invoice and request PDFs still have their signature blocks as
+ before.
+
+ Tested: 70 client-flow checks against real MySQL 8.0 (69 from build
+ 93 plus 1 new build-94 check: no Prepared By / Checked By /
+ Approved By text in the SOF PDF). Full regression suite: 630/630
+ checks.
