@@ -6007,3 +6007,46 @@
  activation date change, the SAN removal and the forward to Finance
  — and the forward tells them once, not once per technical
  department). Full regression suite: 630/630 checks.
+
+==============================================================================
+116. ACCOUNT MANAGER EDITS BEFORE APPROVAL, ACCOUNT MANAGER IN
+    CONTACTS AND AT THE TOP, AND THE UI AT 70% (build 97, 2026-11-22)
+==============================================================================
+ (A) While a client is still waiting for the Sales admin's approval,
+     its account manager can open it and change the data, with the
+     same "Change and save again" form (client info, contacts,
+     services). The client stays waiting for approval after the
+     change — the change does not approve it, and the Sales admin can
+     still approve or reject it. When the account manager changes it,
+     the Sales admin and the owner are told it was changed and is
+     still waiting for approval. The Sales user who made the client
+     still cannot change it while it is pending, unless they are also
+     the account manager, and the Sales admin cannot change it either
+     (they approve or reject it). A rejected client is still changed
+     by the owner or the Sales admin as before, and once approved
+     nobody can edit it.
+ (B) The Account manager table moved into the Contacts card, under
+     its own "Account manager" heading and above the contacts table.
+     It is no longer a section of its own after the Client card, and
+     the Client card has nothing about the account manager in it.
+ (C) The account manager is highlighted at the top of the client
+     page: a fourth card in the row with Status, Services (SOF) and
+     Contacts shows his name, with his designation underneath.
+ (D) The whole portal looks the way it looked with the browser
+     zoomed out to 70%, with the browser zoom left at 100%: one
+     screen-only rule (body zoom .7) makes everything smaller by the
+     same amount — text, cards, tables, buttons, the login page too.
+     Printing is unchanged.
+
+ Tested: 114 client-flow checks against real MySQL 8.0 (99 from
+ build 96 plus 15 build-97 checks: the account manager can open
+ the edit form on a pending client and save a change that keeps it
+ pending, the Sales admin and the owner are told about the change
+ and the account manager is not told about their own change, the
+ owner, the Sales admin and another Sales user cannot change a
+ pending client, the account manager cannot change an approved
+ client, the Account manager table sits inside the Contacts card
+ and the Client card has nothing about the account manager, the
+ Account manager card at the top shows his name and designation,
+ and the stylesheet carries the screen-only 70% rule). Full
+ regression suite: 630/630 checks.

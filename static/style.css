@@ -13,7 +13,10 @@ html[data-theme=dark]{--ink:#e7eff5;--soft:#9db3c2;--paper:#0e1a22;--card:#15232
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"Manrope","Segoe UI",system-ui,sans-serif;line-height:1.5}
-a{color:var(--accent)} h1{font-size:1.6rem;margin:0 0 4px;font-weight:800;letter-spacing:-.01em} h2{font-size:1.05rem;margin:0 0 12px;font-weight:800}
+/* Build 97: the whole portal looks like the browser zoomed out to 70%,
+   with the browser zoom left at 100%. Screen only — printing is unchanged. */
+@media screen{body{zoom:.7}}
+a{color:var(--accent)} h1{font-size:1.6rem;margin:0 0 4px;font-weight:800;letter-spacing:-.01em} h2{font-size:1.05rem;margin:0 0 12px;font-weight:800} .card h3{font-size:1rem;margin:16px 0 8px;font-weight:800}
 .hint{color:var(--soft);margin:0;font-size:.93rem}.sub{font-size:.8rem;color:var(--soft);margin-top:4px}
 img,svg{max-width:100%}
 /* ---------- top bar */

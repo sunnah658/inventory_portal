@@ -1,4 +1,16 @@
 ==============================================================================
+ ACCOUNT MANAGER EDITS BEFORE APPROVAL, AND THE UI AT 70% (2026-11-22)
+==============================================================================
+ While a client is still waiting for the Sales admin's approval, its
+ account manager can now change it, and the client stays waiting for
+ approval. The Account manager table moved into the Contacts card,
+ and the account manager is also highlighted at the top of the client
+ page, next to Status, Services and Contacts. The whole portal now
+ looks the way it looked with the browser zoomed out to 70%, with
+ the browser zoom left at 100%; printing is unchanged. See README
+ section 116.
+
+==============================================================================
  CLIENT PAGE FIXES: SERIAL NUMBERS, TIMES IN DHAKA, DOWNLOAD SOF,
  HIDDEN HISTORY, ACCOUNT-MANAGER TABLE AND WATCHERS (2026-11-22)
 ==============================================================================

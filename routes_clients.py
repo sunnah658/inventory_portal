@@ -227,6 +227,7 @@ def _perms(db, user, roles, c):
     status = c["status"]
     sales_admin = _is_sales_admin(db, user)
     owner = c["owner_id"] == user["id"]
+    am = c.get("account_manager_id") == user["id"]
     # Forward to Finance needs an activation date on EVERY SOF (build 93):
     # the date moved from the client to the SOFs, so the gate moved with it.
     sof_ok = False
@@ -237,7 +238,11 @@ def _perms(db, user, roles, c):
         sof_ok = n > 0 and missing == 0
     return {
         "approve": status == "pending" and sales_admin,
-        "edit": status == "rejected" and (owner or sales_admin),
+        # Build 97: a client still waiting for approval can be changed by
+        # its account manager. A rejected client is still changed by the
+        # owner or the Sales admin; once approved, nobody can edit it.
+        "edit": (status == "rejected" and (owner or sales_admin))
+                or (status == "pending" and am),
         "forward": status == "approved" and _is_ra_admin(db, user),
         "upload_san": status == "forwarded" and not c["san_file"]
                       and (bool(roles.intersection(SAN_ROLES)) or is_portal_admin(user)),
@@ -843,7 +848,8 @@ def new():
 def edit(cid):
     db, c, roles = _load(cid)
     if not _perms(db, g.user, roles, c)["edit"]:
-        flash("Only a rejected client can be changed, by the Sales user who made it or the Sales admin.", "error")
+        flash("Only a rejected client can be changed, by the Sales user who made it or the Sales admin — "
+              "or a client still waiting for approval, by its account manager.", "error")
         return redirect(_link(cid))
     if request.method == "GET":
         return _show_form(db, _form_from_db(db, c), cid=cid, c=c)
@@ -852,6 +858,7 @@ def edit(cid):
     if errors:
         _remove_files(saved_new)
         return _show_form(db, form, cid=cid, c=c, errors=errors)
+    was_rejected = c["status"] == "rejected"   # otherwise pending, edited by the account manager (build 97)
     try:
         sets = ["client_name=?", "business_type=?", "address=?", "phone=?", "email=?", "notes=?",
                 "account_manager_id=?", "am_full_name=?", "am_designation=?", "am_phone=?", "am_email=?"]
@@ -860,26 +867,39 @@ def edit(cid):
                   form["account_manager_id"],
                   form["am_full_name"] or None, form["am_designation"] or None,
                   form["am_phone"] or None, form["am_email"] or None]
-        sets.append("status='pending', reject_reason=NULL, decided_by=NULL, decided_at=NULL, "
-                    "updated_at=datetime('now','localtime')")
-        done = db.execute("UPDATE client_onboardings SET " + ", ".join(sets) + " WHERE id=? AND status='rejected'",
-                          params + [cid]).rowcount
+        if was_rejected:
+            sets.append("status='pending', reject_reason=NULL, decided_by=NULL, decided_at=NULL, "
+                        "updated_at=datetime('now','localtime')")
+        else:
+            # The client stays waiting for approval; nothing is decided yet.
+            sets.append("updated_at=datetime('now','localtime')")
+        done = db.execute("UPDATE client_onboardings SET " + ", ".join(sets) + " WHERE id=? AND status=?",
+                          params + [cid, c["status"]]).rowcount
         if done == 0:                                    # somebody else changed the status meanwhile
             db.rollback()
             _remove_files(saved_new)
-            flash("This client is not rejected any more, so it cannot be changed.", "error")
+            flash("This client is not rejected any more, so it cannot be changed." if was_rejected else
+                  "This client is not waiting for approval any more, so it cannot be changed.", "error")
             return redirect(_link(cid))
         _write_children(db, cid, contacts, services, form["custom1"])
-        _history(db, cid, g.user, "saved again and sent for approval")
         log(db, "client_edit", f"{client_no(cid)} {form['client_name']}")
-        _send_for_approval_notice(db, cid, form["client_name"], True, form["account_manager_id"])
+        if was_rejected:
+            _history(db, cid, g.user, "saved again and sent for approval")
+            _send_for_approval_notice(db, cid, form["client_name"], True, form["account_manager_id"])
+            flash("Saved and sent to the Sales admin for approval again.", "ok")
+        else:
+            _history(db, cid, g.user, "changed by the account manager")
+            notify(db, {c["owner_id"]} | set(_sales_admin_ids(db)),
+                   f"The client '{form['client_name']}' was changed by the account manager "
+                   f"{g.user['full_name']} and is still waiting for approval.",
+                   _link(cid), skip=g.user["id"])
+            flash("Saved. The client is still waiting for approval.", "ok")
         db.commit()
     except Exception:
         db.rollback()
         _remove_files(saved_new)
         raise
     _remove_files(delete_old)
-    flash("Saved and sent to the Sales admin for approval again.", "ok")
     return redirect(_link(cid))
 
 

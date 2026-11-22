@@ -23,6 +23,7 @@
 </div>
 <div class="kp">
   {{ kpi('Status', c['status']|client_status, cls='txt') }}
+  {{ kpi('Account manager', c['am_full_name'] or c['am_name'] or '—', c['am_designation'] or '', cls='txt') }}
   {{ kpi('Services (SOF)', services|length) }}
   {{ kpi('Contacts', contacts|length) }}
 </div>
@@ -83,12 +84,11 @@
   {% for fld in fields[1] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('client', c['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}
 </div>
 
-<div class="card"><h2>Account manager</h2>
+<div class="card"><h2>Contacts</h2>
+  <h3>Account manager</h3>
   <div class="tb"><table><thead><tr><th>Name</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
     <tr class="r"><td>{{ c['am_full_name'] or c['am_name'] or '—' }}</td><td>{{ c['am_designation'] or '—' }}</td><td>{{ c['am_phone'] or '—' }}</td><td>{{ c['am_email'] or '—' }}</td></tr>
-  </tbody></table></div></div>
-
-<div class="card"><h2>Contacts</h2>
+  </tbody></table></div>
   {% if contacts %}<div class="tb"><table><thead><tr><th>Name</th>{% if 'contact_designation' in fmap %}<th>Designation</th>{% endif %}{% if 'contact_phone' in fmap %}<th>Phone</th>{% endif %}{% if 'contact_email' in fmap %}<th>Email</th>{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
     {% for r in contacts %}<tr class="r"><td>{{ r['name'] }}</td>{% if 'contact_designation' in fmap %}<td>{{ r['designation'] or '' }}</td>{% endif %}{% if 'contact_phone' in fmap %}<td>{{ r['phone'] or '' }}</td>{% endif %}{% if 'contact_email' in fmap %}<td>{{ r['email'] or '' }}</td>{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<td>{{ custom.get(('contact', r['id'], fld.id), '') }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody></table></div>
   {% else %}<p class="hint">No contacts.</p>{% endif %}</div>
