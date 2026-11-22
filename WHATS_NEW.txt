@@ -1,4 +1,14 @@
 ==============================================================================
+ THE ZOOM RULE REMOVED — THE PORTAL IS RESPONSIVE NOW (2026-11-22)
+==============================================================================
+ The login page still showed the white band at 100% browser zoom,
+ after two zoom fixes. The fixed zoom is gone entirely: with no zoom
+ rule, the login background fills the screen at every browser zoom,
+ zoomed out, at 100% or zoomed in, and the narrow rules take over
+ when the page gets narrow. The portal is back to its normal size at
+ 100% browser zoom. See README section 118.
+
+==============================================================================
  THE 70% ZOOM FIXED ON THE LOGIN PAGE (2026-11-22)
 ==============================================================================
  The 70% zoom in build 97 left the login page's blue background

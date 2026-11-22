@@ -6038,7 +6038,10 @@
      same amount — text, cards, tables, buttons, the login page too.
      Printing is unchanged. (Build 98 moved the zoom from the body
      to the root element — see section 117 — because the body zoom
-     shrank the full-height login background.)
+     shrank the full-height login background. Build 99 removed the
+     zoom entirely — see section 118 — because the login still
+     showed the white band: the portal is back to its normal size
+     and fills the screen at every browser zoom.)
 
  Tested: 114 client-flow checks against real MySQL 8.0 (99 from
  build 96 plus 15 build-97 checks: the account manager can open
@@ -6070,6 +6073,43 @@
  rules now switch at a narrower window, since the layout viewport is
  wider than the window.)
 
+ Superseded by build 99 (section 118): the login still showed the
+ white band, so the fixed zoom was removed entirely.
+
  Tested: 114 client-flow checks and the full 630/630 regression
  suite against real MySQL 8.0, on the work copy and on a fresh
  extract of the zip.
+
+==============================================================================
+118. THE ZOOM RULE REMOVED — THE PORTAL IS RESPONSIVE NOW (build 99,
+    2026-11-22)
+==============================================================================
+ The login page still showed the white band at 100% browser zoom,
+ after two zoom fixes (body, then the root element). The fixed zoom
+ is gone entirely: there is no zoom rule anywhere in the stylesheet
+ any more. With no zoom rule, 100vh is the visual viewport at EVERY
+ browser zoom, so the login background fills the screen whether the
+ browser is zoomed out, at 100% or zoomed in — and the narrow rules
+ (card stacked, hero hidden under 980px) take over when the window,
+ or the zoom, makes the page narrow. That is the responsive
+ behaviour: the page follows the browser's zoom instead of fighting
+ it. The only viewport-sized elements are the login background
+ (.lgx, 100vh) and the narrow login column (.side, 100vh); the two
+ fixed panels and the sticky bar on narrow screens are unchanged.
+
+ One plain consequence: the portal is back to its normal size at
+ 100% browser zoom — the smaller 70% look from builds 97 and 98 is
+ gone with the zoom rule. If it is still wanted smaller, the
+ browser's own zoom now works properly on every page (it was the
+ fixed zoom that broke the login), or a proper responsive rescale
+ can be built instead of a zoom rule.
+
+ Tested: the real login page rendered to JPG at 1440x900 and at
+ 700x900 — the gradient fills the whole page at both widths, no
+ white band (b99-login-desktop.jpg, b99-login-narrow.jpg). The
+ narrow render is WeasyPrint, which does not apply width media
+ queries, so it shows the gradient filling a narrow page but not
+ the column switch itself; the column switch is the existing
+ 980px rule and is judged in real Chrome. 114 client-flow checks
+ and the full 630/630 regression suite against real MySQL 8.0, on
+ the work copy and on a fresh extract of the zip.
