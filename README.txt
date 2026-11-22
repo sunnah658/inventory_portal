@@ -6034,9 +6034,11 @@
      Contacts shows his name, with his designation underneath.
  (D) The whole portal looks the way it looked with the browser
      zoomed out to 70%, with the browser zoom left at 100%: one
-     screen-only rule (body zoom .7) makes everything smaller by the
+     screen-only rule (root zoom .7) makes everything smaller by the
      same amount — text, cards, tables, buttons, the login page too.
-     Printing is unchanged.
+     Printing is unchanged. (Build 98 moved the zoom from the body
+     to the root element — see section 117 — because the body zoom
+     shrank the full-height login background.)
 
  Tested: 114 client-flow checks against real MySQL 8.0 (99 from
  build 96 plus 15 build-97 checks: the account manager can open
@@ -6050,3 +6052,24 @@
  Account manager card at the top shows his name and designation,
  and the stylesheet carries the screen-only 70% rule). Full
  regression suite: 630/630 checks.
+
+==============================================================================
+117. THE 70% ZOOM FIXED ON THE LOGIN PAGE (build 98, 2026-11-22)
+==============================================================================
+ Build 97 put the 70% zoom on the body, and the login page came out
+ wrong: its blue background only covered the top 70% of the screen
+ and the bottom was a white band. The cause is that the login
+ background is 100vh tall, and 100vh inside a zoomed body is 70%
+ of the real screen. The zoom now sits on the root element instead,
+ so it behaves exactly like the browser's own zoom: the layout
+ viewport itself is scaled, 100vh still means the full screen, and
+ the login background fills the screen again. Nothing else changes:
+ the portal still looks like the browser zoomed out to 70% with the
+ browser zoom at 100%, and printing is unchanged. (Side effect of
+ the root zoom, the same as the browser's own zoom: the narrow-screen
+ rules now switch at a narrower window, since the layout viewport is
+ wider than the window.)
+
+ Tested: 114 client-flow checks and the full 630/630 regression
+ suite against real MySQL 8.0, on the work copy and on a fresh
+ extract of the zip.

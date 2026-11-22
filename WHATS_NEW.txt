@@ -1,4 +1,13 @@
 ==============================================================================
+ THE 70% ZOOM FIXED ON THE LOGIN PAGE (2026-11-22)
+==============================================================================
+ The 70% zoom in build 97 left the login page's blue background
+ covering only the top 70% of the screen, with a white band below
+ it. The zoom now sits on the root element, so it behaves like the
+ browser's own zoom and the login background fills the screen again.
+ Nothing else changes. See README section 117.
+
+==============================================================================
  ACCOUNT MANAGER EDITS BEFORE APPROVAL, AND THE UI AT 70% (2026-11-22)
 ==============================================================================
  While a client is still waiting for the Sales admin's approval, its
