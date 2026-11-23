@@ -1,4 +1,18 @@
 ==============================================================================
+ DASHBOARD CHARTS, WIDER CLIENT LIST, USER MENU, LOGO AND MONTH RANGE
+ (2026-11-23)
+==============================================================================
+ Five small fixes on the glass pages, from your photos of the live
+ portal: the dashboard chart names now sit centred under their own
+ bars; the Client onboarding list is wider so the Status pills stay
+ on one line and the Flow column reads properly; the user menu
+ opens above your name instead of on top of it; the real HRC logo
+ is back in the sidebar instead of the "H" tile; and the month
+ filter is now a From month and a To month with the same
+ Activation / Termination choice, working the same for every
+ user. See README section 123.
+
+==============================================================================
  THE WHOLE PORTAL IS RESTYLED TO THE GLASS DESIGN (2026-11-22)
 ==============================================================================
  Every page now looks like the glass design you supplied: a soft

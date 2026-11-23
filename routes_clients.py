@@ -426,14 +426,25 @@ def client_tab_view(db, dept, is_admin, args):
     q = " ".join((args.get("q") or "").split())
     # Build 102 filters: the account manager, and one month with
     # Activation or Termination — the list then shows only the clients
-    # with an activation (or a termination) in that month.
+    # with an activation (or a termination) in that month. Build 104
+    # widens the month to a From/To range, same choice of Activation or
+    # Termination; an old single ?month= link still works and counts as
+    # From = To = that month.
     am = args.get("am", type=int)
+    month_from = (args.get("month_from") or "").strip()
+    month_to = (args.get("month_to") or "").strip()
     month = (args.get("month") or "").strip()
+    if month and re.fullmatch(r"\d{4}-\d{2}", month) and not month_from and not month_to:
+        month_from = month_to = month
+    if month_from and not re.fullmatch(r"\d{4}-\d{2}", month_from):
+        month_from = ""
+    if month_to and not re.fullmatch(r"\d{4}-\d{2}", month_to):
+        month_to = ""
+    if month_from and month_to and month_from > month_to:
+        month_from, month_to = month_to, month_from
     mtype = args.get("mtype") or "activation"
     if mtype not in ("activation", "termination"):
         mtype = "activation"
-    if month and not re.fullmatch(r"\d{4}-\d{2}", month):
-        month = ""
 
     # "To do": what is waiting for this viewer
     todo_parts, todo_params = [], []
@@ -469,13 +480,20 @@ def client_tab_view(db, dept, is_admin, args):
         params.append(status[4:])
     if am:
         where.append("c.account_manager_id=?"); params.append(am)
-    if month:
+    if month_from or month_to:
         # A client matches when one of its SOFs was activated (or
-        # terminated) in the chosen month.
+        # terminated) inside the chosen month range.
         col = "activation_date" if mtype == "activation" else "termination_date"
-        where.append(f"EXISTS (SELECT 1 FROM client_services s WHERE s.client_id=c.id "
-                     f"AND DATE_FORMAT(s.{col},'%Y-%m')=?)")
-        params.append(month)
+        conds, cparams = [], []
+        if month_from:
+            conds.append(f"DATE_FORMAT(s.{col},'%Y-%m')>=?")
+            cparams.append(month_from)
+        if month_to:
+            conds.append(f"DATE_FORMAT(s.{col},'%Y-%m')<=?")
+            cparams.append(month_to)
+        where.append("EXISTS (SELECT 1 FROM client_services s WHERE s.client_id=c.id AND "
+                     + " AND ".join(conds) + ")")
+        params += cparams
     if q:
         like = like_pattern(q)
         digits = q.upper().replace("CL-", "").strip()
@@ -521,7 +539,7 @@ def client_tab_view(db, dept, is_admin, args):
     return render_template(
         "deptdb_clients.html", dept=dept, is_admin=is_admin,
         tabs=routes_deptdb._tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user)),
-        rows=rows, counts=counts, view=view, status=status, q=q, am=am, month=month, mtype=mtype,
+        rows=rows, counts=counts, view=view, status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype,
         managers=_account_managers(db), total=total, page=page, pages=pages,
         keep=keep, approved=approved, can_create=can_create, roles=roles,
         flow=flow_depts(db), role_label=ROLE_LABEL,

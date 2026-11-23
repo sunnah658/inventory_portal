@@ -6340,3 +6340,74 @@
  the SOF table are all as described. 149 client-flow checks
  and the full 638/638 regression suite against real MySQL 8.0,
  on the work copy and on a fresh extract of the zip.
+
+==============================================================================
+ 123. DASHBOARD CHARTS, WIDER CLIENT LIST, USER MENU, LOGO AND MONTH RANGE
+     (2026-11-23)
+==============================================================================
+ Five small fixes on the glass pages, from your photos of the live
+ portal (2026-11-23):
+
+ (1) DASHBOARD CHARTS. On "Records by department" the department
+     names sat off to the side of their bars — "IT" under one bar,
+     "Revenue Assurance" under another. The three chart rows (the
+     numbers, the bars, the names) were three separate flex rows, and
+     the name row gave long names wider columns than the bars got.
+     Every column in all three rows is now exactly the same width,
+     so each name sits centred under its own bar and long names wrap
+     inside their own column. The same fix covers the chart on the
+     client page, which shares the rows.
+
+ (2) WIDER CLIENT LIST. The middle of the Client onboarding list
+     was squeezed: the Status pills split across two lines
+     ("Activated" over "0") and the Flow text wrapped to four or
+     five lines. The list page is now wider (the page cap is
+     1560px instead of 1400px), the right-hand rail is narrower
+     (280px instead of 340px), the table has a minimum width of
+     1080px so it scrolls sideways on a narrow screen instead of
+     crushing, and a Status pill never splits across lines. Only
+     the client list page changed — the dashboard, the other
+     Department Database tabs and the client page keep the old
+     widths.
+
+ (3) USER MENU. Clicking your name opened the Appearance / My
+     settings / Log out box right on top of the name, so you could
+     not see who was signed in. The box now opens just above the
+     user card, and your name and avatar stay visible below it.
+     (On a phone it is still the full-width sheet at the top.)
+
+ (4) THE LOGO. The sidebar showed a plain "H" tile where the old
+     top bar showed the real HRC logo. The real logo image is back
+     in that spot — the same logo the login page uses. If no logo
+     is set in the settings, the "H" tile shows instead. In the
+     dark theme the logo sits on a white chip, like on the login
+     page, so it stays readable on the dark glass.
+
+ (5) MONTH FILTER, NOW A RANGE. The Client onboarding filter had
+     one single month. It is now a From month and a To month, with
+     the same Activation / Termination choice beside them: pick a
+     span (for example November 2026 to January 2027) and the list
+     shows the clients activated — or terminated — inside it. It
+     works the same for every user: portal admin, department admin
+     and regular user (there was never a role check on this filter
+     in the code). If From is later than To, the two are swapped
+     instead of giving an empty list. An old link with a single
+     ?month= still works and counts as From = To = that month.
+
+ OPEN: you said the month could not be selected, and did not say
+ whether the month box would not open at all when clicked, or
+ whether picking a month and clicking Apply left the list
+ unchanged. The new From/To filters were tested end to end —
+ including as a plain sales user — and the list filters correctly.
+ If the new month boxes still will not open on your machine,
+ tell me: the boxes are the same kind of month input as before,
+ so that would be a browser-side problem, not the filter.
+
+ Tested: the dashboard and the client list rendered to JPG and
+ read back (b104-dashboard.jpg, b104-client-list.jpg) — the logo
+ in the sidebar, the chart names centred under their bars, the
+ Status pills on one line, the wider Flow column, and the From /
+ To month boxes in the filter row — and the user menu open above
+ the user card (b104-popup.jpg). 161 client-flow checks and the
+ full 643/643 regression suite against real MySQL 8.0, on the work
+ copy and on a fresh extract of the zip.

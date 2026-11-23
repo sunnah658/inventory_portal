@@ -42,7 +42,7 @@
 {% if g.user %}
 <div class="shell">
   <aside class="sidebar" id="sidebar">
-    <a class="brand" href="{{ url_for('records.home') }}"><span class="brandmark">{{ company_name[:1] }}</span><span class="brandtxt"><b>{{ company_name }}</b><small>Records portal</small></span></a>
+    <a class="brand" href="{{ url_for('records.home') }}">{% if logo_url %}<img class="brandlogo" src="{{ logo_url }}" alt="{{ company_name }}">{% else %}<span class="brandmark">{{ company_name[:1] }}</span>{% endif %}<span class="brandtxt"><b>{{ company_name }}</b><small>Records portal</small></span></a>
     <nav class="nav" id="mainNav">
       <div class="navgrp">Workspace</div>
   {% if can_portal_admin %}

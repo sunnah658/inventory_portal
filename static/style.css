@@ -55,6 +55,12 @@ html[data-theme=dark] .shell{background:radial-gradient(900px 500px at 85% -5%,r
  background:var(--card);border:1px solid var(--glass-bd);border-radius:28px;box-shadow:var(--shadow);backdrop-filter:blur(20px) saturate(1.25);-webkit-backdrop-filter:blur(20px) saturate(1.25)}
 .brand{display:flex;align-items:center;gap:12px;text-decoration:none;padding:4px 8px 14px;border-bottom:1px solid var(--line);margin-bottom:8px;flex:none}
 .brandmark{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#14a8a0,#2563eb);color:#fff;display:grid;place-items:center;font-weight:800;font-size:1.3rem;flex:none;box-shadow:0 8px 18px -8px rgba(37,99,235,.6)}
+/* The real company logo in the sidebar brand, in place of the letter
+   tile (build 104 — the tile stays only when no logo is set). In dark
+   mode it sits on a white chip, like the login logo, so it stays
+   readable on the dark glass. */
+.brandlogo{height:46px;width:auto;max-width:120px;object-fit:contain;flex:none}
+html[data-theme=dark] .brandlogo{height:38px;background:#fff;border-radius:12px;padding:4px 8px}
 .brandtxt b{display:block;color:var(--ink);font-size:1.02rem;line-height:1.25}
 .brandtxt small{display:block;color:var(--soft);font-size:.78rem;font-weight:600}
 .nav{display:flex;flex-direction:column;gap:2px;flex:1}
@@ -86,10 +92,18 @@ html[data-theme=dark] .usermenu summary{background:rgba(255,255,255,.07)}
 .uname{font-size:.86rem;font-weight:700;line-height:1.2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.uname small{display:block;font-weight:500;color:var(--soft);font-size:.74rem}
 /* The menu opens from the user card, but the sidebar scrolls its own
    content, which would clip an absolutely positioned panel — so the
-   panel is fixed to the viewport's bottom left, over the sidebar. */
-.panel{position:fixed;left:36px;bottom:36px;z-index:50;width:270px;background:var(--pop);border:1px solid var(--glass-bd);border-radius:14px;padding:14px;box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+   panel is fixed to the viewport's bottom left, over the sidebar. It
+   sits ABOVE the user card (bottom:126px): the card's top edge is
+   ~113px up from the viewport bottom (24px shell padding + 22px
+   sidebar padding + the card itself), so at 36px the panel covered
+   the name — the name and avatar stay visible now. (build 104) */
+.panel{position:fixed;left:36px;bottom:126px;z-index:50;width:270px;background:var(--pop);border:1px solid var(--glass-bd);border-radius:14px;padding:14px;box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
 .panel label{margin-top:8px}.panel form{margin:0}.panel .row{display:flex;gap:8px;margin-top:12px}
 main{padding:24px 84px 24px 28px;max-width:1400px;width:100%;margin:0 auto}main.bare{padding:0;max-width:none}
+/* The client onboarding list is wide (nine columns, long status pills),
+   so on a wide screen it gets the full width instead of the 1400px cap.
+   Set with {% block mainclass %}wide{% endblock %} in deptdb_clients.html. */
+main.wide{max-width:1560px}
 .print-head{display:none}
 /* ---------- messages, cards */
 .msg{padding:11px 14px;border-radius:var(--r);margin-bottom:14px;border:1px solid;animation:up .4s both}
@@ -196,18 +210,29 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--p
 .g3{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 /* ---------- record pages */
 .tw{display:grid;grid-template-columns:1fr 340px;gap:22px;align-items:start}.stack>*{margin-bottom:20px}
+/* The client onboarding list gets a narrower right rail (280px) so its
+   table has room; on a phone it still collapses to one column (see the
+   ≤980px block, which lists .tw.wide too). */
+.tw.wide{grid-template-columns:1fr 280px}
+.tb table.ctable{min-width:1080px}
+.stcol .s{white-space:nowrap}
 /* ---------- Design 6: KPI row + split layout + vertical bar chart.
    KPI cards reuse .kp/.k1; the split layout reuses .tw (1fr 340px) with the
    right rail as .stack.rail. The rail and the KPI row are screen-only: they
    are hidden when printing so a printout still shows only the table. */
 .vbars{display:flex;align-items:flex-end;gap:14px;height:110px;padding-top:8px}
-.vbar{flex:1 1 auto;background:var(--chip);border-radius:6px 6px 0 0;min-height:4px}
+/* The three rows (values, bars, labels) must share exactly equal columns,
+   or a long department name pulls its label column wider than its bar and
+   the bars drift off their names. flex-basis:0 (not auto) makes every
+   column the same width whatever the label says; the label wraps inside
+   its own column, centred under its bar. (build 104) */
+.vbar{flex:1 1 0;min-width:0;background:var(--chip);border-radius:6px 6px 0 0;min-height:4px}
 .vbar.hot{background:var(--accent)}
 .vbarlab{display:flex;gap:14px;margin-top:8px}
-.vbarlab span{flex:1 1 auto;text-align:center;font-size:.72rem;color:var(--soft)}
+.vbarlab span{flex:1 1 0;min-width:0;text-align:center;font-size:.72rem;color:var(--soft)}
 /* Value on top of each bar (dashboard charts). Mirrors .vbarlab so the number sits over its own bar. (2026-11-08) */
 .vbarval{display:flex;gap:14px}
-.vbarval span{flex:1 1 auto;text-align:center;font-size:.85rem;font-weight:800;color:var(--ink)}
+.vbarval span{flex:1 1 0;min-width:0;text-align:center;font-size:.85rem;font-weight:800;color:var(--ink)}
 /* Dashboard settings dropdown + filled pie charts (2026-11-06) */
 .dset{position:relative}
 .dset>summary{list-style:none;cursor:pointer}
@@ -296,7 +321,7 @@ html[data-theme=dark] .pubhead img{background:#fff;border-radius:8px;padding:3px
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* ---------- tablet */
 @media (max-width:980px){
- .tw,.g3{grid-template-columns:1fr}.lgx{flex-direction:column}.hero{display:none}.fm{grid-template-columns:1fr}.side{width:100%;min-height:calc(100vh / .7)}
+ .tw,.tw.wide,.g3{grid-template-columns:1fr}.lgx{flex-direction:column}.hero{display:none}.fm{grid-template-columns:1fr}.side{width:100%;min-height:calc(100vh / .7)}
  /* The sidebar becomes an off-canvas drawer; the top bar becomes the header. */
  .shell{display:block;padding:0;gap:0}
  .sidebar{position:fixed;left:0;top:0;height:calc(100vh / .7);width:300px;max-width:85vw;z-index:60;border-radius:0 24px 24px 0;transform:translateX(-105%);transition:transform .3s ease}
