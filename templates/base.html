@@ -1,5 +1,31 @@
-{# base.html - the frame of every page: logo, menu, bell, light/dark theme, messages, print header. #}
-{% macro nav_link(endpoint, label, on_eps, badge=0) %}<a href="{{ url_for(endpoint) }}" class="{{ 'on' if request.endpoint in on_eps }}">{{ label }}{% if badge %}<span class="badge">{{ badge }}</span>{% endif %}</a>{% endmacro %}
+{# base.html - the frame of every page: glass sidebar, bell, light/dark theme, messages, print header.
+   Build 103: the top header bar is gone. Navigation lives in a frosted-glass
+   sidebar on the left (Workspace / Tools / Administration, same links and
+   same permission rules as the old top bar), the user card sits at its
+   bottom, and the notifications bell floats at the top right of the content.
+   Nothing else about the frame changed: the theme form, My settings and
+   Log out are still in the user menu; the bell still shows the unread count. #}
+{% set ICONS = {
+ 'grid': '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+ 'copy': '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>',
+ 'users': '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
+ 'file': '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>',
+ 'db': '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+ 'receipt': '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M8 7h8M8 11h8"/>',
+ 'qr': '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v.01M14 21v.01M21 21v.01"/>',
+ 'bell': '<path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/>',
+ 'trash': '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>',
+ 'link': '<path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>',
+ 'chart': '<path d="M12 20V10M18 20V4M6 20v-4"/>',
+ 'upload': '<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>',
+ 'pulse': '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+ 'monitor': '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+ 'gear': '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/>',
+ 'user': '<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+ 'building': '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/>'
+} %}
+{% macro ic(name) %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ ICONS[name]|safe }}</svg>{% endmacro %}
+{% macro nav_link(endpoint, label, on_eps, badge=0, icon='') %}<a href="{{ url_for(endpoint) }}" class="{{ 'on' if request.endpoint in on_eps }}">{% if icon %}{{ ic(icon) }}{% endif %}<span>{{ label }}</span>{% if badge %}<span class="badge">{{ badge }}</span>{% endif %}</a>{% endmacro %}
 <!doctype html>
 <html lang="en" data-theme="{{ theme }}">
 <head>
@@ -14,43 +40,44 @@
 </head>
 <body>
 {% if g.user %}
-<header class="top">
-  <a class="logolink" href="{{ url_for('records.home') }}"><img class="logo" src="{{ logo_url }}" alt="{{ company_name }}"></a>
-  <button class="iconbtn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-  <nav class="nav" id="mainNav">
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="{{ url_for('records.home') }}"><span class="brandmark">{{ company_name[:1] }}</span><span class="brandtxt"><b>{{ company_name }}</b><small>Records portal</small></span></a>
+    <nav class="nav" id="mainNav">
+      <div class="navgrp">Workspace</div>
   {% if can_portal_admin %}
-    {{ nav_link('admin.dashboard', 'Dashboard', ['admin.dashboard']) }}
-    {{ nav_link('admin.all_records', 'All records', ['admin.all_records']) }}
-    {{ nav_link('admin.users_records', "Users' records", ['admin.users_records', 'admin.user_records']) }}
-    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}
-    {{ nav_link('admin.users', 'Users', ['admin.users', 'admin.user_add', 'admin.user_edit']) }}
-    {{ nav_link('admin.departments', 'Departments', ['admin.departments', 'admin.columns', 'admin.column_edit', 'admin.removed_columns']) }}
+    {{ nav_link('admin.dashboard', 'Dashboard', ['admin.dashboard'], 0, 'grid') }}
+    {{ nav_link('admin.all_records', 'All records', ['admin.all_records'], 0, 'copy') }}
+    {{ nav_link('admin.users_records', "Users' records", ['admin.users_records', 'admin.user_records'], 0, 'users') }}
+    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record'], 0, 'file') }}
   {% elif g.user['is_dept_admin'] %}
-    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}
-    {{ nav_link('admin.dept_users', 'Users', ['admin.dept_users', 'admin.dept_user_add']) }}
+    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record'], 0, 'file') }}
   {% else %}
-    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record']) }}
+    {{ nav_link('records.list_records', 'My records', ['records.list_records', 'records.detail', 'records.new_record', 'records.edit_record'], 0, 'file') }}
   {% endif %}
-    {{ nav_link('ddb.index', 'Department database', ['ddb.index', 'ddb.new_row', 'ddb.row_detail', 'ddb.edit_row', 'ddb.columns', 'ddb.tabs', 'ddb.delegates', 'invoices.invoice_new', 'invoices.invoice_edit', 'invoices.detail', 'invoices.code_page']) }}
-    {% if g.user['is_dept_admin'] %}{{ nav_link('invoices.templates', 'Invoice templates', ['invoices.templates', 'invoices.template_new', 'invoices.template_edit', 'invoices.template_share']) }}{% endif %}
-    {{ nav_link('public.search_qr', 'Search QR', ['public.search_qr', 'public.code_page']) }}
-    {{ nav_link('records.reminders', 'Reminders', ['records.reminders']) }}
-    {{ nav_link('records.bin_page', 'Recycle bin', ['records.bin_page']) }}
-    <details><summary>More</summary><div class="more">
-      <a href="{{ url_for('public.links') }}">Public QR links</a>
-      {% if can_reports %}<a href="{{ url_for('bulk.reports') }}">Reports</a>{% endif %}
-      {% if can_portal_admin %}
-      <a href="{{ url_for('admin.import_page') }}">Import users</a>
-      <a href="{{ url_for('admin.activity') }}">Activity</a>
-      <a href="{{ url_for('admin.sessions') }}">Sessions</a>
-      <a href="{{ url_for('admin.settings') }}">Settings</a>
-      {% endif %}
-    </div></details>
-  </nav>
-  <a class="iconbtn" href="{{ url_for('flow.notifications') }}" aria-label="Notifications" title="Notifications">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
-    {% if unread %}<span class="badge">{{ unread if unread < 100 else '99+' }}</span>{% endif %}</a>
-  <details class="usermenu"><summary><span class="av">{{ g.user['full_name'][:1]|upper }}</span><span class="uname">{{ g.user['full_name'] }}<small>{{ 'Administrator' if g.user['role'] == 'admin' else ('Portal administrative permission' if can_portal_admin else ('Department admin' if g.user['is_dept_admin'] else 'User')) }}</small></span></summary>
+    {{ nav_link('ddb.index', 'Department database', ['ddb.index', 'ddb.new_row', 'ddb.row_detail', 'ddb.edit_row', 'ddb.columns', 'ddb.tabs', 'ddb.delegates', 'invoices.invoice_new', 'invoices.invoice_edit', 'invoices.detail', 'invoices.code_page'], 0, 'db') }}
+    {% if g.user['is_dept_admin'] %}{{ nav_link('invoices.templates', 'Invoice templates', ['invoices.templates', 'invoices.template_new', 'invoices.template_edit', 'invoices.template_share'], 0, 'receipt') }}{% endif %}
+      <div class="navgrp">Tools</div>
+    {{ nav_link('public.search_qr', 'Search QR', ['public.search_qr', 'public.code_page'], 0, 'qr') }}
+    {{ nav_link('records.reminders', 'Reminders', ['records.reminders'], 0, 'bell') }}
+    {{ nav_link('records.bin_page', 'Recycle bin', ['records.bin_page'], 0, 'trash') }}
+    {{ nav_link('public.links', 'Public QR links', ['public.links'], 0, 'link') }}
+    {% if can_reports %}{{ nav_link('bulk.reports', 'Reports', ['bulk.reports'], 0, 'chart') }}{% endif %}
+    {% if can_portal_admin or g.user['is_dept_admin'] %}
+      <div class="navgrp">Administration</div>
+    {% if can_portal_admin %}
+      {{ nav_link('admin.users', 'Users', ['admin.users', 'admin.user_add', 'admin.user_edit'], 0, 'user') }}
+      {{ nav_link('admin.departments', 'Departments', ['admin.departments', 'admin.columns', 'admin.column_edit', 'admin.removed_columns'], 0, 'building') }}
+      {{ nav_link('admin.import_page', 'Import users', ['admin.import_page'], 0, 'upload') }}
+      {{ nav_link('admin.activity', 'Activity', ['admin.activity'], 0, 'pulse') }}
+      {{ nav_link('admin.sessions', 'Sessions', ['admin.sessions'], 0, 'monitor') }}
+      {{ nav_link('admin.settings', 'Settings', ['admin.settings'], 0, 'gear') }}
+    {% else %}
+      {{ nav_link('admin.dept_users', 'Users', ['admin.dept_users', 'admin.dept_user_add'], 0, 'user') }}
+    {% endif %}
+    {% endif %}
+    </nav>
+    <details class="usermenu"><summary><span class="av">{{ g.user['full_name'][:1]|upper }}</span><span class="uname">{{ g.user['full_name'] }}<small>{{ 'Administrator' if g.user['role'] == 'admin' else ('Portal administrative permission' if can_portal_admin else ('Department admin' if g.user['is_dept_admin'] else 'User')) }}</small></span></summary>
     <div class="panel">
       <form method="post" action="{{ url_for('app_prefs') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="next" value="{{ request.full_path }}">
         <label for="pt">Appearance</label><select id="pt" name="theme" onchange="this.form.submit()"><option value="auto" {{ 'selected' if g.theme == 'auto' }}>Auto</option><option value="light" {{ 'selected' if g.theme == 'light' }}>Light</option><option value="dark" {{ 'selected' if g.theme == 'dark' }}>Dark</option></select>
@@ -59,7 +86,16 @@
       <div class="row"><a class="b sm" href="{{ url_for('auth.my_settings') }}">My settings</a>
         <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Log out</button></form></div>
     </div></details>
-</header>
+  </aside>
+  <div class="mainwrap">
+    <div class="topbar">
+      <button class="iconbtn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <a class="topbrand" href="{{ url_for('records.home') }}"><img src="{{ logo_url }}" alt="{{ company_name }}"></a>
+      <span class="topsp"></span>
+      <a class="iconbtn" href="{{ url_for('flow.notifications') }}" aria-label="Notifications" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
+        {% if unread %}<span class="badge">{{ unread if unread < 100 else '99+' }}</span>{% endif %}</a>
+    </div>
 {% endif %}
 <main class="{% block mainclass %}{% endblock %}">
   {% if g.user %}<div class="print-head"><img src="{{ logo_url }}" alt=""><b>{{ company_name }}</b><span>Printed {{ now_text }} by {{ g.user['full_name'] }}</span></div>{% endif %}
@@ -68,14 +104,18 @@
   {% endblock %}
   {% block content %}{% endblock %}
 </main>
+{% if g.user %}
+  </div>
+</div>
+{% endif %}
 <script>
 document.addEventListener('DOMContentLoaded',function(){
   document.querySelectorAll('.tb table').forEach(function(t){
     var heads=[].map.call(t.querySelectorAll('thead th'),function(h){return h.textContent.trim();});
     t.querySelectorAll('tbody tr').forEach(function(tr){[].forEach.call(tr.children,function(td,i){if(!td.hasAttribute('data-label'))td.setAttribute('data-label',heads[i]||'');});});
   });
-  var b=document.getElementById('menuBtn'),n=document.getElementById('mainNav');
-  if(b&&n)b.addEventListener('click',function(){n.classList.toggle('open');b.setAttribute('aria-expanded',n.classList.contains('open'));});
+  var b=document.getElementById('menuBtn');
+  if(b)b.addEventListener('click',function(){document.body.classList.toggle('nav-open');b.setAttribute('aria-expanded',document.body.classList.contains('nav-open'));});
   /* Row selection for the Department Database and My records lists: Select
      shows the tick boxes, Select all ticks every row on the page, and Export
      and Print then use only the ticked rows. */

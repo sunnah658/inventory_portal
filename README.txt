@@ -6264,3 +6264,79 @@
  142 client-flow checks and the full 634/634 regression suite
  against real MySQL 8.0, on the work copy and on a fresh extract
  of the zip.
+
+122. THE WHOLE PORTAL IS RESTYLED TO THE GLASS DESIGN (build 103, 2026-11-22)
+==============================================================================
+ Every page of the portal now looks like the design in
+ glass-ui-all-pages.zip (27 JPGs): a soft pastel gradient
+ background, frosted glass cards, and a floating glass sidebar
+ on the left instead of the top header bar. Nothing about the
+ features changed — only the look. All build-102 features stay:
+ the per-SOF statuses, the Flow column, the SOF edit approval
+ flow, the filters, the contacts alignment and Add services
+ are all still there, restyled in glass. The PDFs do not change
+ at all.
+
+ THE SIDEBAR
+ The top header bar is gone. Navigation lives in a floating
+ glass panel on the left, grouped the way the design shows it:
+ Workspace (Dashboard, All records, Users' records, My records,
+ Department database, Invoice templates), Tools (Search QR,
+ Reminders, Recycle bin, Public QR links, Reports) and
+ Administration (Users, Departments, Import users, Activity,
+ Sessions, Settings). The links and their permission rules are
+ exactly the ones the top bar had: a department admin sees
+ Users under Administration, a regular user sees only their own
+ pages, and so on. The user card sits at the bottom of the
+ sidebar, with the appearance (light/dark/auto) choice, My
+ settings and Log out in its menu. The notifications bell
+ floats at the top right of the content, with the unread count
+ badge, as before. On a phone the sidebar becomes a drawer
+ opened from the menu button in the top bar.
+
+ THE GLASS LOOK
+ Cards, tables, KPI cards and the tab bar are frosted glass:
+ translucent white with a soft blur over the gradient, a white
+ border and a big radius. Table headers have no band and rows
+ have no stripes any more, so the glass shows through; the
+ active tab is the teal-to-blue gradient pill. Buttons keep the
+ portal's teal-to-blue gradient. The login page is the design's
+ login: the pastel gradient, the frosted card on the left with
+ "Welcome back", and the hero on the right reading "Every
+ record, one clear place." with the second line in gradient
+ teal-to-blue. The dark theme is the design's dark login and
+ dashboard: a deep navy gradient with dark glass cards and
+ light text, and the same light/dark/auto choice in the menu
+ and under the login card. The 70% zoom stays, and the gradient
+ is painted the build-101-safe way: the login panel and the
+ sidebar are made taller by the same amount as the zoom
+ shrinks them, so they fill the screen exactly and no band can
+ come back.
+
+ WHAT THE PICTURES SHOW THAT THE PORTAL DOES NOT HAVE
+ The design pictures show three things the portal does not
+ have, and they were NOT added: "Comments and suggestions" on
+ a record, "Recent scans" on Search QR, and notification
+ preference toggles. Those are new features, not a restyle;
+ ask for them and they can be built. The pictures also use
+ sample data (names, invoice numbers, share codes) — the
+ portal keeps its real data, its real invoice numbers, its
+ real HRC-##### share codes and its real branding from the
+ settings. Two small simplifications: the KPI cards have no
+ little icon chip in the corner (that would have meant
+ threading an icon through every KPI on every page), and the
+ tables have no avatar chips inside them (only the user card
+ in the sidebar has one). The bell floats at the top right of
+ the content instead of sitting inside each page's title row;
+ the content keeps 84px of right padding so it never covers a
+ page's own buttons.
+
+ Tested: the login page and the dashboard rendered to JPG and
+ read back (b103-login.jpg, b103-login-dark.jpg,
+ b103-dashboard.jpg), and the client onboarding list and client
+ page the same way (b103-client-list.jpg,
+ b103-client-detail.jpg) — the sidebar, the glass cards, the
+ KPI rows, the Status/Flow/Activation/Terminated columns and
+ the SOF table are all as described. 149 client-flow checks
+ and the full 638/638 regression suite against real MySQL 8.0,
+ on the work copy and on a fresh extract of the zip.

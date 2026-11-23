@@ -1,4 +1,18 @@
 ==============================================================================
+ THE WHOLE PORTAL IS RESTYLED TO THE GLASS DESIGN (2026-11-22)
+==============================================================================
+ Every page now looks like the glass design you supplied: a soft
+ pastel gradient, frosted glass cards, and a floating glass
+ sidebar on the left (Workspace / Tools / Administration) instead
+ of the top header bar, with the user card at its bottom and the
+ notifications bell at the top right of the content. The login
+ page is the design's login — "Welcome back", "Every record, one
+ clear place." — and the dark theme is the design's deep navy
+ glass. Nothing about the features changed: all build-102
+ features are still there, restyled in glass, and the PDFs do not
+ change at all. See README section 122.
+
+==============================================================================
  EACH SERVICE HAS ITS OWN STATUS, AND THE ACCOUNT MANAGER CAN ADD OR
  EDIT SERVICES ON A FINISHED CLIENT (2026-11-22)
 ==============================================================================
