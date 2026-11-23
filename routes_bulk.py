@@ -114,14 +114,15 @@ def bulk():
 @bp.route("/bulk/delete-selected", methods=["POST"])
 @login_required
 def delete_selected():
-    """Delete the ticked Department Database rows, invoices and item
-    requests (build 107). Only the portal admin and administrative
-    permission users see the Delete button, and every delete asks for
-    their own password, typed fresh each time — a fresh session never
-    stands in for it. Each item is soft-deleted to the Recycle Bin,
-    exactly as deleting one of it does: a portal admin deleting tells
-    nobody about an invoice or a request, and the rows get one summary
-    notification per tab instead of one per row."""
+    """Delete the ticked Department Database rows, invoices, item
+    requests and clients (build 107; clients added in build 108). Only
+    the portal admin and administrative permission users see the Delete
+    button, and every delete asks for their own password, typed fresh
+    each time — a fresh session never stands in for it. Each item is
+    soft-deleted to the Recycle Bin, exactly as deleting one of it
+    does: a portal admin deleting tells nobody about an invoice, a
+    request or a client, and the rows get one summary notification per
+    tab instead of one per row."""
     db = get_db()
     back = _safe_back(request.form.get("back"))
     if not is_portal_admin(g.user):
@@ -131,7 +132,7 @@ def delete_selected():
         flash("Wrong password. Nothing was deleted.", "error")
         return redirect(back)
     kind = request.form.get("kind") or ""
-    counts = {"row": 0, "inv": 0, "req": 0}
+    counts = {"row": 0, "inv": 0, "req": 0, "cli": 0}
     row_groups = {}
     for raw in request.form.getlist("ids"):
         raw = (raw or "").strip()
@@ -168,6 +169,14 @@ def delete_selected():
                        (g.user["id"], iid))
             log(db, "item_request_deleted", req["number"] or "request")
             counts["req"] += 1
+        elif k == "cli":
+            cli = db.execute("SELECT * FROM client_onboardings WHERE id=?", (iid,)).fetchone()
+            if cli is None or cli["deleted_at"]:
+                continue
+            db.execute("UPDATE client_onboardings SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
+                       (g.user["id"], iid))
+            log(db, "client_deleted", cli["client_name"])
+            counts["cli"] += 1
     for (dept_id, tab_id), n in row_groups.items():
         dept = db.execute("SELECT * FROM departments WHERE id=?", (dept_id,)).fetchone()
         tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (tab_id,)).fetchone() if tab_id else None
@@ -178,7 +187,7 @@ def delete_selected():
     if total == 0:
         flash("Nothing was deleted. Tick at least one row first.", "error")
         return redirect(back)
-    log(db, "bulk_delete_selected", f"{counts['row']} row(s), {counts['inv']} invoice(s), {counts['req']} request(s)")
+    log(db, "bulk_delete_selected", f"{counts['row']} row(s), {counts['inv']} invoice(s), {counts['req']} request(s), {counts['cli']} client(s)")
     db.commit()
     parts = []
     if counts["row"]:
@@ -187,6 +196,8 @@ def delete_selected():
         parts.append(f"{counts['inv']} invoice(s)")
     if counts["req"]:
         parts.append(f"{counts['req']} request(s)")
+    if counts["cli"]:
+        parts.append(f"{counts['cli']} client(s)")
     flash(f"Moved {total} item(s) to the Recycle Bin ({', '.join(parts)}).", "ok")
     return redirect(back)
 

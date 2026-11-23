@@ -84,8 +84,18 @@
     <button class="b sm" type="submit" name="action" value="xlsx">Excel</button>
     <button class="b sm" type="submit" name="action" value="pdf">PDF</button>
     <button class="b sm" type="submit" name="action" value="csv">CSV</button>
-    <input type="password" name="admin_password" placeholder="Your password" autocomplete="current-password" aria-label="Your password" style="width:150px">
-    <button class="b sm dg" type="submit" name="action" value="delete">Delete</button>
+    <button class="b sm dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete</button>
+  </div>
+  <div id="delPop" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
+    <div class="card" style="max-width:460px;width:100%;padding:22px">
+      <h2 style="margin-top:0">Delete the selected items?</h2>
+      <p><span id="delCount">0</span> item(s) will be moved to the Recycle Bin for 30 days. Type your password to confirm.</p>
+      <div class="fd"><label>Your password</label><input type="password" name="admin_password" required autocomplete="current-password" placeholder="Type your password"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="b" type="button" onclick="document.getElementById('delPop').style.display='none'">Cancel</button>
+        <button class="b dg" type="submit" name="action" value="delete">Delete</button>
+      </div>
+    </div>
   </div>
 </form>
 <script>

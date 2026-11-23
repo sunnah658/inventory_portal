@@ -829,6 +829,8 @@ CREATE TABLE IF NOT EXISTS client_onboardings (
     activation_date    DATE,
     activation_by      INT,
     activation_at      DATETIME,
+    deleted_at         DATETIME,
+    deleted_by         INT,
     created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
@@ -837,6 +839,7 @@ CREATE TABLE IF NOT EXISTS client_onboardings (
     FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (san_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (activation_by) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (deleted_by) REFERENCES users(id) ON DELETE SET NULL,
     KEY idx_client_status (status),
     KEY idx_client_owner (owner_id),
     KEY idx_client_dept (department_id)
@@ -1456,6 +1459,8 @@ def init_db():
         _ensure_column(conn, "client_onboardings", "am_designation", "VARCHAR(255)")
         _ensure_column(conn, "client_onboardings", "am_phone", "VARCHAR(255)")
         _ensure_column(conn, "client_onboardings", "am_email", "VARCHAR(255)")
+        _ensure_column(conn, "client_onboardings", "deleted_at", "DATETIME")  # soft delete to the Recycle Bin (2026-11-23)
+        _ensure_column(conn, "client_onboardings", "deleted_by", "INT")
         _ensure_column(conn, "client_services", "activation_date", "DATE")  # the activation date of THIS SOF (2026-11-19)
         _ensure_column(conn, "client_services", "public_code", "VARCHAR(255)")  # the SOF's own share code HRC-##### for the QR on its PDF
         _ensure_column(conn, "client_services", "public_enabled", "INT NOT NULL DEFAULT 1")

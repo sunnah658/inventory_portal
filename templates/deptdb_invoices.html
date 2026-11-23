@@ -43,7 +43,20 @@
   {% if show_others %}<a class="tab {{ 'on' if invtype == 'all' and user_filter == 'others' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='others', status=status, q=q, sort=sort) }}">Other's invoices · {{ counts.others }}</a>{% endif %}
   {% for st in sub_tabs %}<a class="tab {{ 'on' if invtype_id == st['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', invtype=st['id'], user=user_filter, status=status, q=q, sort=sort) }}">{{ st['name'] }} · {{ counts[st['id']] }}</a>{% endfor %}
 </div>
-<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if can_portal_admin and rows %} <input type="password" name="admin_password" form="delform" placeholder="Your password" autocomplete="current-password" aria-label="Your password" style="width:150px"><button class="b dg" type="submit" form="delform">Delete</button>{% endif %}</div>
+<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if can_portal_admin and rows %} <button class="b dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete</button>{% endif %}</div>
+{% if can_portal_admin and rows %}
+<div id="delPop" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:460px;width:100%;padding:22px">
+    <h2 style="margin-top:0">Delete the selected items?</h2>
+    <p><span id="delCount">0</span> item(s) will be moved to the Recycle Bin for 30 days. Type your password to confirm.</p>
+    <div class="fd"><label>Your password</label><input type="password" name="admin_password" form="delform" required autocomplete="current-password" placeholder="Type your password"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="b" type="button" onclick="document.getElementById('delPop').style.display='none'">Cancel</button>
+      <button class="b dg" type="submit" form="delform">Delete</button>
+    </div>
+  </div>
+</div>
+{% endif %}
 <p class="msg error" id="printErr" hidden>Please select the data row first.</p>
 {% if create_templates %}
 <div class="kp">

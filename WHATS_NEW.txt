@@ -1,4 +1,19 @@
 ==============================================================================
+ THE PASSWORD POPS UP ONLY AFTER CLICKING DELETE, AND THE
+ CLIENT ONBOARDING TAB GETS SELECT, SELECT ALL AND DELETE
+ (2026-11-23)
+==============================================================================
+ The password box no longer sits in the toolbar between Select
+ all and Delete: the toolbar shows only Select, Select all and
+ Delete, and clicking Delete opens a pop-up asking for your
+ password. The Client onboarding tab now has Select, Select all
+ and Delete too — a deleted client goes to the Recycle Bin for
+ 30 days, restorable with its SOFs, contacts, history and share
+ codes, and is erased for good with everything under it. The
+ single invoice and request pop-ups no longer say "permanently
+ delete" — they move the item to the Recycle Bin, as they have
+ since build 60.
+==============================================================================
  BULK DELETE WITH A PASSWORD ON EVERY RECORD PAGE, AND THE
  DASHBOARD CHART LISTS EVERY TAB (2026-11-23)
 ==============================================================================

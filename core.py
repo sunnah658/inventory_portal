@@ -548,6 +548,37 @@ def purge_request(db, rid):
     db.execute("DELETE FROM item_requests WHERE id=?", (rid,))
 
 
+def purge_client(db, cid):
+    """Erase a client for good, including its SOF files and SAN reports
+    (build 108: client delete is a soft delete to the Recycle Bin, and
+    this is what the Bin's Delete forever and the 30-day erase do). The
+    contacts, SOFs, history, custom values and SOF edits go by CASCADE."""
+    for (raw,) in db.execute("SELECT sof_file FROM client_services WHERE client_id=?", (cid,)).fetchall():
+        _remove_client_file(raw)
+    for (raw,) in db.execute("SELECT san_file FROM client_services WHERE client_id=?", (cid,)).fetchall():
+        _remove_client_file(raw)
+    _row = db.execute("SELECT san_file FROM client_onboardings WHERE id=?", (cid,)).fetchone()
+    if _row:
+        _remove_client_file(_row[0])
+    db.execute("DELETE FROM client_onboardings WHERE id=?", (cid,))
+
+
+def _remove_client_file(raw):
+    """One stored file (the JSON kept in a sof_file/san_file column) off the disk."""
+    import json as _json
+    if not raw:
+        return
+    try:
+        stored = _json.loads(raw).get("stored")
+    except (ValueError, TypeError, AttributeError):
+        return
+    if stored:
+        try:
+            os.remove(os.path.join(config.UPLOAD_DIR, "ddb_attachments", stored))
+        except Exception:
+            pass
+
+
 def purge_user_work(db, uid):
     """Erase one user's work: his records (with attachment files), his Department
     Database rows (with attachment files), his invoices and his item requests
@@ -662,6 +693,13 @@ def purge_expired(db):
             "SELECT id FROM item_requests WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
             (config.BIN_DAYS,))]:
         purge_request(db, _rid)
+    # Deleted clients: after 30 days the client and its SOFs, contacts,
+    # history and files are erased for good, the same as a deleted
+    # invoice or request (build 108).
+    for _cid in [r[0] for r in db.execute(
+            "SELECT id FROM client_onboardings WHERE deleted_at IS NOT NULL AND deleted_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+            (config.BIN_DAYS,))]:
+        purge_client(db, _cid)
     # Deleted users: after 30 days the account AND all his work go, together.
     for _uid in [r[0] for r in db.execute(
             "SELECT id FROM users WHERE is_deleted=1 AND deleted_at IS NOT NULL "
@@ -1629,7 +1667,7 @@ def ddb_dashboard_data(db):
         "SELECT department_id, COUNT(*) AS n FROM item_requests WHERE deleted_at IS NULL "
         "GROUP BY department_id").fetchall()}
     cli = {r["department_id"]: r["n"] for r in db.execute(
-        "SELECT department_id, COUNT(*) AS n FROM client_onboardings GROUP BY department_id").fetchall()}
+        "SELECT department_id, COUNT(*) AS n FROM client_onboardings WHERE deleted_at IS NULL GROUP BY department_id").fetchall()}
     out = []
     for d in db.execute("SELECT id, name FROM departments ORDER BY name").fetchall():
         tab_list = [{"name": t["name"], "n": t["n"]}

@@ -252,9 +252,11 @@ def _can_view(user, roles, c):
 
 
 def _visible_sql(user, roles, alias="c"):
-    """(sql, params) limiting a query to the clients this viewer may see."""
+    """(sql, params) limiting a query to the clients this viewer may see.
+    A client in the Recycle Bin (deleted_at set, build 108) is never
+    visible — not in the list, not in the counts, not in the dropdown."""
     if is_portal_admin(user) or "sales" in roles:
-        return "1=1", []
+        return f"{alias}.deleted_at IS NULL", []
     parts, params = [f"{alias}.owner_id=?"], [user["id"]]
     if "revenue_assurance" in roles:
         parts.append(f"{alias}.status IN ('approved','forwarded','san_uploaded','completed')")
@@ -262,7 +264,7 @@ def _visible_sql(user, roles, alias="c"):
         parts.append(f"{alias}.status IN ('forwarded','san_uploaded','completed')")
     if "finance" in roles:
         parts.append(f"{alias}.status='completed'")
-    return "(" + " OR ".join(parts) + ")", params
+    return f"({alias}.deleted_at IS NULL AND (" + " OR ".join(parts) + "))", params
 
 
 def _perms(db, user, roles, c):
@@ -593,7 +595,7 @@ def _load(cid):
         "LEFT JOIN users u ON u.id=c.owner_id LEFT JOIN users am ON am.id=c.account_manager_id "
         "LEFT JOIN users decider ON decider.id=c.decided_by LEFT JOIN users sb ON sb.id=c.san_by "
         "LEFT JOIN users ab ON ab.id=c.activation_by LEFT JOIN departments d ON d.id=c.department_id "
-        "WHERE c.id=?", (cid,)).fetchone()
+        "WHERE c.id=? AND c.deleted_at IS NULL", (cid,)).fetchone()
     if c is None:
         abort(404)
     roles = user_roles(db, g.user)
@@ -1821,7 +1823,7 @@ def sof_code_page(code):
     db = get_db()
     code = (code or "").strip().upper()
     row = db.execute("SELECT s.*, c.client_name, c.id AS client_id FROM client_services s "
-                     "JOIN client_onboardings c ON c.id=s.client_id WHERE s.public_code=?", (code,)).fetchone()
+                     "JOIN client_onboardings c ON c.id=s.client_id AND c.deleted_at IS NULL WHERE s.public_code=?", (code,)).fetchone()
     if row is None:
         return render_template("sof_code.html", code=code, status="missing", sof=None, client=None), 404
     if not row["public_enabled"]:
@@ -1841,7 +1843,7 @@ def sof_code_pdf(code):
     if s is None or not s["public_enabled"]:
         abort(404)
     c = db.execute("SELECT c.*, am.full_name AS am_name FROM client_onboardings c "
-                   "LEFT JOIN users am ON am.id=c.account_manager_id WHERE c.id=?", (s["client_id"],)).fetchone()
+                   "LEFT JOIN users am ON am.id=c.account_manager_id WHERE c.id=? AND c.deleted_at IS NULL", (s["client_id"],)).fetchone()
     if c is None:
         abort(404)
     db.execute("UPDATE client_services SET public_views=public_views+1 WHERE id=?", (s["id"],)); db.commit()

@@ -6684,3 +6684,81 @@
  and Delete beside the tab pills) and the dashboard
  (Sales & Marketing 18 rows — Vendor List 2, Invoices 2,
  Request items 1, Client onboarding 13).
+
+==============================================================================
+ 127. THE PASSWORD POPS UP ONLY AFTER CLICKING DELETE, AND THE
+     CLIENT ONBOARDING TAB GETS SELECT, SELECT ALL AND DELETE
+     (2026-11-23)
+==============================================================================
+ Two corrections to build 107, from your photos of it live:
+
+ (1) THE PASSWORD BOX NO LONGER SITS IN THE TOOLBAR. On every
+     record page the toolbar now shows only Select, Select all
+     and Delete — the password box is gone from between Select
+     all and Delete. Clicking Delete opens a pop-up, the same
+     pop-up the single invoice and request deletes already use:
+     it says how many items will be deleted, asks for your
+     password, and has Cancel and Delete buttons. Typing the
+     password and clicking Delete deletes them. Nothing about
+     the check changed: the password is still typed fresh on
+     every delete, a wrong password still deletes nothing, and
+     the items still go to the Recycle Bin for 30 days. The
+     pages are: My records, the My department tab, Users'
+     records, and every Department Database tab.
+
+     While copying that pop-up, one old wrong line was fixed:
+     the single invoice and single request pop-ups said "This
+     will permanently delete... This cannot be undone." That
+     has not been true since build 60 — deleting one moves it
+     to the Recycle Bin for 30 days, where it can be restored.
+     Both pop-ups now say so. The number is still never
+     reused.
+
+ (2) THE CLIENT ONBOARDING TAB HAS SELECT, SELECT ALL AND
+     DELETE. It was the one tab left without them, because
+     deleting a client had no agreed rule. The rule built here
+     follows the rule every other document already has:
+       - Deleting a client moves it to the Recycle Bin for
+         30 days, where it can be restored — with its SOFs,
+         contacts, history and share codes exactly as they
+         were. Erasing it for good removes the client and
+         everything under it: its SOFs, contacts, history,
+         custom values, SOF edits, and its uploaded SOF and
+         SAN files. After 30 days it is erased the same way
+         on its own.
+       - A deleted client disappears from the Client
+         onboarding list, from its detail page, from its
+         SOF code pages, and from the dashboard's Client
+         onboarding count, until it is restored.
+       - Only the portal admin and the administrative
+         permission user see the buttons; a department admin
+         or a regular user sees none, and the delete route
+         refuses them. The owner or a portal admin can
+         restore it from the Bin; erasing it for good follows
+         the same rule as for invoices — a permission user
+         cannot erase one he deleted himself, one the portal
+         admin deleted, or one another permission user
+         deleted.
+     Say if a deleted client should do something different.
+
+ OPEN, carried forward: (g) the SOF-edit workflow rework
+     (Revenue Assurance forward step, SAN re-upload for the
+     edited SOF, Revenue Assurance date-edit stage, forward
+     to Finance); (h) the Department Database All-rows
+     column picker; the narrow centred forms (the small
+     centred boxes will not visibly widen under the 1560px
+     page size); whether one-by-one row and personal-record
+     deletes should ask for a password; whether the 07:00
+     signature reminder arrives at 07:00 Dhaka; whether
+     accounts_user is gone and the Accounts department
+     deleted.
+
+ Tested: 217 client-flow checks and the full 672/672
+ regression suite against real MySQL 8.0, on the work copy
+ and on a fresh extract of the zip. CSS audit: 0 parse
+ errors, 150 defined classes. Renders read back: the
+ Client onboarding tab (Select, Select all and Delete, no
+ password box in the toolbar) and the Department Database
+ tab at 1440px (Permission, Select, Select all and Delete,
+ no password box). The pop-up itself only opens after a
+ click, so it cannot appear in a still render.
