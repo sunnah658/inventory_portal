@@ -1,4 +1,21 @@
 ==============================================================================
+ BULK DELETE WITH A PASSWORD ON EVERY RECORD PAGE, AND THE
+ DASHBOARD CHART LISTS EVERY TAB (2026-11-23)
+==============================================================================
+ Every record page — My records, the My department tab,
+ Users' records, and every Department Database tab
+ (regular tabs, Invoices, Request items) — now has Select,
+ Select all and Delete for the portal admin and the
+ administrative permission user, and every delete asks for
+ the password typed fresh. Any tab added later gets the
+ same buttons on its own. The dashboard Department
+ database chart now lists every tab with rows: the regular
+ tabs, Invoices, Request items and Client onboarding.
+ The Client onboarding tab itself has no Delete button
+ yet — deleting a client has no agreed rule, so say what
+ should happen to its SOFs, SAN reports, history and
+ share codes and it will be built.
+==============================================================================
  CLIENT LIST FILTER: A CALENDAR WITH DATE SELECTION, AND
  ACTIVATION / TERMINATION (2026-11-23)
 ==============================================================================

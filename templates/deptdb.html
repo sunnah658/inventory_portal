@@ -39,24 +39,26 @@
   {% if show_mine and not is_shared %}<a class="tab {{ 'on' if mine }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], mine=1) }}">My rows · {{ counts.mine }}</a>{% endif %}
   {% if is_admin and not is_shared %}<a class="tab {{ 'on' if deleted }}" href="{{ url_for('ddb.index', dept=dept['id'], tab=tab['id'], deleted=1) }}">Deleted · {{ counts.deleted }}</a>{% endif %}
 </div>
-<div class="selbtns">{% if can_manage_tab_sharing %}<a class="b" href="{{ url_for('ddb.tab_permissions', dept=dept['id'], tab=tab['id']) }}">Permission</a>{% endif %}<button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>
+<div class="selbtns">{% if can_manage_tab_sharing %}<a class="b" href="{{ url_for('ddb.tab_permissions', dept=dept['id'], tab=tab['id']) }}">Permission</a>{% endif %}<button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if can_portal_admin and not deleted and rows %} <input type="password" name="admin_password" form="delform" placeholder="Your password" autocomplete="current-password" aria-label="Your password" style="width:150px"><button class="b dg" type="submit" form="delform">Delete</button>{% endif %}</div>
 </div>
 <p class="msg error" id="printErr" hidden>Please select the data row first.</p>
 <p class="print-only">Selected rows · <span class="selprint-n">0</span> of {% if deleted %}{{ counts.deleted }}{% elif mine %}{{ counts.mine }}{% else %}{{ counts.all }}{% endif %}</p>
 {% if not cols %}
   <div class="tb"><div class="empty">This tab has no columns yet.{% if is_admin %} <a href="{{ url_for('ddb.columns', dept=dept['id'], tab=tab['id']) }}">Add the first column</a>.{% else %} Ask the department admin to add them.{% endif %}</div></div>
 {% elif rows %}
+  {% if can_portal_admin and not deleted %}<form id="delform" method="post" action="{{ url_for('bulk.delete_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="kind" value="row"><input type="hidden" name="back" value="{{ request.full_path }}">{% endif %}
   <div class="tb"><table>
     <colgroup><col class="noprint">{% for c in cols %}<col style="width:{{ widths[loop.index0] }}%">{% endfor %}<col style="width:{{ widths[cols|length] }}%"><col class="noprint"></colgroup>
     <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %}>{{ c['name'] }}</th>{% endfor %}<th>Added by</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}{% set v = vmap[r['id']] %}
-      <tr class="r" id="row-{{ r['id'] }}"><td class="selcol"><input type="checkbox" class="rowck" value="{{ r['id'] }}" aria-label="Select"></td>{% for c in cols %}<td{% if loop.index > 7 %} class="xcol"{% endif %}>{% if c['col_type'] == 'attachment' %}{% if attach_urls and attach_urls.get(r['id'], {}).get(c['id']) %}<a href="{{ attach_urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
+      <tr class="r" id="row-{{ r['id'] }}"><td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" aria-label="Select"></td>{% for c in cols %}<td{% if loop.index > 7 %} class="xcol"{% endif %}>{% if c['col_type'] == 'attachment' %}{% if attach_urls and attach_urls.get(r['id'], {}).get(c['id']) %}<a href="{{ attach_urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
         <td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.row_detail', rid=r['id']) }}">Open</a>
           {% if not deleted and can_edit_row(r) %}<a class="b sm" href="{{ url_for('ddb.edit_row', rid=r['id']) }}">Edit</a>{% endif %}
           {% if deleted %}<form method="post" action="{{ url_for('ddb.restore_row', rid=r['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm" type="submit">Restore</button></form>{% endif %}</td></tr>
     {% endfor %}</tbody></table>
     {% if cols|length > 7 %}<div class="nt">The first 7 columns are shown. Open a row to see all fields.</div>{% endif %}</div>
+  {% if can_portal_admin and not deleted %}</form>{% endif %}
   <p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>
   {{ pager(page, pages, 'ddb.index', keep) }}
 {% else %}

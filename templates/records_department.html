@@ -23,7 +23,7 @@
 <div class="tabs">
   {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for(list_endpoint, tab=t, **list_args) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
 </div>
-{% if not admin_view %}<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>{% endif %}
+{% if not admin_view or can_portal_admin %}<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if can_portal_admin and groups %} <input type="password" name="admin_password" form="delform" placeholder="Your password" autocomplete="current-password" aria-label="Your password" style="width:150px"><button class="b dg" type="submit" form="delform">Delete</button>{% endif %}</div>{% endif %}
 </div>
 <form method="get" action="{{ url_for(list_endpoint, **list_args) }}" class="tools">
   <input type="hidden" name="tab" value="department">
@@ -31,33 +31,35 @@
   <button class="b" type="submit">Apply</button>
 </form>
 {% if groups %}
+  {% if can_portal_admin %}<form id="delform" method="post" action="{{ url_for('bulk.delete_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ request.full_path }}">{% endif %}
   {% for g in groups %}
   <h2 style="margin-top:16px">{{ g.tab_name }}</h2>
   {% if g.kind == 'invoices' %}
   <div class="tb"><table>
-    <thead><tr><th>Share code</th><th>Invoice number</th><th>Format</th><th>Customer / title</th><th>Owner</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
+    <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th><th>Share code</th><th>Invoice number</th><th>Format</th><th>Customer / title</th><th>Owner</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in g.rows %}
-      <tr class="r"><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['customer_name'] or '—' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept_id %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['invoice_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','approved') else 'a' if r['status'] in ('draft','pending') else 'r' }}">{{ r['status']|title }}</span></td>
+      <tr class="r"><td class="selcol"><input type="checkbox" class="rowck" name="ids" value="inv:{{ r['id'] }}" aria-label="Select"></td><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['customer_name'] or '—' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept_id %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['invoice_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','approved') else 'a' if r['status'] in ('draft','pending') else 'r' }}">{{ r['status']|title }}</span></td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('invoices.detail', iid=r['id']) }}">Locate</a></td></tr>
     {% endfor %}</tbody></table></div>
   {% elif g.kind == 'requests' %}
   <div class="tb"><table>
-    <thead><tr><th>Share code</th><th>Request number</th><th>Kind</th><th>Requested by</th><th>Requested to</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
+    <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th><th>Share code</th><th>Request number</th><th>Kind</th><th>Requested by</th><th>Requested to</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in g.rows %}
-      <tr class="r"><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or '—' }}</td><td>{{ r['kind_name'] or '' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept_id %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['recipient_name'] or '—' }}</td><td>{{ r['request_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','handovered','approved') else 'r' if r['status'] == 'rejected' else 'a' }}">{{ r['status']|title }}</span></td>
+      <tr class="r"><td class="selcol"><input type="checkbox" class="rowck" name="ids" value="req:{{ r['id'] }}" aria-label="Select"></td><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or '—' }}</td><td>{{ r['kind_name'] or '' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept_id %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['recipient_name'] or '—' }}</td><td>{{ r['request_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','handovered','approved') else 'r' if r['status'] == 'rejected' else 'a' }}">{{ r['status']|title }}</span></td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('requests.detail', rid=r['id']) }}">Locate</a></td></tr>
     {% endfor %}</tbody></table></div>
   {% else %}
   <div class="tb"><table>
     <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% for c in g.cols %}<th{% if loop.index > 7 %} class="xcol"{% endif %} style="width:{{ g.widths[loop.index0] }}%">{{ c['name'] }}</th>{% endfor %}<th class="noprint"></th></tr></thead>
     <tbody>{% for r in g.rows %}{% set v = g.vmap[r['id']] %}
-      <tr class="r"><td class="selcol"><input type="checkbox" class="rowck" value="{{ r['id'] }}" aria-label="Select"></td>{% for c in g.cols %}<td{% if loop.index > 7 %} class="xcol"{% endif %}>{% if c['col_type'] == 'attachment' %}{% if g.urls and g.urls.get(r['id'], {}).get(c['id']) %}<a href="{{ g.urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
+      <tr class="r"><td class="selcol"><input type="checkbox" class="rowck" name="ids" value="row:{{ r['id'] }}" aria-label="Select"></td>{% for c in g.cols %}<td{% if loop.index > 7 %} class="xcol"{% endif %}>{% if c['col_type'] == 'attachment' %}{% if g.urls and g.urls.get(r['id'], {}).get(c['id']) %}<a href="{{ g.urls[r['id']][c['id']] }}">{{ v.get(c['id']) or '' }}</a>{% else %}{{ v.get(c['id']) or '' }}{% endif %}{% elif c['col_type'] == 'date' %}{{ (v.get(c['id']) or '')|showdt }}{% else %}{{ v.get(c['id']) or '' }}{% endif %}</td>{% endfor %}
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('ddb.index', dept=dept_id, tab=g.tab_id, page=locate_pages[r['id']]) }}#row-{{ r['id'] }}">Locate</a></td></tr>
     {% endfor %}</tbody></table>
     {% if g.cols|length > 7 %}<div class="nt">The first 7 columns are shown. Locate the row to see all fields.</div>{% endif %}</div>
   {% endif %}
   {% endfor %}
-  {% if not admin_view %}<p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>{% endif %}
+  {% if not admin_view or can_portal_admin %}<p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>{% endif %}
+  {% if can_portal_admin %}</form>{% endif %}
   {{ pager(page, pages, list_endpoint, keep) }}
 {% else %}
   <div class="tb"><div class="empty">{% if q %}Nothing matches your search.{% else %}{% if admin_view %}{{ view_user['full_name'] }} has nothing in the Department Database yet.{% else %}You have nothing in the Department Database yet. <a href="{{ url_for('ddb.index', dept=dept_id) }}">Open the Department Database</a> to add a row, an invoice or a request.{% endif %}{% endif %}</div></div>

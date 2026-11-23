@@ -6586,3 +6586,101 @@
  extract of the zip. The list was rendered to JPG and read back
  (b106-client-list.jpg) — the From and To boxes are date boxes
  and the dropdown reads "Activation".
+
+==============================================================================
+ 126. BULK DELETE WITH A PASSWORD ON EVERY RECORD PAGE, AND THE
+     DASHBOARD CHART LISTS EVERY TAB (2026-11-23)
+==============================================================================
+ From your messages of 2026-11-23: every record page should
+ have Select, Select all and Delete for the portal admin and
+ the administrative permission user, every delete should ask
+ for a password, any tab added later should get the same
+ buttons, and the dashboard Department database chart should
+ show every tab, not only invoices.
+
+ (1) SELECT, SELECT ALL AND DELETE ON EVERY RECORD PAGE.
+     The buttons are on:
+       - My records — every tab (Mine, Shared by me, Shared
+         with me, My department, Other departments). The
+         Delete button that was already in the bulk bar for
+         your own records now asks for your password (see
+         point 2). The portal admin's view of another user's
+         records now has Select, Select all and Delete too —
+         before this build that view had only a Delete button
+         on each row, no way to tick several at once.
+       - Users' records (the All records page) — the bulk
+         bar's Delete, with a password box beside it.
+       - Every Department Database tab — the regular tabs,
+         the Invoices tab and the Request items tab. Each
+         tab's rows get tick boxes, Select and Select all
+         buttons, and a password box with a Delete button.
+     The buttons are part of the shared tab pages, so any
+     tab added on the Department database page later gets
+     them on its own — nothing has to be added tab by tab.
+     A department admin or a regular user sees no Delete
+     button and no password box, and the delete route
+     refuses them (403).
+
+ (2) EVERY DELETE ASKS FOR THE PASSWORD. The password box
+     sits beside the Delete button. The password you type
+     is checked on every single delete — a fresh session
+     never stands in for it, so deleting twice in a row
+     asks twice. A wrong password, or an empty one, deletes
+     nothing and says so. This is the same password check
+     the single invoice and request deletes already use.
+
+ (3) WHAT DELETE DOES. Exactly what deleting one of the
+     item does today: the item is moved to the Recycle Bin
+     for 30 days, where it can be restored — nothing is
+     erased for good. Department Database rows: one summary
+     notification per tab, saying how many rows were
+     deleted. Invoices and item requests: nobody is told,
+     the same as when a portal admin deletes one on its
+     own. Personal records: each owner whose record was
+     deleted is told once, with the count.
+
+ (4) THE DASHBOARD CHART LISTS EVERY TAB. The Department
+     database chart counted the regular tabs and the
+     Invoices tab, but never the Request items tab or the
+     Client onboarding tab — on the live portal that left
+     the requests and the clients out of the chart entirely.
+     It now lists every tab that has rows: the regular
+     tabs, Invoices, Request items and Client onboarding,
+     and the total is the sum of the listed tabs. A tab
+     added later appears as soon as it has rows.
+
+ OPEN — DELETE ON THE CLIENT ONBOARDING TAB. The Client
+     onboarding tab has no Delete button in this zip. It
+     is the one tab where deleting has no rule yet: there
+     has never been a way to delete a client at all, so
+     nothing says what should happen to its SOFs, its
+     uploaded SAN reports, its history and its share
+     codes when it goes. Say what a deleted client should
+     do and it will be built.
+
+ OPEN — ONE-BY-ONE DELETES AND THE PASSWORD. The new bulk
+     Delete asks for the password every time. Deleting a
+     single Department Database row or a single personal
+     record still does not ask for one (deleting a single
+     invoice or request already does). Say if those should
+     ask too.
+
+ OPEN, carried forward from build 105: (g) the SOF-edit
+     workflow rework (Revenue Assurance forward step, SAN
+     re-upload for the edited SOF, Revenue Assurance
+     date-edit stage, forward to Finance); (h) the
+     Department Database All-rows column picker; the
+     narrow centred forms (the small centred boxes will
+     not visibly widen under the 1560px page size);
+     whether the 07:00 signature reminder arrives at
+     07:00 Dhaka; whether accounts_user is gone and the
+     Accounts department deleted.
+
+ Tested: 202 client-flow checks and the full 661/661
+ regression suite against real MySQL 8.0, on the work copy
+ and on a fresh extract of the zip. CSS audit: 0 parse
+ errors, 150 defined classes. Renders read back: the
+ Department Database tab (Select, Select all, password box
+ and Delete beside the tab pills) and the dashboard
+ (Sales & Marketing 18 rows — Vendor List 2, Invoices 2,
+ Request items 1, Client onboarding 13).

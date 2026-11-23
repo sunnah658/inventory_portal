@@ -1613,9 +1613,11 @@ def dept_colours(db):
 
 def ddb_dashboard_data(db):
     """Per-department Department Database totals + per-tab row counts, for the
-    dashboard widget. Only active tabs with rows, plus the Invoices tab when
-    the department has invoices. The total is the sum of the listed tabs, so
-    the pie slices and the breakdown always agree."""
+    dashboard widget. Every tab with rows is listed: the regular tabs, the
+    Invoices tab, the Request items tab and the Client onboarding tab. A tab
+    added later appears on its own as soon as it has rows, because the
+    regular tabs are read straight from ddb_tabs. The total is the sum of
+    the listed tabs, so the pie slices and the breakdown always agree."""
     tabs = db.execute(
         "SELECT t.department_id, t.name, COUNT(r.id) AS n FROM ddb_tabs t "
         "LEFT JOIN ddb_rows r ON r.tab_id=t.id AND r.deleted_at IS NULL "
@@ -1623,6 +1625,11 @@ def ddb_dashboard_data(db):
         "ORDER BY t.department_id, t.position").fetchall()
     inv = {r["department_id"]: r["n"] for r in db.execute(
         "SELECT department_id, COUNT(*) AS n FROM invoices GROUP BY department_id").fetchall()}
+    req = {r["department_id"]: r["n"] for r in db.execute(
+        "SELECT department_id, COUNT(*) AS n FROM item_requests WHERE deleted_at IS NULL "
+        "GROUP BY department_id").fetchall()}
+    cli = {r["department_id"]: r["n"] for r in db.execute(
+        "SELECT department_id, COUNT(*) AS n FROM client_onboardings GROUP BY department_id").fetchall()}
     out = []
     for d in db.execute("SELECT id, name FROM departments ORDER BY name").fetchall():
         tab_list = [{"name": t["name"], "n": t["n"]}
@@ -1630,6 +1637,12 @@ def ddb_dashboard_data(db):
         inv_n = inv.get(d["id"], 0)
         if inv_n:
             tab_list.append({"name": "Invoices", "n": inv_n})
+        req_n = req.get(d["id"], 0)
+        if req_n:
+            tab_list.append({"name": "Request items", "n": req_n})
+        cli_n = cli.get(d["id"], 0)
+        if cli_n:
+            tab_list.append({"name": "Client onboarding", "n": cli_n})
         out.append({"dept_id": d["id"], "name": d["name"],
                     "total": sum(t["n"] for t in tab_list), "tabs": tab_list})
     return out

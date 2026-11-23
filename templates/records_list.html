@@ -26,7 +26,7 @@
 <div class="tabs">
   {% for t in tabs %}<a class="tab {{ 'on' if tab == t }}" href="{{ url_for(list_endpoint, tab=t, **list_args) }}">{{ {'mine': 'Mine', 'shared_by_me': 'Shared by me', 'shared_with_me': 'Shared with me', 'department': 'My department', 'viewing': 'Other departments'}[t] }} · {{ counts[t] }}</a>{% endfor %}
 </div>
-{% if not admin_view %}<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>{% endif %}
+{% if not admin_view or can_portal_admin %}<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button></div>{% endif %}
 </div>
 {% if tab == 'mine' and not admin_view %}
 <details class="card" style="margin-bottom:12px"><summary class="b">Columns</summary>
@@ -50,9 +50,9 @@
 {% endif %}
 {{ listbar(list_endpoint, bar_hidden, q, info, names) }}
 {% if ctx.groups %}
-  {% if not admin_view %}{{ bulkbar(departments) }}{% endif %}
-  {{ groups_table(ctx, 'mine' if tab in ('mine', 'shared_by_me') else 'shared', not admin_view, True, admin_view, admin_next) }}
-  {% if not admin_view %}<p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>{% endif %}
+  {% if not admin_view or can_portal_admin %}{{ bulkbar(departments) }}{% endif %}
+  {{ groups_table(ctx, 'mine' if tab in ('mine', 'shared_by_me') else 'shared', not admin_view or can_portal_admin, True, admin_view, admin_next) }}
+  {% if not admin_view or can_portal_admin %}<p class="selcount"><b><span class="selcount-text">No rows selected</span></b> · Export and Print will use only the selected rows.</p>{% endif %}
   {{ pager(page, pages, list_endpoint, keep) }}
 {% else %}
   <div class="tb"><div class="empty">{% if q or info.fval %}Nothing matches your search.{% elif tab == 'mine' %}{% if admin_view %}{{ view_user['full_name'] }} has no records yet.{% else %}You have no records yet. Click "Add record" to start.{% endif %}{% else %}Nothing here yet.{% endif %}</div></div>

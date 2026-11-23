@@ -9,12 +9,13 @@ from datetime import date, timedelta
 from urllib.parse import parse_qsl, urlencode
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from werkzeug.security import check_password_hash
 
 import config
 import exports
 from auth import admin_required, login_required
-from core import (display_record_value, record_columns, MANAGE_LEVELS, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, dept_member_ids,
-                  get_record, notify, rec_select, reminder_rows, search_clause, soft_delete,
+from core import (display_record_value, record_columns, MANAGE_LEVELS, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, ddb_can_delete_row, ddb_history, dept_member_ids,
+                  get_record, notify, notify_ddb_task, rec_select, reminder_rows, search_clause, soft_delete,
                   summaries_for, values_for)
 from models import get_db, log, setting_get
 from routes_admin import _record_filters
@@ -73,8 +74,24 @@ def bulk():
         db.commit()
         flash(f"{len(mine)} record(s) shared ({PERM_WORDS[perm]}). Records you do not own were skipped.", "ok")
     elif action == "delete":
+        # Build 107: every delete asks for the password — the password
+        # typed here is checked on every delete, never a fresh session.
+        password = request.form.get("admin_password") or ""
+        if not password or not check_password_hash(g.user["password_hash"], password):
+            flash("Wrong password. Nothing was deleted.", "error")
+            return redirect(back)
         for rec in mine:
             soft_delete(db, g.user, rec)
+        # The owner of each deleted record is told once, with the count
+        # (the single delete tells the owner about that one record).
+        owners = {}
+        for rec in mine:
+            if rec["owner_id"] != g.user["id"]:
+                owners.setdefault(rec["owner_id"], []).append(rec)
+        for owner_id, recs in owners.items():
+            notify(db, [owner_id],
+                   f"{g.user['full_name']} deleted {len(recs)} of your record(s).",
+                   url_for("records.bin_page"))
         log(db, "bulk_delete", f"{len(mine)} records")
         db.commit()
         flash(f"{len(mine)} record(s) moved to the recycle bin.", "ok")
@@ -91,6 +108,86 @@ def bulk():
                                   _company(db), "selected_records")
     else:
         abort(400)
+    return redirect(back)
+
+
+@bp.route("/bulk/delete-selected", methods=["POST"])
+@login_required
+def delete_selected():
+    """Delete the ticked Department Database rows, invoices and item
+    requests (build 107). Only the portal admin and administrative
+    permission users see the Delete button, and every delete asks for
+    their own password, typed fresh each time — a fresh session never
+    stands in for it. Each item is soft-deleted to the Recycle Bin,
+    exactly as deleting one of it does: a portal admin deleting tells
+    nobody about an invoice or a request, and the rows get one summary
+    notification per tab instead of one per row."""
+    db = get_db()
+    back = _safe_back(request.form.get("back"))
+    if not is_portal_admin(g.user):
+        abort(403)
+    password = request.form.get("admin_password") or ""
+    if not password or not check_password_hash(g.user["password_hash"], password):
+        flash("Wrong password. Nothing was deleted.", "error")
+        return redirect(back)
+    kind = request.form.get("kind") or ""
+    counts = {"row": 0, "inv": 0, "req": 0}
+    row_groups = {}
+    for raw in request.form.getlist("ids"):
+        raw = (raw or "").strip()
+        if ":" in raw:
+            k, num = raw.split(":", 1)
+        else:
+            k, num = kind, raw
+        if k not in counts or not num.isdigit():
+            continue
+        iid = int(num)
+        if k == "row":
+            row = db.execute("SELECT * FROM ddb_rows WHERE id=?", (iid,)).fetchone()
+            if row is None or row["deleted_at"] or not ddb_can_delete_row(db, g.user, row):
+                continue
+            db.execute("UPDATE ddb_rows SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
+                       (g.user["id"], iid))
+            ddb_history(db, iid, g.user, "deleted")
+            counts["row"] += 1
+            row_groups.setdefault((row["department_id"], row["tab_id"]), 0)
+            row_groups[(row["department_id"], row["tab_id"])] += 1
+        elif k == "inv":
+            inv = db.execute("SELECT * FROM invoices WHERE id=?", (iid,)).fetchone()
+            if inv is None or inv["deleted_at"]:
+                continue
+            db.execute("UPDATE invoices SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
+                       (g.user["id"], iid))
+            log(db, "invoice_deleted", inv["number"] or "draft")
+            counts["inv"] += 1
+        elif k == "req":
+            req = db.execute("SELECT * FROM item_requests WHERE id=?", (iid,)).fetchone()
+            if req is None or req["deleted_at"]:
+                continue
+            db.execute("UPDATE item_requests SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
+                       (g.user["id"], iid))
+            log(db, "item_request_deleted", req["number"] or "request")
+            counts["req"] += 1
+    for (dept_id, tab_id), n in row_groups.items():
+        dept = db.execute("SELECT * FROM departments WHERE id=?", (dept_id,)).fetchone()
+        tab = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (tab_id,)).fetchone() if tab_id else None
+        notify_ddb_task(db, g.user, dept,
+                        f"{g.user['full_name']} deleted {n} row(s) from the tab '{tab['name'] if tab else ''}' in {dept['name']}.",
+                        url_for("ddb.index", dept=dept_id, tab=tab_id if tab else None))
+    total = sum(counts.values())
+    if total == 0:
+        flash("Nothing was deleted. Tick at least one row first.", "error")
+        return redirect(back)
+    log(db, "bulk_delete_selected", f"{counts['row']} row(s), {counts['inv']} invoice(s), {counts['req']} request(s)")
+    db.commit()
+    parts = []
+    if counts["row"]:
+        parts.append(f"{counts['row']} row(s)")
+    if counts["inv"]:
+        parts.append(f"{counts['inv']} invoice(s)")
+    if counts["req"]:
+        parts.append(f"{counts['req']} request(s)")
+    flash(f"Moved {total} item(s) to the Recycle Bin ({', '.join(parts)}).", "ok")
     return redirect(back)
 
 
