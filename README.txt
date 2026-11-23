@@ -6411,3 +6411,141 @@
  the user card (b104-popup.jpg). 161 client-flow checks and the
  full 643/643 regression suite against real MySQL 8.0, on the work
  copy and on a fresh extract of the zip.
+
+==============================================================================
+ 124. EVERY PAGE WIDER, CENTRED USER MENU, SHORT SAN LABEL, SAME-SIZE
+     CONTACT BOX, ONE SAN REPORT PER SOF, APPROVAL NOTICE FIX, SOF
+     COLUMNS AND SOF VIEW PAGE (2026-11-23)
+==============================================================================
+ Eight things from your photos and messages of 2026-11-23. The first
+ six are built; the last two are NOT built yet — they are listed as
+ OPEN below, and the old behaviour stays until you answer the
+ questions.
+
+ (1) EVERY PAGE AT THE CLIENT-LIST SIZE. You said: not just the
+     Client onboarding page — every page should look like the
+     Client onboarding page size. The page width is now 1560px on
+     every page (it was 1400px), and the side rail is 280px on
+     every page. The separate "wide" rules for the client list are
+     gone, because the base rules are now the same size.
+
+ (2) USER MENU CENTRED. You said: when you click the user name,
+     the pop-up goes slightly to the right, it should be in the
+     middle. The cause was not the zoom: the sidebar carries a
+     backdrop blur, and a blurred element becomes the measuring
+     point for a fixed pop-up inside it, so the old pop-up was
+     measured from the sidebar's edge and sat about 21px right of
+     centre with a small overhang — exactly what your photo
+     showed. The menu is now positioned inside the sidebar and
+     centred over the user card, with your name still visible
+     below it. (On a phone it is still the full-width sheet at
+     the top.)
+
+ (3) SHORT SAN LABEL. The Flow pill for a client waiting after
+     the SAN upload wrapped to four lines. It now reads
+     "SAN report uploaded - waiting for Revenue Assurance" — in
+     the list, in the status filter and in the flow list on the
+     client page.
+
+ (4) CONTACT BOX THE SAME SIZE AS THE ACCOUNT MANAGER'S BOX.
+     On the New client form the contact box looked narrower than
+     the account manager's box. The cause: the contact box's
+     Remove button sat inside the box, and a box that holds a
+     floating button is squeezed narrower by the button's width.
+     The Remove button now sits on its own row above the fields,
+     on the contact rows and on the service rows, so both boxes
+     are exactly the same width.
+
+ (5) ONE SAN REPORT PER SOF. Each SOF gets its own SAN report,
+     uploaded by Transmission, Core or Technical support once
+     Revenue Assurance has forwarded the client. The client
+     counts as SAN-uploaded only when EVERY SOF has its report.
+     Revenue Assurance can set a SOF's activation date as soon
+     as that SOF's report is up (the date is set after all the
+     reports are in, as before, because the client only reaches
+     "SAN uploaded" when every SOF has one). Forward to Finance
+     still needs a date on every SOF. Clients that already have
+     the one client-level SAN keep it: on upgrade it is copied
+     onto each of their SOFs. Once a SOF's SAN is uploaded it
+     cannot be replaced; only the portal admin can remove one
+     while the client is not completed. One change from the old
+     client-level remove: removing a SAN now sends the client
+     back to "forwarded", where it came from — the old code sent
+     it back to "approved", which was wrong. The old
+     client-level SAN upload, remove and download addresses are
+     gone; the client page now has one "SAN reports" card with
+     one block per SOF.
+
+ (6) APPROVAL NOTICE FIXED. You asked why the first notification
+     went to everyone, when it should only go to Revenue
+     Assurance. The cause: when the Sales admin approved a
+     client, the message telling Revenue Assurance to forward
+     it was sent to Revenue Assurance AND to the watchers (the
+     account manager and the Sales admin), so the sales user
+     got both the plain "client was approved" notice and the
+     Revenue Assurance instruction. The instruction now goes to
+     Revenue Assurance users only; the account manager and the
+     Sales admin still get the plain approval notice, once each.
+
+ (7) SOF TABLE COLUMNS AND VIEW PAGE. The Services table now
+     has a Termination date column and a Commercial impact date
+     column after the Activation date, and the small termination
+     line under the service is gone (the reason moved with it).
+     There is a View button on the right of each SOF row, before
+     Edit. It opens a page for that one SOF with every detail:
+     number, service, type, description, activation date,
+     termination date, commercial impact date, termination
+     reason, status, the uploaded SOF file, share code, its SAN
+     report, and the history of that SOF. This adds one new
+     template file, templates/sof_view.html.
+
+ OPEN — (8) THE SOF-EDIT WORKFLOW. You described the correct
+     flow after a sales user edits a SOF: the change goes to the
+     Sales admin for approval with a proper notification, then
+     to Revenue Assurance as view only, then RA forwards it to
+     Transmission, Core and Technical support, they re-upload
+     the SAN for that specific edited SOF, RA and Sales are
+     notified of the upload, then RA can edit the termination
+     date and commercial impact date if they want, then forward
+     it to Finance — the same process if the sales user edits
+     anything else on the SOF. This is NOT built in this zip:
+     the edited-SOF flow is still the build 102 one (the SOF
+     goes pending after the Sales admin approves, and Revenue
+     Assurance sets its activation date — there is no RA
+     forward step, no SAN re-upload step, no RA date-edit
+     stage and no forward-to-Finance step for an edited SOF).
+     The three questions from the confirmation are still
+     open: who can edit a SOF (account manager only, or the
+     client owner too); can RA reject the change at the
+     forward stage, or only forward it; and can RA change the
+     activation date at the date-edit stage (a newly added SOF
+     has none yet).
+
+ OPEN — (9) DEPARTMENT DATABASE COLUMN PICKER. You asked for
+     an option where the Sales admin can edit which columns
+     are visible on the Department Database tabs' All-rows
+     summary. This is NOT built in this zip. The portal already
+     has a per-column "Shown in forms, lists and CSV" tick on
+     the column edit page, but that hides the column
+     everywhere, one column at a time — it is not a picker for
+     the All-rows summary. The questions from the confirmation
+     are still open: All-rows only, or My rows too; per tab,
+     each tab its own set; and who — the department admin for
+     their own department's tabs, portal admin for any.
+
+ OPEN — NARROW CENTRED FORMS. The form pages with a centred
+     inner box (for example the small 460px forms) will NOT
+     visibly widen under the new 1560px page size, because the
+     box itself is still 460px wide. They are left as they
+     are in this zip. Say if you want those centred forms
+     widened too.
+
+ Tested: 177 client-flow checks and the full 646/646 regression
+ suite against real MySQL 8.0, on the work copy and on a fresh
+ extract of the zip. CSS audit: 0 parse errors, 150 defined
+ classes; the new template uses only existing classes. Renders
+ read back: the client list (short SAN label), the client
+ detail (Termination and Commercial impact columns, View
+ buttons, the SAN reports card), the SOF page, the form page
+ (contact box the same width as the account manager's box),
+ the dashboard and the user menu centred over the user card.

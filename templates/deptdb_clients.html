@@ -2,11 +2,10 @@
 {% from "_macros.html" import pager with context %}
 {% from "_design6.html" import kpi, quick_card with context %}
 {% block title %}Department database · Client onboarding{% endblock %}
-{% block mainclass %}wide{% endblock %}
 {% block content %}
 <div class="hd">
   <div><h1>{{ dept['name'] }} database · Client onboarding</h1>
-    <p class="hint">Sales fills the client, its contacts and its services (SOF) and saves; the Sales admin approves or rejects. Once approved, Revenue Assurance sees the client first, then Transmission, Core and Technical support see the full record and one of them uploads the SAN report. Revenue Assurance sets the activation date and Finance receives the final record.</p></div>
+    <p class="hint">Sales fills the client, its contacts and its services (SOF) and saves; the Sales admin approves or rejects. Once approved, Revenue Assurance sees the client first, then Transmission, Core and Technical support see the full record and each SOF gets its own SAN report from one of them. Revenue Assurance sets the activation date and Finance receives the final record.</p></div>
   <div class="acts">
     {% if can_create %}<a class="b p" href="{{ url_for('clients.new') }}">+ New client</a>{% endif %}
     {% if can_form_setup %}<a class="b" href="{{ url_for('clients.form_setup') }}">Form setup</a>{% endif %}
@@ -20,7 +19,7 @@
   {{ kpi('Waiting for approval', counts.pending) }}
   {{ kpi('Completed', counts.completed) }}
 </div>
-<div class="tw wide"><div>
+<div class="tw"><div>
 <form class="tools" method="get" action="{{ url_for('ddb.index') }}">
   <input type="hidden" name="tab" value="clients">{% if keep.dept %}<input type="hidden" name="dept" value="{{ keep.dept }}">{% endif %}
   <input type="hidden" name="view" value="{{ view }}">

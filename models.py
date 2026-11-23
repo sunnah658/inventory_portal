@@ -885,6 +885,9 @@ CREATE TABLE IF NOT EXISTS client_services (
     public_code VARCHAR(255),
     public_enabled INT NOT NULL DEFAULT 1,
     public_views INT NOT NULL DEFAULT 0,
+    san_file   TEXT,
+    san_by     INT,
+    san_at     DATETIME,
     FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1177,6 +1180,24 @@ def _upgrade_sof_dates(conn):
                      (_c["activation_date"], _c["id"]))
 
 
+def _upgrade_sof_san(conn):
+    """Build 105 gives every SOF its own SAN report (build 105). A client
+    that already has the one client-level SAN report keeps it: the file is
+    copied onto each of its SOFs that has none yet, so nothing changes for
+    clients like CL-0003. The client-level columns stay in the database
+    (history); the upload itself is per SOF from here on."""
+    if "san_file" not in _columns(conn, "client_services"):
+        return
+    if "san_file" not in _columns(conn, "client_onboardings"):
+        return
+    rows = conn.execute("SELECT id, san_file, san_by, san_at FROM client_onboardings"
+                        " WHERE san_file IS NOT NULL").fetchall()
+    for _c in rows:
+        conn.execute("UPDATE client_services SET san_file=?, san_by=?, san_at=?"
+                     " WHERE client_id=? AND san_file IS NULL",
+                     (_c["san_file"], _c["san_by"], _c["san_at"], _c["id"]))
+
+
 def _upgrade_client_status(conn):
     """Build 89: the client flow gained the "forwarded" status (Revenue
     Assurance forwards an approved client to Transmission, Core and
@@ -1439,10 +1460,14 @@ def init_db():
         _ensure_column(conn, "client_services", "public_code", "VARCHAR(255)")  # the SOF's own share code HRC-##### for the QR on its PDF
         _ensure_column(conn, "client_services", "public_enabled", "INT NOT NULL DEFAULT 1")
         _ensure_column(conn, "client_services", "public_views", "INT NOT NULL DEFAULT 0")
+        _ensure_column(conn, "client_services", "san_file", "TEXT")  # this SOF's own SAN report (2026-11-23)
+        _ensure_column(conn, "client_services", "san_by", "INT")
+        _ensure_column(conn, "client_services", "san_at", "DATETIME")
         _seed_client_form_fields(conn)
         _upgrade_sof_type_fields(conn)
         _upgrade_sof_status(conn)
         _upgrade_sof_dates(conn)
+        _upgrade_sof_san(conn)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")

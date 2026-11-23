@@ -57,15 +57,6 @@
 </div>
 {% endif %}
 
-{% if perm.upload_san %}
-<div class="card"><h2>Upload the SAN report</h2>
-  <p class="hint">Only one SAN report can be uploaded for this client, by any one of Transmission, Core or Technical support. Revenue Assurance and Sales receive it at once.</p>
-  <form method="post" action="{{ url_for('clients.san_upload', cid=c['id']) }}" enctype="multipart/form-data" onsubmit="return confirm('Only one SAN report can be uploaded. Upload this file?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="fd"><input name="san_file" type="file" required></div>
-    <button class="b p" type="submit">Upload SAN report</button></form>
-</div>
-{% endif %}
-
 {% if perm.forward_finance %}
 <div class="card"><h2>Forward to Finance</h2>
   <p class="hint">Send the finished record to Finance. Only then can Finance see it.{% if not perm.sof_dated %} Set the activation date on every SOF first.{% endif %}</p>
@@ -105,21 +96,33 @@
     </div>{% endif %}</div>{% endfor %}</div>{% endif %}
 
 <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2>Services (SOF)</h2>{% if perm.add_services %}<a class="b sm noprint" href="{{ url_for('clients.edit', cid=c['id']) }}">+ Add services</a>{% endif %}</div>
-  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Type</th>{% if 'sof_details' in fmap %}<th>Details</th>{% endif %}{% for fld in fields[3] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}<th>Activation date</th><th>Status</th><th class="noprint">Download SOF</th><th class="noprint"></th></tr></thead><tbody>
-    {% for s, f in sof %}<tr class="r"><td><b>{{ s['sof_number'] }}</b></td><td>{{ s['service'] }}{% if s['service_description'] %}<br><small style="color:var(--soft)">{{ s['service_description'] }}</small>{% endif %}{% if s['termination_date'] %}<br><small>Terminated {{ (s['termination_date']|string)[:10] }}{% if s['commercial_impact_date'] %} · Commercial impact {{ (s['commercial_impact_date']|string)[:10] }}{% endif %}{% if s['termination_reason'] %} · {{ s['termination_reason'] }}{% endif %}</small>{% endif %}</td><td>{{ s['service_type'] or '—' }}</td>{% if 'sof_details' in fmap %}<td style="white-space:pre-wrap">{{ s['details'] or '' }}</td>{% endif %}
+  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Type</th>{% if 'sof_details' in fmap %}<th>Details</th>{% endif %}{% for fld in fields[3] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}<th>Activation date</th><th>Termination date</th><th>Commercial impact date</th><th>Status</th><th class="noprint">Download SOF</th><th class="noprint"></th></tr></thead><tbody>
+    {% for s, f in sof %}<tr class="r"><td><b>{{ s['sof_number'] }}</b></td><td>{{ s['service'] }}{% if s['service_description'] %}<br><small style="color:var(--soft)">{{ s['service_description'] }}</small>{% endif %}</td><td>{{ s['service_type'] or '—' }}</td>{% if 'sof_details' in fmap %}<td style="white-space:pre-wrap">{{ s['details'] or '' }}</td>{% endif %}
       {% for fld in fields[3] %}{% if not fld.is_default %}<td>{{ custom.get(('service', s['id'], fld.id), '') }}</td>{% endif %}{% endfor %}
       <td>{% if perm.sof_activation %}<span class="print-only">{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}</span><form class="noprint" method="post" action="{{ url_for('clients.sof_activation', cid=c['id'], sid=s['id']) }}" style="display:flex;gap:4px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="activation_date" type="date" required value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" style="max-width:150px"><button class="b sm" type="submit">Save</button></form>{% else %}{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}{% endif %}</td>
+      <td>{{ (s['termination_date']|string)[:10] if s['termination_date'] else '—' }}</td>
+      <td>{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '—' }}</td>
       <td><span class="s {{ 'g' if s['status'] == 'activated' else 'r' if s['status'] == 'terminated' else 'a' }}">{{ sof_status_label[s['status']] }}</span></td>
       <td class="noprint">{% if f %}<a class="b sm" href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">Download SOF</a>{% else %}—{% endif %}</td>
-      <td class="noprint">{% if perm.add_services and (s['status'] == 'activated' or perm.portal_admin) %}<a class="b sm" href="{{ url_for('clients.sof_edit', cid=c['id'], sid=s['id']) }}">Edit</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+      <td class="noprint"><a class="b sm" href="{{ url_for('clients.sof_view', cid=c['id'], sid=s['id']) }}">View</a>{% if perm.add_services and (s['status'] == 'activated' or perm.portal_admin) %} <a class="b sm" href="{{ url_for('clients.sof_edit', cid=c['id'], sid=s['id']) }}">Edit</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
   {% else %}<p class="hint">No services.</p>{% endif %}</div>
 
-<div class="card"><h2>SAN report</h2>
-  {% if san %}
-    <p><a class="b" href="{{ url_for('clients.san_download', cid=c['id']) }}">Download {{ san['original'] }}</a></p>
-    <p class="hint">Uploaded by {{ c['san_name'] or '—' }} · {{ c['san_at']|showdttz }}</p>
-    {% if perm.remove_san %}<form method="post" action="{{ url_for('clients.san_remove', cid=c['id']) }}" onsubmit="return confirm('Remove the SAN report so a new one can be uploaded?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove (portal admin)</button></form>{% endif %}
-  {% else %}<p class="hint">{% if c['status'] in ('pending','rejected') %}Not available until the client is approved.{% else %}Not uploaded yet.{% endif %}</p>{% endif %}
+<div class="card"><h2>SAN reports</h2>
+  <p class="hint">Each SOF has its own SAN report, uploaded by Transmission, Core or Technical support once Revenue Assurance forwards the client. The client counts as SAN-uploaded only when every SOF has one.</p>
+  {% if sof %}
+    {% for s, f in sof %}<div style="border-top:1px solid var(--line);padding:10px 0">
+      <p style="margin:0 0 6px"><b>SOF {{ s['sof_number'] }}</b> · {{ s['service'] }}</p>
+      {% if san_perm[s['id']]['san'] %}
+        <p style="margin:0 0 4px"><a class="b sm" href="{{ url_for('clients.sof_san_download', cid=c['id'], sid=s['id']) }}">Download {{ san_perm[s['id']]['san']['original'] }}</a>
+        <span class="hint">Uploaded by {{ san_perm[s['id']]['by'] or '—' }} · {{ s['san_at']|showdttz }}</span></p>
+        {% if san_perm[s['id']]['remove'] %}<form method="post" action="{{ url_for('clients.sof_san_remove', cid=c['id'], sid=s['id']) }}" onsubmit="return confirm('Remove the SAN report for SOF {{ s['sof_number'] }} so a new one can be uploaded?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove (portal admin)</button></form>{% endif %}
+      {% elif san_perm[s['id']]['upload'] %}
+        <form method="post" action="{{ url_for('clients.sof_san_upload', cid=c['id'], sid=s['id']) }}" enctype="multipart/form-data" onsubmit="return confirm('Upload this SAN report for SOF {{ s['sof_number'] }}?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="fd" style="margin-bottom:8px"><input name="san_file" type="file" required></div>
+          <button class="b sm p" type="submit">Upload SAN report</button></form>
+      {% else %}<p class="hint" style="margin:0">Not uploaded yet.</p>{% endif %}
+    </div>{% endfor %}
+  {% else %}<p class="hint">No services.</p>{% endif %}
 </div>
 
 <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2>History</h2>{% if history %}<button class="b sm noprint" type="button" onclick="var d=document.getElementById('histBody');d.hidden=!d.hidden;this.textContent=d.hidden?'Show history':'Hide history';">Show history</button>{% endif %}</div>

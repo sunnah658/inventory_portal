@@ -1,4 +1,21 @@
 ==============================================================================
+ EVERY PAGE WIDER, CENTRED USER MENU, SHORT SAN LABEL, SAME-SIZE
+ CONTACT BOX, ONE SAN REPORT PER SOF, APPROVAL NOTICE FIX, SOF
+ COLUMNS AND SOF VIEW PAGE (2026-11-23)
+==============================================================================
+ Every page is now the Client onboarding page's size (1560px), the
+ user menu is centred over the user card, the SAN-uploaded label is
+ short, the contact box on the New client form is the same width as
+ the account manager's box, and each SOF gets its own SAN report —
+ the client counts as SAN-uploaded only when every SOF has one.
+ The approval notice that told Revenue Assurance to forward a
+ client no longer goes to everyone; the Services table has
+ Termination date and Commercial impact date columns; and each SOF
+ has a View button opening a page with all its details. Two things
+ are NOT in this zip and stay as they were: the SOF-edit workflow
+ rework and the Department Database column picker — both are listed
+ as OPEN in README section 124, waiting on your answers.
+==============================================================================
  DASHBOARD CHARTS, WIDER CLIENT LIST, USER MENU, LOGO AND MONTH RANGE
  (2026-11-23)
 ==============================================================================

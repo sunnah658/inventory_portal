@@ -70,7 +70,7 @@ STATUS_LABEL = {
     "rejected": "Rejected",
     "approved": "Approved · waiting for Revenue Assurance",
     "forwarded": "Forwarded by Revenue Assurance · waiting for SAN report",
-    "san_uploaded": "SAN report uploaded · waiting for activation date and forward to Finance",
+    "san_uploaded": "SAN report uploaded - waiting for Revenue Assurance",
     "completed": "Completed",
 }
 ALL_STATUSES = tuple(STATUS_LABEL)
@@ -251,9 +251,6 @@ def _perms(db, user, roles, c):
         "edit": (status == "rejected" and (owner or sales_admin))
                 or (status == "pending" and am),
         "forward": status == "approved" and _is_ra_admin(db, user),
-        "upload_san": status == "forwarded" and not c["san_file"]
-                      and (bool(roles.intersection(SAN_ROLES)) or is_portal_admin(user)),
-        "remove_san": bool(c["san_file"]) and status == "san_uploaded" and is_portal_admin(user),
         "sof_activation": status in ("san_uploaded", "completed") and _is_ra_admin(db, user),
         "forward_finance": status == "san_uploaded" and _is_ra_admin(db, user) and sof_ok,
         # The route itself (not the button): an RA admin posting while a SOF
@@ -453,7 +450,8 @@ def client_tab_view(db, dept, is_admin, args):
     todo_parts.append("(c.status='rejected' AND c.owner_id=?)")
     todo_params.append(g.user["id"])
     if roles.intersection(SAN_ROLES) or is_portal_admin(g.user):
-        todo_parts.append("(c.status='forwarded' AND c.san_file IS NULL)")
+        # A forwarded client needs a SAN report for every SOF that has none yet (build 105).
+        todo_parts.append("(c.status='forwarded' AND EXISTS (SELECT 1 FROM client_services s WHERE s.client_id=c.id AND s.san_file IS NULL))")
     if "revenue_assurance" in roles:
         todo_parts.append("c.status IN ('approved','san_uploaded')")
     todo_sql = "(" + " OR ".join(todo_parts) + ")"
@@ -587,7 +585,7 @@ def _timeline(db, c):
          "now" if st == "approved" else "done" if st in FORWARDED_STATES else "todo"),
         (f"{names['transmission']}, {names['core']}, {names['technical']}", "View the full record",
          "done" if st in FORWARDED_STATES else "todo"),
-        ("SAN report uploaded", "One upload only, by any of those three departments",
+        ("SAN report uploaded", "One upload per SOF, by any of those three departments",
          "done" if st in ("san_uploaded", "completed") else "now" if st == "forwarded" else "todo"),
         (f"{names['revenue_assurance']} and {names['sales']} receive the SAN report", "",
          "done" if st in ("san_uploaded", "completed") else "todo"),
@@ -607,7 +605,17 @@ def detail(cid):
     contacts = db.execute("SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()
     services = db.execute("SELECT * FROM client_services WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()
     history = db.execute("SELECT * FROM client_history WHERE client_id=? ORDER BY id DESC", (cid,)).fetchall()
-    san = _file_info(c["san_file"])
+    # One SAN report per SOF (build 105): each SOF's file, who uploaded it,
+    # and whether this viewer may upload or remove it, keyed by the SOF's id.
+    san_perm = {}
+    for s in services:
+        _by = None
+        if s["san_by"]:
+            _u = db.execute("SELECT full_name FROM users WHERE id=?", (s["san_by"],)).fetchone()
+            _by = _u["full_name"] if _u else None
+        san_perm[s["id"]] = {"san": _file_info(s["san_file"]), "by": _by,
+                             "upload": _can_upload_sof_san(g.user, roles, c, s),
+                             "remove": _can_remove_sof_san(g.user, c, s)}
     _fields = {p: _form_fields(db, p) for p in (1, 2, 3)}
     # Build 102: the SOF changes waiting for the Sales admin to approve,
     # with the field-by-field change already worked out for the page.
@@ -623,7 +631,7 @@ def detail(cid):
                       "change": _sof_new_text(new) if not e["service_id"] else _sof_change_text(old, new)})
     return render_template(
         "client_detail.html", c=c, contacts=contacts, services=services, history=history,
-        sof=[(s, _file_info(s["sof_file"])) for s in services], san=san,
+        sof=[(s, _file_info(s["sof_file"])) for s in services], san_perm=san_perm,
         perm=_perms(db, g.user, roles, c), timeline=_timeline(db, c),
         fields=_fields,
         fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
@@ -1193,7 +1201,10 @@ def approve(cid):
         notify(db, {c["owner_id"]} | _client_watchers(db, c), text, _link(cid), skip=g.user["id"])
         # Revenue Assurance sees it first (view only). The three technical departments
         # see it only once Revenue Assurance forwards it, so they are told then.
-        notify(db, set(_members(db, "revenue_assurance")) | _client_watchers(db, c),
+        # The forward/reject instruction goes to Revenue Assurance only (build 105):
+        # the watchers already got the plain message above, and telling the
+        # account manager to forward it was showing them Revenue Assurance's job.
+        notify(db, set(_members(db, "revenue_assurance")),
                text + " You can view it (view only). Forward it to Transmission, Core and Technical support when ready, or reject it with a reason.",
                _link(cid), skip=g.user["id"])
         db.commit()
@@ -1249,7 +1260,7 @@ def ra_decision(cid):
             log(db, "client_forward", f"{client_no(cid)} {c['client_name']}")
             text = f"The client '{c['client_name']}' was forwarded by Revenue Assurance."
             for role in SAN_ROLES:
-                notify(db, _members(db, role), text + " View the record; one of you uploads the SAN report.",
+                notify(db, _members(db, role), text + " View the record; each SOF needs its own SAN report from one of you.",
                        _link(cid), skip=g.user["id"])
             # The account manager and the Sales admin are told once, not
             # once per technical department (build 96).
@@ -1287,13 +1298,30 @@ def ra_decision(cid):
     return redirect(_link(cid))
 
 
-# ---------------------------------------------------------------- SAN report: one upload only
-@bp.route("/<int:cid>/san", methods=["POST"])
+# ---------------------------------------------------------------- SAN report: one per SOF (build 105)
+def _can_upload_sof_san(user, roles, c, s):
+    """A SAN report can be uploaded for this SOF: the client was forwarded,
+    this SOF has none yet, and the uploader is Transmission, Core or
+    Technical support (or the portal admin)."""
+    return c["status"] == "forwarded" and not s["san_file"] \
+        and (bool(roles.intersection(SAN_ROLES)) or is_portal_admin(user))
+
+
+def _can_remove_sof_san(user, c, s):
+    """The portal admin can remove one SOF's SAN report while the client
+    is not completed (build 105)."""
+    return bool(s["san_file"]) and c["status"] != "completed" and is_portal_admin(user)
+
+
+@bp.route("/<int:cid>/sof/<int:sid>/san", methods=["POST"])
 @login_required
-def san_upload(cid):
+def sof_san_upload(cid, sid):
     db, c, roles = _load(cid)
-    if not _perms(db, g.user, roles, c)["upload_san"]:
-        flash("The SAN report cannot be uploaded: it was uploaded already, or you are not allowed to.", "error")
+    row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
+    if row is None:
+        abort(404)
+    if not _can_upload_sof_san(g.user, roles, c, row):
+        flash("The SAN report cannot be uploaded: this SOF already has one, or you are not allowed to.", "error")
         return redirect(_link(cid))
     upload = request.files.get("san_file")
     if not upload or not upload.filename:
@@ -1307,17 +1335,29 @@ def san_upload(cid):
     stored = _file_info(file_json)["stored"]
     try:
         # The WHERE makes the upload atomic: of two people uploading at the same moment only one wins.
-        done = db.execute("UPDATE client_onboardings SET san_file=?, san_by=?, san_at=datetime('now','localtime'), "
-                          "status='san_uploaded', updated_at=datetime('now','localtime') "
-                          "WHERE id=? AND status='forwarded' AND san_file IS NULL", (file_json, g.user["id"], cid)).rowcount
+        done = db.execute("UPDATE client_services SET san_file=?, san_by=?, san_at=datetime('now','localtime') "
+                          "WHERE id=? AND client_id=? AND san_file IS NULL",
+                          (file_json, g.user["id"], sid, cid)).rowcount
         if not done:
             db.rollback()
             _remove_files([stored])
-            flash("A SAN report was uploaded already. Only one upload is allowed.", "error")
+            flash("A SAN report was uploaded for this SOF already.", "error")
             return redirect(_link(cid))
-        _history(db, cid, g.user, "SAN report uploaded", _file_info(file_json)["original"])
-        log(db, "client_san", f"{client_no(cid)} {c['client_name']}")
-        text = f"The SAN report of '{c['client_name']}' was uploaded by {g.user['full_name']}."
+        # The client counts as SAN-uploaded only once EVERY SOF has its own report.
+        n = db.execute("SELECT COUNT(*) FROM client_services WHERE client_id=?", (cid,)).fetchone()[0]
+        missing = db.execute("SELECT COUNT(*) FROM client_services WHERE client_id=? AND san_file IS NULL",
+                             (cid,)).fetchone()[0]
+        last = n > 0 and missing == 0
+        if last and c["status"] == "forwarded":
+            db.execute("UPDATE client_onboardings SET status='san_uploaded', "
+                       "updated_at=datetime('now','localtime') WHERE id=?", (cid,))
+        _history(db, cid, g.user, f"SAN report uploaded for SOF {row['sof_number']}",
+                 _file_info(file_json)["original"])
+        log(db, "client_san", f"{client_no(cid)} {c['client_name']} {row['sof_number']}")
+        text = (f"The SAN report for SOF {row['sof_number']} of '{c['client_name']}' "
+                f"was uploaded by {g.user['full_name']}.")
+        if last:
+            text += " All SOFs now have their SAN report."
         ids = set(_members(db, "revenue_assurance")) | set(_members(db, "sales")) | {c["owner_id"]} | _client_watchers(db, c)
         notify(db, ids, text, _link(cid), skip=g.user["id"])
         db.commit()
@@ -1325,29 +1365,37 @@ def san_upload(cid):
         db.rollback()
         _remove_files([stored])
         raise
-    flash("SAN report uploaded. Revenue Assurance and Sales received it.", "ok")
+    flash(f"SAN report uploaded for SOF {row['sof_number']}. Revenue Assurance and Sales received it.", "ok")
     return redirect(_link(cid))
 
 
-@bp.route("/<int:cid>/san/remove", methods=["POST"])
+@bp.route("/<int:cid>/sof/<int:sid>/san/remove", methods=["POST"])
 @login_required
-def san_remove(cid):
-    """Portal admin only, to fix a wrong upload while the record is not completed."""
+def sof_san_remove(cid, sid):
+    """Portal admin only, to fix a wrong upload while the record is not completed.
+    If the client was already SAN-uploaded it goes back to forwarded — it was
+    approved and forwarded already, so it does not go back to approved."""
     db, c, roles = _load(cid)
-    if not _perms(db, g.user, roles, c)["remove_san"]:
+    row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
+    if row is None:
+        abort(404)
+    if not _can_remove_sof_san(g.user, c, row):
         abort(403)
-    info = _file_info(c["san_file"])
-    db.execute("UPDATE client_onboardings SET san_file=NULL, san_by=NULL, san_at=NULL, status='approved', "
-               "updated_at=datetime('now','localtime') WHERE id=? AND status='san_uploaded'", (cid,))
-    _history(db, cid, g.user, "SAN report removed", (info or {}).get("original"))
-    log(db, "client_san_remove", f"{client_no(cid)} {c['client_name']}")
+    info = _file_info(row["san_file"])
+    db.execute("UPDATE client_services SET san_file=NULL, san_by=NULL, san_at=NULL WHERE id=? AND client_id=?",
+               (sid, cid))
+    if c["status"] == "san_uploaded":
+        db.execute("UPDATE client_onboardings SET status='forwarded', "
+                   "updated_at=datetime('now','localtime') WHERE id=?", (cid,))
+    _history(db, cid, g.user, f"SAN report removed for SOF {row['sof_number']}", (info or {}).get("original"))
+    log(db, "client_san_remove", f"{client_no(cid)} {c['client_name']} {row['sof_number']}")
     notify(db, _client_watchers(db, c),
-           f"The SAN report of '{c['client_name']}' was removed by {g.user['full_name']}.",
+           f"The SAN report for SOF {row['sof_number']} of '{c['client_name']}' was removed by {g.user['full_name']}.",
            _link(cid), skip=g.user["id"])
     db.commit()
     if info:
         _remove_files([info["stored"]])
-    flash("The SAN report was removed. A new one can be uploaded.", "ok")
+    flash(f"The SAN report for SOF {row['sof_number']} was removed. A new one can be uploaded.", "ok")
     return redirect(_link(cid))
 
 
@@ -1636,14 +1684,47 @@ def sof_download(cid, sid):
     return _send_stored(info)
 
 
-@bp.route("/<int:cid>/san/download")
+@bp.route("/<int:cid>/sof/<int:sid>/san/download")
 @login_required
-def san_download(cid):
+def sof_san_download(cid, sid):
     db, c, roles = _load(cid)
-    info = _file_info(c["san_file"])
+    row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
+    info = _file_info(row["san_file"]) if row else None
     if info is None:
         abort(404)
     return _send_stored(info)
+
+
+# ---------------------------------------------------------------- one SOF: its own page (build 105)
+@bp.route("/<int:cid>/sof/<int:sid>/view")
+@login_required
+def sof_view(cid, sid):
+    """One SOF on its own page: every field, the uploaded SOF file, its own
+    SAN report, its share code and its change history. Anyone who may open
+    the client may open it."""
+    db, c, roles = _load(cid)
+    row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
+    if row is None:
+        abort(404)
+    _fields = {p: _form_fields(db, p) for p in (1, 2, 3)}
+    history = [h for h in db.execute(
+        "SELECT * FROM client_history WHERE client_id=? ORDER BY id DESC", (cid,)).fetchall()
+        if row["sof_number"] in (h["action"] or "") or row["sof_number"] in (h["detail"] or "")]
+    san_by_name = None
+    if row["san_by"]:
+        _u = db.execute("SELECT full_name FROM users WHERE id=?", (row["san_by"],)).fetchone()
+        san_by_name = _u["full_name"] if _u else None
+    return render_template(
+        "sof_view.html", c=c, s=row, f=_file_info(row["sof_file"]),
+        san=_file_info(row["san_file"]), san_by_name=san_by_name,
+        history=history, sof_status_label=SOF_STATUS_LABEL,
+        san_perm={"upload": _can_upload_sof_san(g.user, roles, c, row),
+                  "remove": _can_remove_sof_san(g.user, c, row)},
+        fields=_fields,
+        fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
+        custom=_load_custom(db, cid),
+        code_url=external_url(db, "clients.sof_code_page", code=row["public_code"]) if row["public_code"] else None,
+        back=_link(cid))
 
 
 # ---------------------------------------------------------------- SOF PDF: one document per SOF (build 93)

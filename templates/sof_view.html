@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}SOF {{ s['sof_number'] }} · {{ c['client_name'] }}{% endblock %}
+{% block head %}<style>
+.kv{display:flex;padding:8px 0;border-top:1px solid var(--line)}.kv:first-child{border-top:0}
+.kv b{flex:0 0 200px;color:var(--soft);font-weight:500}
+</style>{% endblock %}
+{% block content %}
+<div class="hd"><div><h1>SOF {{ s['sof_number'] }}</h1><p class="hint">{{ c['client_name'] }} · every detail of this SOF on one page.</p></div>
+<div class="acts noprint"><a class="b" href="{{ back }}">Back to client</a></div></div>
+
+<div class="card"><h2>SOF details</h2>
+  <div class="kv"><b>SOF number</b><span>{{ s['sof_number'] }}</span></div>
+  <div class="kv"><b>Service</b><span>{{ s['service'] }}</span></div>
+  <div class="kv"><b>Type</b><span>{{ s['service_type'] or '—' }}</span></div>
+  {% if s['service_description'] %}<div class="kv"><b>Service description</b><span style="white-space:pre-wrap">{{ s['service_description'] }}</span></div>{% endif %}
+  {% if 'sof_details' in fmap %}<div class="kv"><b>Details</b><span style="white-space:pre-wrap">{{ s['details'] or '—' }}</span></div>{% endif %}
+  {% for fld in fields[3] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('service', s['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}
+  <div class="kv"><b>Activation date</b><span>{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}</span></div>
+  <div class="kv"><b>Termination date</b><span>{{ (s['termination_date']|string)[:10] if s['termination_date'] else '—' }}</span></div>
+  <div class="kv"><b>Commercial impact date</b><span>{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '—' }}</span></div>
+  {% if s['termination_reason'] %}<div class="kv"><b>Termination reason</b><span style="white-space:pre-wrap">{{ s['termination_reason'] }}</span></div>{% endif %}
+  <div class="kv"><b>Status</b><span><span class="s {{ 'g' if s['status'] == 'activated' else 'r' if s['status'] == 'terminated' else 'a' }}">{{ sof_status_label[s['status']] }}</span></span></div>
+  <div class="kv"><b>Uploaded SOF file</b><span>{% if f %}<a class="b sm" href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">Download {{ f['original'] }}</a>{% else %}—{% endif %}</span></div>
+  <div class="kv"><b>Share code</b><span>{% if s['public_code'] %}<a href="{{ code_url }}">Share code: {{ s['public_code'] }}</a>{% else %}—{% endif %}</span></div>
+</div>
+
+<div class="card"><h2>SAN report</h2>
+  {% if san %}
+    <p><a class="b sm" href="{{ url_for('clients.sof_san_download', cid=c['id'], sid=s['id']) }}">Download {{ san['original'] }}</a></p>
+    <p class="hint">Uploaded by {{ san_by_name or '—' }} · {{ s['san_at']|showdttz }}</p>
+    {% if san_perm['remove'] %}<form method="post" action="{{ url_for('clients.sof_san_remove', cid=c['id'], sid=s['id']) }}" onsubmit="return confirm('Remove the SAN report for SOF {{ s['sof_number'] }} so a new one can be uploaded?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove (portal admin)</button></form>{% endif %}
+  {% elif san_perm['upload'] %}
+    <p class="hint">No SAN report for this SOF yet. Transmission, Core or Technical support uploads it here.</p>
+    <form method="post" action="{{ url_for('clients.sof_san_upload', cid=c['id'], sid=s['id']) }}" enctype="multipart/form-data" onsubmit="return confirm('Upload this SAN report for SOF {{ s['sof_number'] }}?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fd" style="margin-bottom:8px"><input name="san_file" type="file" required></div>
+      <button class="b sm p" type="submit">Upload SAN report</button></form>
+  {% else %}<p class="hint">No SAN report for this SOF yet.</p>{% endif %}
+</div>
+
+{% if history %}<div class="card"><h2>History of this SOF</h2>
+  {% for h in history %}<div class="kv"><b>{{ h['at']|showdttz }}</b><span>{{ h['action'] }}{% if h['detail'] %} — {{ h['detail'] }}{% endif %}</span></div>{% endfor %}
+</div>{% endif %}
+{% endblock %}

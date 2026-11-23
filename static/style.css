@@ -90,20 +90,22 @@ html[data-theme=dark] .usermenu summary{background:rgba(255,255,255,.07)}
 .usermenu summary::-webkit-details-marker{display:none}.usermenu summary:hover{background:var(--hover)}
 .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),var(--accent));color:#fff;display:grid;place-items:center;font-weight:800;font-size:.85rem;flex:none}
 .uname{font-size:.86rem;font-weight:700;line-height:1.2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.uname small{display:block;font-weight:500;color:var(--soft);font-size:.74rem}
-/* The menu opens from the user card, but the sidebar scrolls its own
-   content, which would clip an absolutely positioned panel — so the
-   panel is fixed to the viewport's bottom left, over the sidebar. It
-   sits ABOVE the user card (bottom:126px): the card's top edge is
-   ~113px up from the viewport bottom (24px shell padding + 22px
-   sidebar padding + the card itself), so at 36px the panel covered
-   the name — the name and avatar stay visible now. (build 104) */
-.panel{position:fixed;left:36px;bottom:126px;z-index:50;width:270px;background:var(--pop);border:1px solid var(--glass-bd);border-radius:14px;padding:14px;box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+/* The menu opens from the user card at the bottom of the sidebar.
+   It is positioned against the sidebar itself (left:50% +
+   translateX(-50%) centres it exactly over the card, bottom:97px
+   sits it 8px above the card's top edge: 22px sidebar padding +
+   the ~67px card). It must NOT be position:fixed: the page is
+   zoomed to 70% but a fixed panel sits in the screen's own
+   coordinates, so it came out too wide, its text too big, and
+   shifted right of the card. Inside the sidebar it scales and
+   centres with the card. On a phone it is still the full-width
+   sheet (the ≤720px rule below sets position:fixed + transform:none).
+   (build 105) */
+.panel{position:absolute;left:50%;transform:translateX(-50%);bottom:97px;z-index:50;width:270px;background:var(--pop);border:1px solid var(--glass-bd);border-radius:14px;padding:14px;box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
 .panel label{margin-top:8px}.panel form{margin:0}.panel .row{display:flex;gap:8px;margin-top:12px}
-main{padding:24px 84px 24px 28px;max-width:1400px;width:100%;margin:0 auto}main.bare{padding:0;max-width:none}
-/* The client onboarding list is wide (nine columns, long status pills),
-   so on a wide screen it gets the full width instead of the 1400px cap.
-   Set with {% block mainclass %}wide{% endblock %} in deptdb_clients.html. */
-main.wide{max-width:1560px}
+/* Every page uses the wide cap (build 105): the client onboarding
+   list's width is now the width of the whole portal. */
+main{padding:24px 84px 24px 28px;max-width:1560px;width:100%;margin:0 auto}main.bare{padding:0;max-width:none}
 .print-head{display:none}
 /* ---------- messages, cards */
 .msg{padding:11px 14px;border-radius:var(--r);margin-bottom:14px;border:1px solid;animation:up .4s both}
@@ -209,11 +211,7 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--p
 .k1 span{font-size:.8rem;color:var(--soft);font-weight:700}.k1 b{display:block;font-size:1.9rem;font-weight:800;line-height:1.2}.k1.txt b{font-size:1.1rem;font-weight:700;line-height:1.35}.k1 small{font-size:.78rem;font-weight:700;color:var(--g-tx)}.k1.w small{color:var(--a-tx)}.k1.d small{color:var(--r-tx)}
 .g3{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 /* ---------- record pages */
-.tw{display:grid;grid-template-columns:1fr 340px;gap:22px;align-items:start}.stack>*{margin-bottom:20px}
-/* The client onboarding list gets a narrower right rail (280px) so its
-   table has room; on a phone it still collapses to one column (see the
-   ≤980px block, which lists .tw.wide too). */
-.tw.wide{grid-template-columns:1fr 280px}
+.tw{display:grid;grid-template-columns:1fr 280px;gap:22px;align-items:start}.stack>*{margin-bottom:20px}
 .tb table.ctable{min-width:1080px}
 .stcol .s{white-space:nowrap}
 /* ---------- Design 6: KPI row + split layout + vertical bar chart.
@@ -321,7 +319,7 @@ html[data-theme=dark] .pubhead img{background:#fff;border-radius:8px;padding:3px
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* ---------- tablet */
 @media (max-width:980px){
- .tw,.tw.wide,.g3{grid-template-columns:1fr}.lgx{flex-direction:column}.hero{display:none}.fm{grid-template-columns:1fr}.side{width:100%;min-height:calc(100vh / .7)}
+ .tw,.g3{grid-template-columns:1fr}.lgx{flex-direction:column}.hero{display:none}.fm{grid-template-columns:1fr}.side{width:100%;min-height:calc(100vh / .7)}
  /* The sidebar becomes an off-canvas drawer; the top bar becomes the header. */
  .shell{display:block;padding:0;gap:0}
  .sidebar{position:fixed;left:0;top:0;height:calc(100vh / .7);width:300px;max-width:85vw;z-index:60;border-radius:0 24px 24px 0;transform:translateX(-105%);transition:transform .3s ease}
@@ -335,7 +333,7 @@ html[data-theme=dark] .pubhead img{background:#fff;border-radius:8px;padding:3px
 /* ---------- phone: cards instead of tables, one column, big touch targets */
 @media (max-width:720px){
  main{padding:14px}
- .panel{position:fixed;left:12px;right:12px;top:64px;bottom:auto;width:auto}
+ .panel{position:fixed;left:12px;right:12px;top:64px;bottom:auto;width:auto;transform:none}
  h1{font-size:1.35rem}.hd{align-items:stretch}.hd .acts{width:100%}.hd .acts .b{flex:1 1 calc(50% - 8px)}
  .b{height:44px}.b.sm{height:38px}input[type=text],input[type=password],input[type=date],input[type=time],input[type=search],input[type=number],select{height:48px;font-size:1rem}
  .tools input,.tools select{flex:1 1 calc(50% - 6px);width:auto;min-width:0}.tools input[name=q]{flex:1 1 100%}.kp{grid-template-columns:1fr 1fr;gap:10px}.k1{padding:14px}.k1 b{font-size:1.5rem}
