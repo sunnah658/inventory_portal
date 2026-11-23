@@ -13,9 +13,22 @@
 <div class="tw"><div>
 {% if portal or show_others %}<div class="tabs"><a class="tab {{ 'on' if tab == 'records' }}" href="{{ url_for('records.bin_page', tab='records') }}">Records</a>{% if show_others %}<a class="tab {{ 'on' if tab == 'others' }}" href="{{ url_for('records.bin_page', tab='others') }}">Others</a>{% endif %}{% if portal %}<a class="tab {{ 'on' if tab == 'users' }}" href="{{ url_for('records.bin_page', tab='users') }}">Users</a>{% endif %}{% if true_admin %}<a class="tab {{ 'on' if tab == 'users_data' }}" href="{{ url_for('records.bin_page', tab='users_data') }}">Deleted users' data</a>{% endif %}</div>{% endif %}
 {% if tab == 'users' %}
+{% if portal %}<div class="selbtns" style="margin-bottom:10px"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button> <button class="b dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete forever</button></div>
+<form id="binuserform" method="post" action="{{ url_for('records.bin_delete_selected') }}" style="display:none"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="tab" value="users"><input type="hidden" name="delete_work" id="binDeleteWork" value="0"></form>
+<div id="delPop" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:460px;width:100%;padding:22px">
+    <h2 style="margin-top:0">Delete the selected users for good?</h2>
+    <p><span id="delCount">0</span> user(s) will be erased for good. Type your password to confirm.</p>
+    <div class="fd"><label>Your password</label><input type="password" name="admin_password" form="binuserform" required autocomplete="current-password" placeholder="Type your password"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="b" type="button" onclick="document.getElementById('delPop').style.display='none'">Cancel</button>
+      <button class="b dg" type="submit" form="binuserform" onclick="var yes = confirm('Delete the selected users and all their work from the portal too?'); document.getElementById('binDeleteWork').value = yes ? '1' : '0'; return true;">Delete</button>
+    </div>
+  </div>
+</div>{% endif %}
 <div class="tb">
-{% if users %}<table><thead><tr><th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
-{% for u in users %}<tr class="r"><td><span class="user-deleted">{{ u['full_name'] }}</span> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td>
+{% if users %}<table><thead><tr>{% if portal %}<th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% endif %}<th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
+{% for u in users %}<tr class="r">{% if portal %}<td class="selcol"><input type="checkbox" class="rowck" name="ids" value="usr:{{ u['id'] }}" form="binuserform" aria-label="Select"></td>{% endif %}<td><span class="user-deleted">{{ u['full_name'] }}</span> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td>
   <td>{{ u['deleted_at'] }}<div class="sub">by {{ u['deleted_by_name'] or '' }}</div></td>
   <td>{{ u['erase_on'] }} {% if u['days_left'] <= 3 %}<span class="s r">{{ u['days_left'] if u['days_left'] > 0 else 0 }} days left</span>{% endif %}</td>
   <td class="actcell">
@@ -31,26 +44,51 @@ function purgeUser(form){
 }
 </script>
 {% elif tab == 'users_data' %}
+<div class="selbtns" style="margin-bottom:10px"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button> <button class="b dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete forever</button></div>
+<div id="delPop" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:460px;width:100%;padding:22px">
+    <h2 style="margin-top:0">Delete the selected users for good?</h2>
+    <p><span id="delCount">0</span> user(s) and ALL their data will be erased for good. Type your password to confirm.</p>
+    <div class="fd"><label>Your password</label><input type="password" name="admin_password" form="binuserdataform" required autocomplete="current-password" placeholder="Type your password"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="b" type="button" onclick="document.getElementById('delPop').style.display='none'">Cancel</button>
+      <button class="b dg" type="submit" form="binuserdataform" onclick="return deleteUsersData(document.getElementById('binuserdataform'))">Delete</button>
+    </div>
+  </div>
+</div>
 <div class="tb">
-{% if users_data %}<form method="post" action="{{ url_for('records.bin_users_data_delete_all') }}" onsubmit="return deleteUsersData(this);"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<table><thead><tr><th></th><th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th></tr></thead><tbody>
-{% for u in users_data %}<tr class="r"><td><input type="checkbox" name="user_ids" value="{{ u['id'] }}"></td><td><span class="user-deleted">{{ u['full_name'] }}</span> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td>
+{% if users_data %}<form id="binuserdataform" method="post" action="{{ url_for('records.bin_delete_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="tab" value="users_data">
+<table><thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th><th>User</th><th>Department</th><th>Deleted</th><th>Erased on</th></tr></thead><tbody>
+{% for u in users_data %}<tr class="r"><td class="selcol"><input type="checkbox" class="rowck" name="ids" value="user_data:{{ u['id'] }}" aria-label="Select"></td><td><span class="user-deleted">{{ u['full_name'] }}</span> <span class="sub">{{ u['username'] }}</span></td><td>{{ u['department_name'] or '' }}</td>
   <td>{{ u['deleted_at'] }}<div class="sub">by {{ u['deleted_by_name'] or '' }}</div></td>
   <td>{{ u['erase_on'] }} {% if u['days_left'] <= 3 %}<span class="s r">{{ u['days_left'] if u['days_left'] > 0 else 0 }} days left</span>{% endif %}</td></tr>{% endfor %}
 </tbody></table>
-<div style="margin-top:12px"><button class="b dg" type="submit">Delete all</button> <span class="hint">Deletes the ticked users and ALL their data at once. This cannot be undone.</span></div></form>{% else %}<div class="empty">No deleted users with data left in the database.</div>{% endif %}
+<div style="margin-top:12px"><span class="hint">Deletes the ticked users and ALL their data at once. This cannot be undone.</span></div></form>{% else %}<div class="empty">No deleted users with data left in the database.</div>{% endif %}
 </div>
 <script>
 function deleteUsersData(form){
-  var n = form.querySelectorAll('input[name="user_ids"]:checked').length;
+  var n = form.querySelectorAll('input[name="ids"]:checked').length;
   if(!n){ alert("Tick at least one user first."); return false; }
   return confirm("Delete all data of the selected user(s) for good? Their records, rows, invoices, requests and accounts will be erased at once. This cannot be undone.");
 }
 </script>
 {% else %}
+{% if portal %}<div class="selbtns" style="margin-bottom:10px"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button> <button class="b dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete forever</button></div>
+<form id="binform" method="post" action="{{ url_for('records.bin_delete_selected') }}" style="display:none"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="tab" value="{{ tab }}"></form>
+<div id="delPop" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:460px;width:100%;padding:22px">
+    <h2 style="margin-top:0">Delete the selected items for good?</h2>
+    <p><span id="delCount">0</span> item(s) will be erased for good. This cannot be undone. Type your password to confirm.</p>
+    <div class="fd"><label>Your password</label><input type="password" name="admin_password" form="binform" required autocomplete="current-password" placeholder="Type your password"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="b" type="button" onclick="document.getElementById('delPop').style.display='none'">Cancel</button>
+      <button class="b dg" type="submit" form="binform" onclick="return confirm('Erase the selected items for good? This cannot be undone.')">Delete</button>
+    </div>
+  </div>
+</div>{% endif %}
 <div class="tb">
-{% if items %}<table><thead><tr><th>Record</th><th>Department</th><th>Owner</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
-{% for r in items %}<tr class="r"><td>{% if r['view_url'] %}<a href="{{ r['view_url'] }}">{{ r['summary'] }}</a>{% else %}{{ r['summary'] }}{% endif %}<div class="sub">{{ r['kind_label'] }}</div></td><td>{{ r['department_name'] }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>
+{% if items %}<table><thead><tr>{% if portal %}<th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% endif %}<th>Record</th><th>Department</th><th>Owner</th><th>Deleted</th><th>Erased on</th><th></th></tr></thead><tbody>
+{% for r in items %}<tr class="r">{% if portal %}<td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['kind'] }}:{{ r['id'] }}" form="binform" aria-label="Select"></td>{% endif %}<td>{% if r['view_url'] %}<a href="{{ r['view_url'] }}">{{ r['summary'] }}</a>{% else %}{{ r['summary'] }}{% endif %}<div class="sub">{{ r['kind_label'] }}</div></td><td>{{ r['department_name'] }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] }}</span></td>
   <td>{{ r['deleted_at'] }}<div class="sub">by {{ r['deleted_by_name'] or '' }}</div></td>
   <td>{{ r['erase_on'] }} {% if r['days_left'] <= 3 %}<span class="s r">{{ r['days_left'] if r['days_left'] > 0 else 0 }} days left</span>{% endif %}</td>
   <td class="actcell">

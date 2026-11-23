@@ -1,4 +1,22 @@
 ==============================================================================
+ CLIENT ONBOARDING IS THE SALES DEFAULT TAB, EVERY TAB HAS A
+ PERMISSION BUTTON, AND THE RECYCLE BIN GETS BULK DELETE FOREVER
+ (2026-11-23)
+==============================================================================
+ The Client onboarding tab is now the default tab for Sales &
+ Marketing, and the first tab from the left for Revenue
+ Assurance, Finance, Transmission, Core and Technical support.
+ Every tab has a Permission button for its department admin,
+ who can share the Client onboarding, Invoices or Request
+ items tab view-only with another department or a single user
+ — the granted user sees everything in it and can open one to
+ read it, but cannot change anything. The Recycle Bin has
+ Select, Select all and Delete forever on top of every tab:
+ tick, type your password, then confirm. The sidebar says
+ "Portal", and the Service type box is gone from the New client
+ form — the short service name is the Service itself.
+
+==============================================================================
  THE PASSWORD POPS UP ONLY AFTER CLICKING DELETE, AND THE
  CLIENT ONBOARDING TAB GETS SELECT, SELECT ALL AND DELETE
  (2026-11-23)

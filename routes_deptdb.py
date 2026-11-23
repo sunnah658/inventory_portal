@@ -36,12 +36,13 @@ import config
 import exports
 import scanner
 from auth import login_required
-from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, assignee_name_for, col_weight,
+from core import (DDB_COLUMN_TYPES, DDB_TYPE_LABEL, SPECIAL_TABS, assignee_name_for, col_weight,
                   ddb_attachment_info, ddb_can_delete_row, ddb_can_edit_row, ddb_can_view_row, ddb_columns,
                   ddb_create_row, ddb_display_value, ddb_history, ddb_is_tab_admin,
                   ddb_shared_tabs, ddb_tab_access, ddb_row_link, ddb_tabs, ddb_update_row, ddb_values,
                   display_code, external_url, is_assignee_column, new_random_code_text, notify, notify_ddb_task,
-                  parse_code_text, parse_form, print_col_widths, show_when)
+                  parse_code_text, parse_form, print_col_widths, show_when,
+                  special_tab_access, special_tab_shares_for)
 from models import get_db, log, setting_get
 from utils import csv_response, is_portal_admin, is_true_admin, like_pattern, page_info
 
@@ -373,16 +374,44 @@ def index():
     # all over for the code — a record, an invoice, a request or a row.
     if _wanted is not None and request.args.get("tab") not in ("invoices", "requests", "clients"):
         return redirect(url_for("public.search_qr", q=_wanted))
-    if request.args.get("tab") == "invoices":
-        return _invoice_tab_view(db, dept, is_admin, request.args)
-    if request.args.get("tab") == "requests":
-        return _request_tab_view(db, dept, is_admin, request.args)
-    if request.args.get("tab") == "clients":
-        # Client onboarding (build 85): its own pages live in routes_clients.py.
-        from routes_clients import client_tab_visible, client_tab_view
-        if not client_tab_visible(db, g.user):
+    _tab = request.args.get("tab")
+    _shared = request.args.get("shared", type=int)
+    if _tab in ("invoices", "requests", "clients"):
+        if _shared:
+            # A shared special tab (build 109): ?shared=<owner dept id>
+            # says whose tab it is, and the share is what lets this
+            # viewer in — view only, he sees everything in it.
+            owner = db.execute("SELECT * FROM departments WHERE id=?", (_shared,)).fetchone()
+            if owner is None or special_tab_access(db, g.user, _tab, _shared) is None:
+                abort(404)
+            return _special_tab_view(db, dept, owner, request.args, _tab)
+        if _tab == "clients":
+            # Client onboarding (build 85): its own pages live in routes_clients.py.
+            from routes_clients import client_tab_visible, client_tab_view
+            if client_tab_visible(db, g.user):
+                return client_tab_view(db, dept, is_admin, request.args)
+            # No flow role — but the Sales admin may have shared the tab
+            # with this user, or his whole department (build 109). The
+            # clients tab has only one owner (Sales), so one share is
+            # enough to know whose tab to open.
+            shares = special_tab_shares_for(db, g.user, "clients")
+            if len(shares) == 1:
+                owner = db.execute("SELECT * FROM departments WHERE id=?",
+                                   (shares[0]["owner_dept_id"],)).fetchone()
+                return client_tab_view(db, dept, False, request.args,
+                                       shared_owner=owner["name"], shared_id=owner["id"])
             abort(404)
-        return client_tab_view(db, dept, is_admin, request.args)
+        if _tab == "invoices":
+            return _invoice_tab_view(db, dept, is_admin, request.args)
+        return _request_tab_view(db, dept, is_admin, request.args)
+    if _tab is None:
+        # Build 109: the Client onboarding tab is the default tab for the
+        # Sales & Marketing department — opening the Department Database
+        # opens it, not the first regular tab.
+        from routes_clients import client_tab_visible, client_tab_view, flow_depts
+        sales_id = flow_depts(db).get("sales")
+        if sales_id and dept["id"] == sales_id and client_tab_visible(db, g.user):
+            return client_tab_view(db, dept, is_admin, request.args)
     show_mine = _show_mine(dept)
     args = request.args.copy()
     if not show_mine:
@@ -494,6 +523,55 @@ def _can_manage_tab_sharing(db, user, dept):
     """Only the department admin of the department that owns the tab, or the
     portal admin, manages its sharing."""
     return is_portal_admin(user) or (user["department_id"] == dept["id"] and user["is_dept_admin"])
+
+
+# ---------------------------------------------------------------- special-tab sharing (build 109)
+# The three special Department Database tabs — Client onboarding, Invoices,
+# Request items — are shared the same way as a regular tab, except the
+# sharing is always View only, and the shared viewer sees everything in
+# the tab (every client, invoice or request) but cannot change anything.
+def _special_owner_dept(db, key, viewer_dept):
+    """The department that owns this special tab: the Sales department for
+    Client onboarding (the flow's sales role); the viewer's own department
+    for Invoices and Request items, which every department has of its own."""
+    if key == "clients":
+        from routes_clients import flow_depts
+        sales_id = flow_depts(db).get("sales")
+        row = db.execute("SELECT * FROM departments WHERE id=?", (sales_id,)).fetchone() if sales_id else None
+        return row or viewer_dept
+    return viewer_dept
+
+
+def _can_manage_special(db, user, key, owner_dept):
+    """Only the department admin of the department that owns the special
+    tab, or the portal admin, manages its sharing."""
+    return is_portal_admin(user) or (user["department_id"] == owner_dept["id"] and user["is_dept_admin"])
+
+
+def _special_shared_entries(db, user, viewer_dept_id, skip_key=None):
+    """Tabs-row entries for the special tabs shared with this user: the
+    tab key as the id, the display name 'TabName(OwnerDept)', and the
+    ready-made link, which carries the owner in ?shared= so the page
+    knows whose tab to show. The portal admin never needs a share. The
+    tab being viewed is left out (skip_key) — its own link is the
+    hardcoded one in the row, so it must not appear twice."""
+    out = []
+    for s in special_tab_shares_for(db, user):
+        if skip_key is not None and s["tab_key"] == skip_key:
+            continue
+        out.append({"id": s["tab_key"], "name": s["display_name"],
+                    "department_id": s["owner_dept_id"], "shared": True,
+                    "access": "view",
+                    "url": url_for("ddb.index", dept=viewer_dept_id, tab=s["tab_key"],
+                                   shared=s["owner_dept_id"])})
+    return out
+
+
+def _special_tabs_row(db, user, viewer_dept, skip_key=None):
+    """The tabs row for a special-tab page: this department's own tabs,
+    then the tabs shared with this user (regular ones and special ones)."""
+    return (_tabs_row(ddb_tabs(db, viewer_dept["id"]), ddb_shared_tabs(db, user))
+            + _special_shared_entries(db, user, viewer_dept["id"], skip_key))
 
 
 @bp.route("/permissions")
@@ -643,8 +721,204 @@ def tab_permission_delete_user(sid):
     return redirect(url_for("ddb.tab_permissions", dept=dept["id"], tab=tab["id"]))
 
 
+# ---------------------------------------------------------------- special-tab permissions (build 109)
+# The Permission page for a special tab — Client onboarding, Invoices or
+# Request items. Same shape as the regular tab permissions page, except
+# the sharing is always View only: the granted department or user sees
+# everything in the tab, but cannot change anything.
+def _special_flow_dept_ids(db):
+    """The departments that already see the Client onboarding tab through
+    the client flow — they never need a share for it."""
+    from routes_clients import flow_depts
+    return {did for did in flow_depts(db).values() if did}
+
+
+@bp.route("/permissions/special")
+@login_required
+def special_tab_permissions():
+    db, viewer_dept, _is_admin = _dept()
+    key = request.args.get("key") or ""
+    if key not in SPECIAL_TABS:
+        abort(404)
+    owner = _special_owner_dept(db, key, viewer_dept)
+    if not _can_manage_special(db, g.user, key, owner):
+        abort(403)
+    tab_name = SPECIAL_TABS[key]
+    dept_shares = db.execute(
+        "SELECT s.*, d.name AS dept_name FROM special_tab_shares s "
+        "JOIN departments d ON d.id=s.department_id "
+        "WHERE s.tab_key=? AND s.owner_dept_id=? ORDER BY d.name",
+        (key, owner["id"])).fetchall()
+    user_shares = db.execute(
+        "SELECT s.*, u.full_name AS user_name, d.name AS dept_name FROM special_tab_shares s "
+        "JOIN users u ON u.id=s.user_id LEFT JOIN departments d ON d.id=u.department_id "
+        "WHERE s.tab_key=? AND s.owner_dept_id=? ORDER BY d.name, u.full_name",
+        (key, owner["id"])).fetchall()
+    skip_depts = {owner["id"]}
+    if key == "clients":
+        # The six flow departments already see the Client onboarding tab.
+        skip_depts |= _special_flow_dept_ids(db)
+    other_depts = db.execute(
+        "SELECT id, name FROM departments WHERE id NOT IN (%s) ORDER BY name"
+        % ",".join("?" * len(skip_depts)), list(skip_depts)).fetchall()
+    if key == "clients":
+        other_users = db.execute(
+            "SELECT u.id, u.full_name, d.name AS dept_name FROM users u "
+            "LEFT JOIN departments d ON d.id=u.department_id "
+            "WHERE u.is_active=1 AND u.department_id NOT IN (%s) ORDER BY d.name, u.full_name"
+            % ",".join("?" * len(skip_depts)), list(skip_depts)).fetchall()
+    else:
+        other_users = db.execute(
+            "SELECT u.id, u.full_name, d.name AS dept_name FROM users u "
+            "LEFT JOIN departments d ON d.id=u.department_id "
+            "WHERE u.is_active=1 AND u.department_id != ? ORDER BY d.name, u.full_name",
+            (owner["id"],)).fetchall()
+    if key == "clients":
+        row_count = db.execute("SELECT COUNT(*) FROM client_onboardings WHERE deleted_at IS NULL").fetchone()[0]
+    elif key == "invoices":
+        row_count = db.execute("SELECT COUNT(*) FROM invoices WHERE department_id=? AND deleted_at IS NULL",
+                               (owner["id"],)).fetchone()[0]
+    else:
+        row_count = db.execute("SELECT COUNT(*) FROM item_requests WHERE department_id=? AND deleted_at IS NULL",
+                               (owner["id"],)).fetchone()[0]
+    return render_template("deptdb_special_permissions.html", dept=owner, tab_name=tab_name, key=key,
+                           dept_shares=dept_shares, user_shares=user_shares,
+                           other_depts=other_depts, other_users=other_users,
+                           row_count=row_count)
+
+
+@bp.route("/permissions/special/department", methods=["POST"])
+@login_required
+def special_tab_permission_add_dept():
+    db, viewer_dept, _is_admin = _dept()
+    key = request.form.get("key") or ""
+    if key not in SPECIAL_TABS:
+        abort(404)
+    owner = _special_owner_dept(db, key, viewer_dept)
+    if not _can_manage_special(db, g.user, key, owner):
+        abort(403)
+    did = request.form.get("department_id", type=int)
+    target = db.execute("SELECT * FROM departments WHERE id=?", (did,)).fetchone() if did else None
+    if target is None or did == owner["id"]:
+        flash("Choose another department.", "error")
+    else:
+        # Adding a department that already has access changes nothing —
+        # the grant is View only, and the upsert never makes a second one.
+        db.execute("DELETE FROM special_tab_shares WHERE tab_key=? AND owner_dept_id=? AND department_id=?",
+                   (key, owner["id"], did))
+        db.execute("INSERT INTO special_tab_shares(tab_key,owner_dept_id,department_id,access,created_by) "
+                   "VALUES (?,?,?,'view',?)", (key, owner["id"], did, g.user["id"]))
+        log(db, "special_tab_share", f"{owner['name']} / {SPECIAL_TABS[key]} shared with {target['name']} (view)")
+        admins = db.execute("SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+                            (did,)).fetchall()
+        notify(db, [a["id"] for a in admins],
+               f"{owner['name']} shared the {SPECIAL_TABS[key]} tab with your department (View only).",
+               url_for("ddb.index", tab=key, shared=owner["id"]), skip=g.user["id"])
+        db.commit()
+        flash(f"Shared with {target['name']} (View only).", "ok")
+    return redirect(url_for("ddb.special_tab_permissions", key=key))
+
+
+@bp.route("/permissions/special/user", methods=["POST"])
+@login_required
+def special_tab_permission_add_user():
+    db, viewer_dept, _is_admin = _dept()
+    key = request.form.get("key") or ""
+    if key not in SPECIAL_TABS:
+        abort(404)
+    owner = _special_owner_dept(db, key, viewer_dept)
+    if not _can_manage_special(db, g.user, key, owner):
+        abort(403)
+    uid = request.form.get("user_id", type=int)
+    target = db.execute("SELECT * FROM users WHERE id=? AND is_active=1", (uid,)).fetchone() if uid else None
+    if target is None or target["department_id"] == owner["id"]:
+        flash("Choose a user from another department.", "error")
+    else:
+        db.execute("DELETE FROM special_tab_shares WHERE tab_key=? AND owner_dept_id=? AND user_id=?",
+                   (key, owner["id"], uid))
+        db.execute("INSERT INTO special_tab_shares(tab_key,owner_dept_id,user_id,access,created_by) "
+                   "VALUES (?,?,?,'view',?)", (key, owner["id"], uid, g.user["id"]))
+        log(db, "special_tab_share", f"{owner['name']} / {SPECIAL_TABS[key]} shared with {target['full_name']} (view)")
+        notify(db, [uid],
+               f"{owner['name']} shared the {SPECIAL_TABS[key]} tab with you (View only).",
+               url_for("ddb.index", tab=key, shared=owner["id"]), skip=g.user["id"])
+        db.commit()
+        flash(f"Shared with {target['full_name']} (View only).", "ok")
+    return redirect(url_for("ddb.special_tab_permissions", key=key))
+
+
+@bp.route("/permissions/special/department/<int:sid>/delete", methods=["POST"])
+@login_required
+def special_tab_permission_delete_dept(sid):
+    db, viewer_dept, _is_admin = _dept()
+    key = request.form.get("key") or ""
+    if key not in SPECIAL_TABS:
+        abort(404)
+    owner = _special_owner_dept(db, key, viewer_dept)
+    if not _can_manage_special(db, g.user, key, owner):
+        abort(403)
+    share = db.execute("SELECT s.*, d.name AS dept_name FROM special_tab_shares s "
+                       "JOIN departments d ON d.id=s.department_id "
+                       "WHERE s.id=? AND s.tab_key=? AND s.owner_dept_id=?",
+                       (sid, key, owner["id"])).fetchone()
+    if share is None:
+        flash("That share is already gone.", "error")
+    else:
+        db.execute("DELETE FROM special_tab_shares WHERE id=?", (sid,))
+        log(db, "special_tab_unshare", f"{owner['name']} / {SPECIAL_TABS[key]} no longer shared with {share['dept_name']}")
+        admins = db.execute("SELECT id FROM users WHERE department_id=? AND is_dept_admin=1 AND is_active=1",
+                            (share["department_id"],)).fetchall()
+        notify(db, [a["id"] for a in admins],
+               f"{owner['name']} stopped sharing the {SPECIAL_TABS[key]} tab with your department.",
+               url_for("ddb.index"), skip=g.user["id"])
+        db.commit()
+        flash(f"No longer shared with {share['dept_name']}.", "ok")
+    return redirect(url_for("ddb.special_tab_permissions", key=key))
+
+
+@bp.route("/permissions/special/user/<int:sid>/delete", methods=["POST"])
+@login_required
+def special_tab_permission_delete_user(sid):
+    db, viewer_dept, _is_admin = _dept()
+    key = request.form.get("key") or ""
+    if key not in SPECIAL_TABS:
+        abort(404)
+    owner = _special_owner_dept(db, key, viewer_dept)
+    if not _can_manage_special(db, g.user, key, owner):
+        abort(403)
+    share = db.execute("SELECT s.*, u.full_name AS user_name FROM special_tab_shares s "
+                       "JOIN users u ON u.id=s.user_id "
+                       "WHERE s.id=? AND s.tab_key=? AND s.owner_dept_id=?",
+                       (sid, key, owner["id"])).fetchone()
+    if share is None:
+        flash("That share is already gone.", "error")
+    else:
+        db.execute("DELETE FROM special_tab_shares WHERE id=?", (sid,))
+        log(db, "special_tab_unshare", f"{owner['name']} / {SPECIAL_TABS[key]} no longer shared with {share['user_name']}")
+        notify(db, [share["user_id"]],
+               f"{owner['name']} stopped sharing the {SPECIAL_TABS[key]} tab with you.",
+               url_for("ddb.index"), skip=g.user["id"])
+        db.commit()
+        flash(f"No longer shared with {share['user_name']}.", "ok")
+    return redirect(url_for("ddb.special_tab_permissions", key=key))
+
+
+def _special_tab_view(db, dept, owner, args, key):
+    """A special tab shared with this viewer (build 109): the data comes
+    from the owner's department, the tabs row stays in the viewer's own
+    database, and everything is view only — no New, no edit, no Delete."""
+    if key == "invoices":
+        return _invoice_tab_view(db, dept, False, args, shared_owner=owner["name"],
+                                 shared_id=owner["id"], data_dept=owner)
+    if key == "requests":
+        return _request_tab_view(db, dept, False, args, shared_owner=owner["name"],
+                                 shared_id=owner["id"], data_dept=owner)
+    from routes_clients import client_tab_view
+    return client_tab_view(db, dept, False, args, shared_owner=owner["name"], shared_id=owner["id"])
+
+
 # ---------------------------------------------------------------- Invoices tab (default tab inside Department Database)
-def _invoice_tab_view(db, dept, is_admin, args):
+def _invoice_tab_view(db, dept, is_admin, args, shared_owner=None, shared_id=None, data_dept=None):
     """The invoice page, as a default tab inside Department Database. Every
     feature of invoices is unchanged — only where the list lives moved.
     Sub-tabs: All, My invoices (only the current user's invoices), plus one
@@ -656,13 +930,14 @@ def _invoice_tab_view(db, dept, is_admin, args):
     Paid/Void). Templates stay outside, on the dept-admin Invoice templates
     page."""
     from routes_invoices import _shared_dept_ids
-    scope = [dept["id"]]
-    if is_admin and not is_portal_admin(g.user) and g.user["department_id"] == dept["id"]:
+    data = data_dept or dept   # the department whose invoices are listed
+    scope = [data["id"]]
+    if is_admin and not is_portal_admin(g.user) and g.user["department_id"] == data["id"]:
         scope += [d for d in _shared_dept_ids(db, g.user) if d not in scope]
     # sub-tabs: active templates of this department, plus templates that already have invoices in scope
     sub = {}
     for row in db.execute("SELECT id, name FROM invoice_templates WHERE department_id=? AND status='active' ORDER BY id",
-                          (dept["id"],)).fetchall():
+                          (data["id"],)).fetchall():
         sub[row["id"]] = row["name"]
     qmarks = ",".join("?" * len(scope))
     for row in db.execute(f"SELECT DISTINCT t.id, t.name FROM invoice_templates t JOIN invoices i ON i.template_id=t.id "
@@ -695,7 +970,9 @@ def _invoice_tab_view(db, dept, is_admin, args):
         counts[st] = db.execute(f"SELECT COUNT(*) FROM invoices WHERE department_id IN ({qmarks}) AND deleted_at IS NULL AND status=?",
                                 scope + [st]).fetchone()[0]
     # filters: user, status, search, sort — on top of the tab
-    show_mine = _show_mine(dept)
+    # A shared tab shows only the All view — no My invoices (build 109),
+    # the same as a shared regular tab.
+    show_mine = False if shared_owner is not None else _show_mine(dept)
     # The Other's invoices sub-tab only appears for a user who has at
     # least one invoice sent to them as a step; anyone can be picked as
     # a step, so there is no role that owns this tab.
@@ -746,24 +1023,26 @@ def _invoice_tab_view(db, dept, is_admin, args):
         keep["dept"] = dept["id"]
     keep["tab"] = "invoices"
     users = db.execute("SELECT id, full_name FROM users WHERE department_id=? AND is_active=1 ORDER BY full_name",
-                       (dept["id"],)).fetchall()
+                       (data["id"],)).fetchall()
     create_templates = db.execute("SELECT * FROM invoice_templates WHERE department_id=? AND status='active' ORDER BY id",
-                                  (dept["id"],)).fetchall()
+                                  (data["id"],)).fetchall()
     return render_template("deptdb_invoices.html", dept=dept,
-                           tabs=_tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user)),
+                           tabs=_special_tabs_row(db, g.user, dept, skip_key="invoices"),
                            is_admin=is_admin,
                            sub_tabs=[{"id": tid, "name": name} for tid, name in sub.items()],
                            invtype=invtype, invtype_id=invtype_id, counts=counts, rows=rows,
                            users=users, user_filter=user_filter, status=status, q=q, sort=sort,
                            total=total, page=page, pages=pages, keep=keep, create_templates=create_templates,
                            show_mine=show_mine, show_others=show_others,
+                           shared_owner=shared_owner, shared_id=shared_id,
+                           can_manage_tab_sharing=shared_owner is None and _can_manage_tab_sharing(db, g.user, data),
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
                            if is_portal_admin(g.user) else [],
                            can_edit_invoice=lambda r: r["owner_id"] == g.user["id"] and r["status"] in ("draft", "approved", "pending") and not r["number"])
 
 
 # ---------------------------------------------------------------- Request items tab (default tab inside Department Database)
-def _request_tab_view(db, dept, is_admin, args):
+def _request_tab_view(db, dept, is_admin, args, shared_owner=None, shared_id=None, data_dept=None):
     """The Request items page, as a default tab inside Department Database
     (like Invoices). Sub-tabs: My request (only the current user's
     requests), All request, Other's request (only for a user who has a
@@ -778,15 +1057,23 @@ def _request_tab_view(db, dept, is_admin, args):
     person changes its status (Pending / Issued / Paid / Handovered)
     once the chain has finished."""
     from routes_requests import ALL_STATUSES, STATUSES, can_see_all_departments
-    can_all = can_see_all_departments(db, g.user)
-    show_mine = _show_mine(dept)
+    data = data_dept or dept   # the department whose requests are listed
+    # A shared tab shows only the owner's requests, never all departments
+    # (build 109) — the All-departments view stays with the portal admin,
+    # permission users and HR & Admin users on their own tab.
+    can_all = False if shared_owner is not None else can_see_all_departments(db, g.user)
+    show_mine = False if shared_owner is not None else _show_mine(dept)
     # Departments this viewer may see in All request.
-    if can_all:
+    if shared_owner is not None:
+        all_depts = [data["id"]]
+    elif can_all:
         all_depts = [r["id"] for r in db.execute("SELECT id FROM departments ORDER BY id").fetchall()]
     else:
         all_depts = [g.user["department_id"]]
     fdept = args.get("fdept", type=int)
-    if fdept and can_all and fdept in all_depts:
+    if shared_owner is not None:
+        scope = [data["id"]]
+    elif fdept and can_all and fdept in all_depts:
         scope = [fdept]
     elif fdept and not can_all:
         scope = [g.user["department_id"]]
@@ -865,14 +1152,16 @@ def _request_tab_view(db, dept, is_admin, args):
         keep["dept"] = dept["id"]
     keep["tab"] = "requests"
     create_kinds = db.execute("SELECT * FROM item_request_kinds WHERE department_id=? AND status='active' ORDER BY id",
-                              (dept["id"],)).fetchall()
+                              (data["id"],)).fetchall()
     return render_template("deptdb_requests.html", dept=dept,
-                           tabs=_tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user)),
+                           tabs=_special_tabs_row(db, g.user, dept, skip_key="requests"),
                            is_admin=is_admin,
                            reqtab=reqtab, counts=counts, rows=rows,
                            status=status, q=q, sort=sort, fdept=fdept or "",
                            total=total, page=page, pages=pages, keep=keep, create_kinds=create_kinds,
                            show_mine=show_mine, show_others=show_others, can_all=can_all,
+                           shared_owner=shared_owner, shared_id=shared_id,
+                           can_manage_tab_sharing=shared_owner is None and _can_manage_tab_sharing(db, g.user, data),
                            depts=db.execute("SELECT id, name FROM departments ORDER BY name").fetchall() if can_all else [],
                            can_status=lambda r: r["recipient_id"] == g.user["id"] and r["chain_done"])
 

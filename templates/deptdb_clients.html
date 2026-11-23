@@ -4,9 +4,10 @@
 {% block title %}Department database · Client onboarding{% endblock %}
 {% block content %}
 <div class="hd">
-  <div><h1>{{ dept['name'] }} database · Client onboarding</h1>
-    <p class="hint">Sales fills the client, its contacts and its services (SOF) and saves; the Sales admin approves or rejects. Once approved, Revenue Assurance sees the client first, then Transmission, Core and Technical support see the full record and each SOF gets its own SAN report from one of them. Revenue Assurance sets the activation date and Finance receives the final record.</p></div>
+  <div><h1>{{ shared_owner or dept['name'] }} database · Client onboarding</h1>
+    <p class="hint">{% if shared_owner %}Shared by {{ shared_owner }} — view only. You see every client here, and can open one to read it. You cannot change anything.{% else %}Sales fills the client, its contacts and its services (SOF) and saves; the Sales admin approves or rejects. Once approved, Revenue Assurance sees the client first, then Transmission, Core and Technical support see the full record and each SOF gets its own SAN report from one of them. Revenue Assurance sets the activation date and Finance receives the final record.{% endif %}</p></div>
   <div class="acts">
+    {% if can_manage_tab_sharing %}<a class="b" href="{{ url_for('ddb.special_tab_permissions', key='clients') }}">Permission</a>{% endif %}
     {% if can_create %}<a class="b p" href="{{ url_for('clients.new') }}">+ New client</a>{% endif %}
     {% if can_form_setup %}<a class="b" href="{{ url_for('clients.form_setup') }}">Form setup</a>{% endif %}
     {% if can_setup %}<a class="b" href="{{ url_for('clients.setup') }}">Setup</a>{% endif %}
@@ -21,7 +22,7 @@
 </div>
 <div class="tw"><div>
 <form class="tools" method="get" action="{{ url_for('ddb.index') }}">
-  <input type="hidden" name="tab" value="clients">{% if keep.dept %}<input type="hidden" name="dept" value="{{ keep.dept }}">{% endif %}
+  <input type="hidden" name="tab" value="clients">{% if shared_id %}<input type="hidden" name="shared" value="{{ shared_id }}">{% endif %}{% if keep.dept %}<input type="hidden" name="dept" value="{{ keep.dept }}">{% endif %}
   <input type="hidden" name="view" value="{{ view }}">
   <input type="search" name="q" value="{{ q }}" placeholder="Search by client, number or person" aria-label="Search clients">
   <select name="status" aria-label="Filter by status"><option value="">All statuses</option>
@@ -47,17 +48,17 @@
 </form>
 {% endif %}
 <div class="tabs">
-  {% for tb in tabs %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
+  <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', **({'shared': shared_id} if shared_id else {})) }}">Client onboarding</a>
+  {% for tb in tabs %}<a class="tab" href="{{ tb.get('url') or url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
   <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
   <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>
-  <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients') }}">Client onboarding</a>
 </div>
 <div class="tabs" style="margin-top:8px">
-  <a class="tab {{ 'on' if view == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='all', status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype) }}">All clients · {{ counts.all }}</a>
-  {% if 'sales' in roles %}<a class="tab {{ 'on' if view == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='mine', status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype) }}">My clients · {{ counts.mine }}</a>{% endif %}
-  <a class="tab {{ 'on' if view == 'todo' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='todo', status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype) }}">To do · {{ counts.todo }}</a>
+  <a class="tab {{ 'on' if view == 'all' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='all', status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype, **({'shared': shared_id} if shared_id else {})) }}">All clients · {{ counts.all }}</a>
+  {% if 'sales' in roles %}<a class="tab {{ 'on' if view == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='mine', status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype, **({'shared': shared_id} if shared_id else {})) }}">My clients · {{ counts.mine }}</a>{% endif %}
+  <a class="tab {{ 'on' if view == 'todo' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients', view='todo', status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype, **({'shared': shared_id} if shared_id else {})) }}">To do · {{ counts.todo }}</a>
 </div>
-{% if can_portal_admin and rows %}
+{% if can_portal_admin and not shared_owner and rows %}
 <div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button> <button class="b dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete</button></div>
 <div id="delPop" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
   <div class="card" style="max-width:460px;width:100%;padding:22px">
@@ -72,18 +73,18 @@
 </div>
 {% endif %}
 {% if rows %}
-  {% if can_portal_admin %}<form id="delform" method="post" action="{{ url_for('bulk.delete_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="kind" value="cli"><input type="hidden" name="back" value="{{ request.full_path }}">{% endif %}
+  {% if can_portal_admin and not shared_owner %}<form id="delform" method="post" action="{{ url_for('bulk.delete_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="kind" value="cli"><input type="hidden" name="back" value="{{ request.full_path }}">{% endif %}
   <div class="tb"><table class="ctable">
-    <thead><tr>{% if can_portal_admin %}<th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% endif %}<th>No.</th><th>Client</th><th>Account manager</th><th>Services</th><th>Status</th><th>Flow</th><th>Activation</th><th>Terminated</th><th class="noprint"></th></tr></thead>
+    <thead><tr>{% if can_portal_admin and not shared_owner %}<th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% endif %}<th>No.</th><th>Client</th><th>Account manager</th><th>Services</th><th>Status</th><th>Flow</th><th>Activation</th><th>Terminated</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}
-      <tr class="r">{% if can_portal_admin %}<td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" aria-label="Select"></td>{% endif %}<td><b>{{ r['id']|client_no }}</b></td><td>{{ r['client_name'] }}</td><td>{{ r['am_name'] or '—' }}</td><td class="num">{{ r['sof_count'] }}</td>
+      <tr class="r">{% if can_portal_admin and not shared_owner %}<td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" aria-label="Select"></td>{% endif %}<td><b>{{ r['id']|client_no }}</b></td><td>{{ r['client_name'] }}</td><td>{{ r['am_name'] or '—' }}</td><td class="num">{{ r['sof_count'] }}</td>
         <td class="stcol"><span class="s g">Activated {{ r['n_activated'] }}</span> <span class="s r">Terminated {{ r['n_terminated'] }}</span>{% if r['n_pending'] %} <span class="s a">Pending {{ r['n_pending'] }}</span>{% endif %}</td>
         <td><span class="s {{ 'g' if r['status'] == 'completed' else 'r' if r['status'] == 'rejected' else 'a' }}">{{ status_label[r['status']] }}</span></td>
         <td>{{ r['sof_activations'] or '—' }}</td>
         <td>{{ r['sof_terminations'] or '—' }}</td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('clients.detail', cid=r['id']) }}">Open</a></td></tr>
     {% endfor %}</tbody></table></div>
-  {% if can_portal_admin %}</form>{% endif %}
+  {% if can_portal_admin and not shared_owner %}</form>{% endif %}
   {{ pager(page, pages, 'ddb.index', keep) }}
 {% else %}
   <div class="tb"><div class="empty">{% if q or status or am or month %}Nothing matches your filter.{% elif view == 'todo' %}Nothing is waiting for you.{% elif flow.sales is none %}The Sales department is not set yet.{% if can_setup %} <a href="{{ url_for('clients.setup') }}">Open the setup</a>.{% else %} Ask the portal admin.{% endif %}{% else %}No clients yet.{% if can_create %} Click “+ New client” to add the first one.{% endif %}{% endif %}</div></div>

@@ -141,6 +141,14 @@ def _can_view(db, user, inv):
         return True
     if _is_dept_admin(user) and inv["department_id"] in _shared_dept_ids(db, user):
         return True
+    # Build 109: the department admin shared this department's whole
+    # Invoices tab with this user's department, or with him personally.
+    # He sees every invoice in it, view only — editing, Approve /
+    # Pending / Void and public-QR management keep their old owner /
+    # dept-admin rules.
+    from core import special_tab_access
+    if special_tab_access(db, user, "invoices", inv["department_id"]) is not None:
+        return True
     # Anyone picked as a step on this invoice can open it and its PDF —
     # whatever department they are in — so an approver from another
     # department is never met with a 403. They can only approve or

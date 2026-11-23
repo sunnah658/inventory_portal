@@ -553,6 +553,31 @@ CREATE TABLE IF NOT EXISTS ddb_tab_shares (
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Special-tab sharing (build 109): a whole special Department Database
+-- tab — Client onboarding, Invoices or Request items — shared by the
+-- department that owns it with another department or one specific user.
+-- View only, never Edit. A grant is either a department grant
+-- (department_id set, user_id NULL) or a user grant (user_id set,
+-- department_id NULL). The owner is the Sales department for Client
+-- onboarding, and the sharing department itself for Invoices and
+-- Request items.
+CREATE TABLE IF NOT EXISTS special_tab_shares (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    tab_key       VARCHAR(20) NOT NULL,
+    owner_dept_id INT NOT NULL,
+    department_id INT,
+    user_id       INT,
+    access        VARCHAR(10) NOT NULL DEFAULT 'view',
+    created_by    INT,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_special_dept (tab_key, owner_dept_id, department_id),
+    UNIQUE KEY uq_special_user (tab_key, owner_dept_id, user_id),
+    FOREIGN KEY (owner_dept_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ======================= Invoices (dept-admin templates, employee invoices) =======================
 CREATE TABLE IF NOT EXISTS invoice_templates (
     id            INT AUTO_INCREMENT PRIMARY KEY,
@@ -1123,9 +1148,9 @@ def _seed_client_form_fields(conn):
         ("sof_service", 3, "Service", "text", 1, 1),
         ("sof_details", 3, "Details", "longtext", 0, 2),
         ("sof_activation_date", 3, "Activation date", "date", 1, 3),
-        # Build 102: the service type (the short name the tab shows in
-        # brackets) and the service description — both must be filled.
-        ("sof_service_type", 3, "Service type", "text", 1, 4),
+        # Build 102: the service description — it must be filled. The
+        # Service type box is gone in build 109 (Service and Service type
+        # meant the same thing); the short name is the Service itself.
         ("sof_service_description", 3, "Service description", "longtext", 1, 5),
     ]
     for _key, _page, _name, _type, _req, _pos in _defaults:
@@ -1134,16 +1159,20 @@ def _seed_client_form_fields(conn):
 
 
 def _upgrade_sof_type_fields(conn):
-    """Build 102 adds the Service type and Service description fields to
-    the Add Client form. The seed above only runs when the fields table
-    is empty, so a live database that already has fields needs these two
-    rows added here (they are structural, so the admin cannot remove them)."""
+    """Build 102 adds the Service description field to the Add Client
+    form. The seed above only runs when the fields table is empty, so a
+    live database that already has fields needs this row added here (it
+    is structural, so the admin cannot remove it). Build 109 removes the
+    Service type box (Service and Service type meant the same thing), so
+    the Service type field row is deleted here when it is still present
+    — the form no longer asks for it, and the short name is the Service
+    itself."""
     have = {r[0] for r in conn.execute("SELECT field_key FROM client_form_fields").fetchall()}
-    for _key, _name, _type, _pos in (("sof_service_type", "Service type", "text", 4),
-                                     ("sof_service_description", "Service description", "longtext", 5)):
-        if _key not in have:
-            conn.execute("INSERT INTO client_form_fields(page,field_key,name,field_type,required,position,is_default)"
-                         " VALUES (3,?,?,?,?,?,1)", (_key, _name, _type, 1, _pos))
+    if "sof_service_description" not in have:
+        conn.execute("INSERT INTO client_form_fields(page,field_key,name,field_type,required,position,is_default)"
+                     " VALUES (3,'sof_service_description','Service description','longtext',1,5,1)")
+    if "sof_service_type" in have:
+        conn.execute("DELETE FROM client_form_fields WHERE field_key='sof_service_type'")
 
 
 def _upgrade_sof_status(conn):

@@ -6762,3 +6762,113 @@
  tab at 1440px (Permission, Select, Select all and Delete,
  no password box). The pop-up itself only opens after a
  click, so it cannot appear in a still render.
+
+==============================================================================
+ 128. CLIENT ONBOARDING IS THE SALES DEFAULT TAB, EVERY TAB HAS A
+     PERMISSION BUTTON, AND THE RECYCLE BIN GETS BULK DELETE FOREVER
+     (2026-11-23)
+==============================================================================
+ This build is the one you confirmed in four answers on 2026-11-23.
+
+ (1) CLIENT ONBOARDING IS THE DEFAULT TAB FOR SALES & MARKETING,
+     AND THE FIRST TAB FROM THE LEFT FOR THE SIX FLOW DEPARTMENTS.
+     Opening the Department database as a Sales & Marketing user
+     now opens the Client onboarding tab, not the first regular
+     tab. For Revenue Assurance, Finance, Transmission, Core and
+     Technical support the tab sits first from the left, before
+     Invoices and Request items. No other department sees it at
+     all — opening the tab directly gives a 404 — unless the
+     Sales admin shares it with them (see (3)).
+
+ (2) EVERY TAB HAS A PERMISSION BUTTON FOR THE DEPARTMENT ADMIN.
+     The Client onboarding, Invoices and Request items tabs each
+     have a Permission button at the left of their toolbar, for
+     the admin of the department that owns the tab (and the
+     portal admin). Regular DeptDB tabs keep the Permission
+     button they already had. Clicking it opens a page where the
+     admin picks which other departments, or which individual
+     users, may see that tab.
+
+ (3) SHARING A SPECIAL TAB IS VIEW ONLY, AND THE GRANTED USER
+     SEES EVERYTHING IN IT. The share is always view only —
+     there is no Edit choice on the page. A granted department
+     or user sees every client, invoice or request in the tab,
+     and can open one to read it. They cannot change anything:
+     no + New client, no Permission button, no Select or Delete
+     on the shared tab, and every action route still refuses
+     them (approve, status change, delete and the rest all give
+     403). The shared tab is named the way you wrote it:
+     Client onboarding(Sales & Marketing), Invoices(Sales &
+     Marketing), Request items(Sales & Marketing) — and the
+     same for any other owning department. The page carries the
+     line "Shared by Sales & Marketing — view only. You see
+     every client here, and can open one to read it. You cannot
+     change anything." Removing a share takes the tab away
+     again at once, and the granted department or user is told.
+     The new shares live in a new table, special_tab_shares
+     (55 tables in the database now); the old whole-tab sharing
+     for regular DeptDB tabs is unchanged.
+
+ (4) SELECT, SELECT ALL AND DELETE FOREVER ON TOP OF EVERY
+     RECYCLE BIN TAB, FOR THE PORTAL ADMIN. Records, Users,
+     Others and Deleted users' data all have the three buttons
+     on top. Tick the items, click Delete forever, type your
+     password in the pop-up, then confirm — password first,
+     then the confirm, the same order as on the record pages.
+     A wrong password deletes nothing. Each ticked item is
+     erased exactly as its own Delete forever button erases
+     it: records, rows, invoices, requests, clients and tabs
+     go with everything under them, and the portal admin's
+     erase rule is kept per item — a permission user cannot
+     erase a deletion made by himself, by the portal admin,
+     or by another permission user; those are skipped and
+     counted, and the message says so. On the Users tab the
+     confirm asks one question for all the ticked users at
+     once: delete their work too? Yes erases everyone's work
+     at once, No takes everyone out of the Bin and keeps
+     everyone's work until the 30 days end (the same as the
+     single-user No). The Deleted users' data tab stays
+     true-portal-admin only, as before, and its old "Delete
+     all" is now the same Delete forever button. The old
+     single-item Delete forever buttons are untouched.
+
+ (5) THE SIDEBAR SAYS "PORTAL". The small line under the
+     company name in the sidebar now reads "Portal", not
+     "Records portal".
+
+ (6) NO SERVICE TYPE ON THE NEW CLIENT FORM. The Service
+     type box is gone from page 3 of the New client form and
+     from the SOF edit page — Service and Service type were
+     the same thing. The short service name shown in brackets
+     after each activation and termination date on the list is
+     now the Service itself. A SOF created before this build
+     keeps the service type it already had; on upgrade, a
+     Service type field left in the form setup is removed and
+     the Service description field is kept. Creating a client
+     still requires the Service description.
+
+ OPEN, carried forward: (g) the SOF-edit workflow rework
+     (Revenue Assurance forward step, SAN re-upload for the
+     edited SOF, Revenue Assurance date-edit stage, forward
+     to Finance); (h) the Department Database All-rows
+     column picker; the narrow centred forms (the small
+     centred boxes will not visibly widen under the 1560px
+     page size); whether one-by-one row and personal-record
+     deletes should ask for a password; whether the 07:00
+     signature reminder arrives at 07:00 Dhaka; whether
+     accounts_user is gone and the Accounts department
+     deleted.
+
+ Tested: 254 client-flow checks and the full 687/687
+ regression suite against real MySQL 8.0, on the work copy
+ and on a fresh extract of the zip. CSS audit: 0 parse
+ errors, 150 defined classes. Renders read back: the Client
+ onboarding tab as the portal admin (Permission first in
+ the toolbar, Select, Select all and Delete), the shared
+ Client onboarding tab as an HR user (the view-only line,
+ every client listed, no New client, no Permission, no
+ Delete), the Recycle Bin (Select, Select all and Delete
+ forever on top), and page 3 of the New client form (SOF
+ number, Service, Activation date, Service description,
+ SOF file — no Service type box). The password pop-up only
+ opens after a click, so it cannot appear in a still render.

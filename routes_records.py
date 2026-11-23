@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta
 import segno
 from flask import (Blueprint, abort, flash, g, redirect, render_template, request,
                    send_file, url_for)
+from werkzeug.security import check_password_hash
 
 import config
 from auth import admin_required, login_required
@@ -1391,6 +1392,7 @@ def bin_page():
                                    (r["id"],)).fetchone()[0]
             items.append(dict(r, summary=r["name"], erase_on=erase_on, days_left=days_left,
                               deleted_at=r["removed_at"],
+                              kind="tab",
                               kind_label=f"Department tab · {row_count} row(s)",
                               view_url=None,
                               restore_url=url_for("records.bin_tab_restore", tab_id=r["id"]),
@@ -1409,6 +1411,7 @@ def bin_page():
     for r in rows:
         erase_on, days_left = _erase(r["deleted_at"])
         items.append(dict(r, summary=sums[r["id"]], erase_on=erase_on, days_left=days_left,
+                          kind="rec",
                           kind_label="Personal record",
                           view_url=url_for("records.detail", rid=r["id"]),
                           restore_url=url_for("records.bin_restore", rid=r["id"]),
@@ -1430,6 +1433,7 @@ def bin_page():
         erase_on, days_left = _erase(r["deleted_at"])
         name = first_text_value(db, r["id"]) or f"Row #{r['id']}"
         items.append(dict(r, summary=name, erase_on=erase_on, days_left=days_left,
+                          kind="row",
                           kind_label="Department row" + (f" · {r['tab_name']}" if r["tab_name"] else ""),
                           view_url=None,
                           restore_url=url_for("records.bin_ddb_restore", rid=r["id"]),
@@ -1452,6 +1456,7 @@ def bin_page():
         erase_on, days_left = _erase(r["deleted_at"])
         items.append(dict(r, summary=(r["number"] or "Draft invoice") + (f" · {r['template_name']}" if r["template_name"] else ""),
                           erase_on=erase_on, days_left=days_left,
+                          kind="inv",
                           kind_label="Invoice",
                           view_url=None,
                           restore_url=url_for("records.bin_invoice_restore", iid=r["id"]),
@@ -1471,6 +1476,7 @@ def bin_page():
         erase_on, days_left = _erase(r["deleted_at"])
         items.append(dict(r, summary=(r["number"] or "Item request") + (f" · {r['kind_name']}" if r["kind_name"] else ""),
                           erase_on=erase_on, days_left=days_left,
+                          kind="req",
                           kind_label="Item request",
                           view_url=None,
                           restore_url=url_for("records.bin_request_restore", rid=r["id"]),
@@ -1492,6 +1498,7 @@ def bin_page():
         erase_on, days_left = _erase(r["deleted_at"])
         items.append(dict(r, summary=r["client_name"] + f" (CL-{r['id']:04d})",
                           erase_on=erase_on, days_left=days_left,
+                          kind="cli",
                           kind_label="Client",
                           view_url=None,
                           restore_url=url_for("records.bin_client_restore", cid=r["id"]),
@@ -1898,3 +1905,150 @@ def bin_user_purge(user_id):
     else:
         flash(f"{row['full_name']} was removed from the Recycle Bin. Their work stays in the portal (name in red) until the 30 days end.", "ok")
     return redirect(url_for("records.bin_page", tab="users"))
+
+
+@bp.route("/bin/delete-selected", methods=["POST"])
+@login_required
+def bin_delete_selected():
+    """Erase the ticked Recycle Bin items for good, in bulk (build 109).
+    Select / Select all / Delete forever sit on top of every Bin tab, for
+    the portal admin. The password comes first, in the pop-up, then the
+    confirm — the same order as the record pages. Each item is erased
+    exactly as its own Delete forever button erases it, and the portal
+    admin's erase rule is kept per item: a permission user cannot erase a
+    deletion made by himself, by the portal admin, or by another
+    permission user — those are skipped and counted. The Users tab asks
+    one question for all the ticked users: delete their work too? Yes
+    erases everyone's work at once, No keeps everyone's work until the
+    30 days end. The 'Deleted users' data' tab stays true-portal-admin
+    only, as before."""
+    db = get_db()
+    tab = request.form.get("tab") or "records"
+    if tab not in ("records", "users", "others", "users_data"):
+        tab = "records"
+    back = url_for("records.bin_page", tab=tab)
+    if not is_portal_admin(g.user):
+        abort(403)
+    password = request.form.get("admin_password") or ""
+    if not password or not check_password_hash(g.user["password_hash"], password):
+        flash("Wrong password. Nothing was deleted.", "error")
+        return redirect(back)
+    counts = {"rec": 0, "row": 0, "inv": 0, "req": 0, "cli": 0, "tab": 0, "usr": 0, "user_data": 0}
+    skipped = 0
+    delete_work = request.form.get("delete_work") == "1"
+    for raw in request.form.getlist("ids"):
+        raw = (raw or "").strip()
+        if ":" not in raw:
+            continue
+        k, num = raw.split(":", 1)
+        if k not in counts or not num.isdigit():
+            continue
+        iid = int(num)
+        if k == "rec":
+            rec = db.execute("SELECT * FROM records WHERE id=?", (iid,)).fetchone()
+            if rec is None or not rec["deleted_at"]:
+                continue
+            if _bin_purge_blocked(db, rec["deleted_by"]):
+                skipped += 1
+                continue
+            purge_record(db, iid)
+            log(db, "record_erase", f"record {iid} erased for good")
+            counts["rec"] += 1
+        elif k == "row":
+            row = db.execute("SELECT * FROM ddb_rows WHERE id=?", (iid,)).fetchone()
+            if row is None or not row["deleted_at"]:
+                continue
+            if _bin_purge_blocked(db, row["deleted_by"]):
+                skipped += 1
+                continue
+            purge_ddb_row(db, iid)
+            log(db, "ddb_erase", f"row {iid} erased for good")
+            counts["row"] += 1
+        elif k == "inv":
+            inv = db.execute("SELECT * FROM invoices WHERE id=?", (iid,)).fetchone()
+            if inv is None or not inv["deleted_at"]:
+                continue
+            if _bin_purge_blocked(db, inv["deleted_by"]):
+                skipped += 1
+                continue
+            purge_invoice(db, iid)
+            log(db, "invoice_erase", f"{inv['number'] or 'draft'} erased for good")
+            counts["inv"] += 1
+        elif k == "req":
+            req = db.execute("SELECT * FROM item_requests WHERE id=?", (iid,)).fetchone()
+            if req is None or not req["deleted_at"]:
+                continue
+            if _bin_purge_blocked(db, req["deleted_by"]):
+                skipped += 1
+                continue
+            purge_request(db, iid)
+            log(db, "item_request_erase", f"{req['number'] or 'request'} erased for good")
+            counts["req"] += 1
+        elif k == "cli":
+            cli = db.execute("SELECT * FROM client_onboardings WHERE id=?", (iid,)).fetchone()
+            if cli is None or not cli["deleted_at"]:
+                continue
+            if _bin_purge_blocked(db, cli["deleted_by"]):
+                skipped += 1
+                continue
+            purge_client(db, iid)
+            log(db, "client_erase", f"{cli['client_name']} erased for good")
+            counts["cli"] += 1
+        elif k == "tab":
+            t = db.execute("SELECT * FROM ddb_tabs WHERE id=?", (iid,)).fetchone()
+            if t is None or not t["removed_at"]:
+                continue
+            if _bin_purge_blocked(db, t["deleted_by"]):
+                skipped += 1
+                continue
+            purge_ddb_tab(db, iid)
+            log(db, "ddb_tab_erase", f"tab {iid} ({t['name']}) erased for good")
+            counts["tab"] += 1
+        elif k == "usr":
+            row = db.execute("SELECT * FROM users WHERE id=?", (iid,)).fetchone()
+            if row is None or not row["is_deleted"] or row["bin_purged"]:
+                continue
+            if not is_true_admin(g.user) and (is_true_admin(row) or iid == g.user["id"]):
+                skipped += 1
+                continue
+            if not is_true_admin(g.user) and row["deleted_by"]:
+                deleter = db.execute("SELECT role, can_portal_admin FROM users WHERE id=?",
+                                     (row["deleted_by"],)).fetchone()
+                if row["deleted_by"] == g.user["id"] or (deleter and (deleter["role"] == "admin"
+                                                                      or deleter["can_portal_admin"])):
+                    skipped += 1
+                    continue
+            purge_user_account(db, iid, delete_work=delete_work)
+            log(db, "user_purge" if delete_work else "user_purge_keep_work", row["username"])
+            counts["usr"] += 1
+        elif k == "user_data":
+            if not is_true_admin(g.user):
+                skipped += 1
+                continue
+            row = db.execute("SELECT * FROM users WHERE id=?", (iid,)).fetchone()
+            if row is None or not row["is_deleted"] or not row["bin_purged"]:
+                continue
+            purge_user_account(db, iid, delete_work=True)
+            log(db, "user_purge", row["username"])
+            counts["user_data"] += 1
+    total = sum(counts.values())
+    if total:
+        labels = {"rec": "record(s)", "row": "row(s)", "inv": "invoice(s)", "req": "request(s)",
+                  "cli": "client(s)", "tab": "tab(s)",
+                  "usr": "user(s)" if delete_work else "user(s) removed from the Recycle Bin, work kept",
+                  "user_data": "user(s) and all their data"}
+        parts = [f"{counts[k]} {labels[k]}" for k in ("rec", "row", "inv", "req", "cli", "tab", "usr", "user_data")
+                 if counts[k]]
+        notify_admin_task(db, g.user,
+                          f"{g.user['full_name']} erased for good from the Recycle Bin: " + ", ".join(parts) + ".",
+                          url_for("records.bin_page", tab=tab))
+        db.commit()
+        msg = "Deleted for good: " + ", ".join(parts) + "."
+        if skipped:
+            msg += f" {skipped} item(s) were skipped — only the portal admin can erase those."
+        flash(msg, "ok")
+    elif skipped:
+        flash(f"Nothing was deleted. {skipped} item(s) were skipped — only the portal admin can erase those.", "error")
+    else:
+        flash("Nothing selected, or the selected items cannot be deleted from here.", "error")
+    return redirect(back)

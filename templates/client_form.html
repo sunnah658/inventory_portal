@@ -94,7 +94,6 @@
           <div class="fm">
             <div class="fd"><label>{{ fmap['sof_number'].name }} <span class="req">*</span></label><input name="sof_number" type="text" maxlength="255" value="{{ r.sof_number }}"></div>
             <div class="fd"><label>{{ fmap['sof_service'].name }} <span class="req">*</span></label><input name="sof_service" type="text" maxlength="255" value="{{ r.service }}" placeholder="for example Internet 100 Mbps"></div>
-            <div class="fd"><label>{{ fmap['sof_service_type'].name }} <span class="req">*</span></label><input name="sof_service_type" type="text" maxlength="255" value="{{ r.service_type }}" placeholder="the short name shown after the date"></div>
             <div class="fd full"><label>{{ fmap['sof_service_description'].name }} <span class="req">*</span></label><textarea name="sof_service_description" rows="2">{{ r.service_description }}</textarea></div>
             <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date" value="{{ r.activation_date }}" required{% if am_mode %} disabled{% endif %}></div>
             {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2">{{ r.details }}</textarea></div>{% endif %}
@@ -128,7 +127,6 @@
   <input type="hidden" name="sof_existing" value=""><div class="fm">
   <div class="fd"><label>{{ fmap['sof_number'].name }} <span class="req">*</span></label><input name="sof_number" type="text" maxlength="255"></div>
   <div class="fd"><label>{{ fmap['sof_service'].name }} <span class="req">*</span></label><input name="sof_service" type="text" maxlength="255" placeholder="for example Internet 100 Mbps"></div>
-  <div class="fd"><label>{{ fmap['sof_service_type'].name }} <span class="req">*</span></label><input name="sof_service_type" type="text" maxlength="255" placeholder="the short name shown after the date"></div>
   <div class="fd full"><label>{{ fmap['sof_service_description'].name }} <span class="req">*</span></label><textarea name="sof_service_description" rows="2"></textarea></div>
   <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date"{% if not am_mode %} required{% endif %}{% if am_mode %} disabled{% endif %}></div>
   {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2"></textarea></div>{% endif %}

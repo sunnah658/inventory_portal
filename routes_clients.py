@@ -306,7 +306,7 @@ def _perms(db, user, roles, c):
 # ---------------------------------------------------------------- the configurable Add Client form (build 93)
 FIELD_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                ("date", "Date"), ("dropdown", "Dropdown"), ("yesno", "Yes-No")]
-STRUCTURAL_REQUIRED = {"client_name", "contact_name", "sof_number", "sof_service", "sof_service_type",
+STRUCTURAL_REQUIRED = {"client_name", "contact_name", "sof_number", "sof_service",
                        "sof_service_description", "sof_activation_date"}
 
 # Build 95: where a deletable default field's values live. Deleting the
@@ -322,7 +322,6 @@ DEFAULT_FIELD_COLUMNS = {
     "contact_phone": ("client_contacts", "phone"),
     "contact_email": ("client_contacts", "email"),
     "sof_details": ("client_services", "details"),
-    "sof_service_type": ("client_services", "service_type"),
     "sof_service_description": ("client_services", "service_description"),
 }
 
@@ -395,7 +394,7 @@ def _sof_snapshot(row):
             "termination_reason": row.get("termination_reason") or ""}
 
 
-_SOF_FIELD_LABELS = {"sof_number": "SOF number", "service": "Service", "service_type": "Service type",
+_SOF_FIELD_LABELS = {"sof_number": "SOF number", "service": "Service",
                      "service_description": "Service description", "details": "Details",
                      "termination_date": "Termination date",
                      "commercial_impact_date": "Commercial impact date",
@@ -403,7 +402,7 @@ _SOF_FIELD_LABELS = {"sof_number": "SOF number", "service": "Service", "service_
 
 
 def _sof_change_text(old, new):
-    """'Service type: internet -> IPTSP; Termination date: — -> 2026-12-01'
+    """'Service: Internet -> IPTSP; Termination date: — -> 2026-12-01'
     — one line per field that actually changed."""
     parts = []
     for key, label in _SOF_FIELD_LABELS.items():
@@ -447,10 +446,18 @@ def _dept_row(db, dept_id):
 
 
 # ---------------------------------------------------------------- list: the tab inside the Department Database
-def client_tab_view(db, dept, is_admin, args):
-    """The Client onboarding tab (tab=clients on the Department Database page)."""
+def client_tab_view(db, dept, is_admin, args, shared_owner=None, shared_id=None):
+    """The Client onboarding tab (tab=clients on the Department Database page).
+    shared_owner is the name of the department that shared this tab with the
+    viewer (build 109): then the viewer sees every live client, view only —
+    the flow roles do not cover him, so the share is what lets him see them.
+    Nothing else changes: he cannot create, approve, forward, edit, upload
+    a SAN or delete, because every one of those is gated on a flow role."""
     roles = user_roles(db, g.user)
-    vis, vparams = _visible_sql(g.user, roles)
+    if shared_owner is not None:
+        vis, vparams = "c.deleted_at IS NULL", []
+    else:
+        vis, vparams = _visible_sql(g.user, roles)
     sales_admin = _is_sales_admin(db, g.user)
     can_create = bool(_sales_dept_id(db)) and ("sales" in roles or is_portal_admin(g.user))
 
@@ -574,14 +581,17 @@ def client_tab_view(db, dept, is_admin, args):
         keep["dept"] = dept["id"]
     return render_template(
         "deptdb_clients.html", dept=dept, is_admin=is_admin,
-        tabs=routes_deptdb._tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user)),
+        tabs=routes_deptdb._tabs_row(ddb_tabs(db, dept["id"]), ddb_shared_tabs(db, g.user))
+        + routes_deptdb._special_shared_entries(db, g.user, dept["id"], skip_key="clients"),
         rows=rows, counts=counts, view=view, status=status, q=q, am=am, month_from=month_from, month_to=month_to, mtype=mtype,
         managers=_account_managers(db), total=total, page=page, pages=pages,
         keep=keep, approved=approved, can_create=can_create, roles=roles,
         flow=flow_depts(db), role_label=ROLE_LABEL,
         can_setup=is_portal_admin(g.user), can_form_setup=_is_sales_admin(db, g.user),
         statuses=ALL_STATUSES, status_label=STATUS_LABEL,
-        sof_statuses=SOF_STATUSES, sof_status_label=SOF_STATUS_LABEL)
+        sof_statuses=SOF_STATUSES, sof_status_label=SOF_STATUS_LABEL,
+        shared_owner=shared_owner, shared_id=shared_id,
+        can_manage_tab_sharing=shared_owner is None and _is_sales_admin(db, g.user))
 
 
 # ---------------------------------------------------------------- one client
@@ -600,7 +610,13 @@ def _load(cid):
         abort(404)
     roles = user_roles(db, g.user)
     if not _can_view(g.user, roles, c):
-        abort(404)
+        # Build 109: a user the Sales admin shared the Client onboarding
+        # tab with sees every client, view only — the flow roles do not
+        # cover him, so the share is what lets him in.
+        from core import special_tab_access
+        sales = flow_depts(db).get("sales")
+        if not sales or special_tab_access(db, g.user, "clients", sales) is None:
+            abort(404)
     return db, c, roles
 
 
@@ -847,9 +863,10 @@ def _read_form(db, existing, am_mode=False):
         sid = int(sid_raw) if str(sid_raw).isdigit() and int(sid_raw) in existing else None
         row = {"id": sid or "", "sof_number": _clean(numbers[i]),
                "service": _clean(_pick(f.getlist("sof_service"), i)),
-               # Build 102: the service type is the short service name the
-               # tab shows in brackets; the description is the SOF's own.
-               "service_type": _clean(_pick(f.getlist("sof_service_type"), i)),
+               # Build 109: there is no Service type box any more — Service
+               # and Service type meant the same thing, so the short name
+               # the tab shows in brackets is the Service itself.
+               "service_type": _clean(_pick(f.getlist("sof_service"), i)),
                "service_description": (_pick(f.getlist("sof_service_description"), i) or "").strip()[:2000],
                "details": (_pick(f.getlist("sof_details"), i) or "").strip()[:2000], "file_name": "",
                "custom": {fid: _clean(_pick(vals, i), 2000) for fid, vals in custom3.items()}}
@@ -1517,7 +1534,8 @@ def sof_edit(cid, sid):
                                portal_admin=portal_admin)
     new = {"sof_number": _clean(request.form.get("sof_number"), 255),
            "service": _clean(request.form.get("service"), 255),
-           "service_type": _clean(request.form.get("service_type"), 255),
+           # Build 109: no Service type box — the short name is the Service itself.
+           "service_type": _clean(request.form.get("service"), 255),
            "service_description": (request.form.get("service_description") or "").strip()[:2000],
            "details": (request.form.get("details") or "").strip()[:2000],
            "termination_date": (request.form.get("termination_date") or "").strip(),
@@ -1525,7 +1543,7 @@ def sof_edit(cid, sid):
            "termination_reason": (request.form.get("termination_reason") or "").strip()[:2000]}
     errors = []
     for key, label in (("sof_number", "SOF number"), ("service", "Service"),
-                       ("service_type", "Service type"), ("service_description", "Service description")):
+                       ("service_description", "Service description")):
         if not new[key]:
             errors.append(f"{label} is required.")
     for key, label in (("termination_date", "Termination date"),

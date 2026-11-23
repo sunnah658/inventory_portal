@@ -11,7 +11,6 @@
     <div class="fm">
       <div class="fd"><label>SOF number <span class="req">*</span></label><input name="sof_number" type="text" maxlength="255" value="{{ s['sof_number'] }}" required></div>
       <div class="fd"><label>Service <span class="req">*</span></label><input name="service" type="text" maxlength="255" value="{{ s['service'] }}" required></div>
-      <div class="fd"><label>Service type <span class="req">*</span></label><input name="service_type" type="text" maxlength="255" value="{{ s['service_type'] or '' }}" placeholder="the short name shown after the date" required></div>
       <div class="fd full"><label>Service description <span class="req">*</span></label><textarea name="service_description" rows="2" required>{{ s['service_description'] or '' }}</textarea></div>
       <div class="fd full"><label>Details</label><textarea name="details" rows="2">{{ s['details'] or '' }}</textarea></div>
       <div class="fd"><label>Activation date</label><input type="date" value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" disabled><p class="sub">Set by Revenue Assurance.</p></div>

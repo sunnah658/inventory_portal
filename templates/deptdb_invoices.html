@@ -4,8 +4,8 @@
 {% block title %}Department database · Invoices{% endblock %}
 {% block content %}
 <div class="hd">
-  <div><h1>{{ dept['name'] }} database · Invoices</h1>
-    <p class="hint">Everyone in this department can see every invoice here. Editing rules are unchanged: a draft can be edited by its owner, and a dept admin can mark an invoice Approved or Pending. Invoice templates stay on the separate Invoice templates page for dept admins.</p></div>
+  <div><h1>{{ shared_owner or dept['name'] }} database · Invoices</h1>
+    <p class="hint">{% if shared_owner %}Shared by {{ shared_owner }} — view only. You see every invoice here, and can open one to read it. You cannot change anything.{% else %}Everyone in this department can see every invoice here. Editing rules are unchanged: a draft can be edited by its owner, and a dept admin can mark an invoice Approved or Pending. Invoice templates stay on the separate Invoice templates page for dept admins.{% endif %}</p></div>
   <div class="acts">
     {% if is_admin %}<a class="b" href="{{ url_for('invoices.templates') }}">Invoice templates</a>{% endif %}
     <button class="b" type="button" onclick="window.print()">Print</button>
@@ -21,7 +21,7 @@
 {% if depts %}<form method="get" class="tools" style="margin-bottom:10px"><label for="dsel" style="margin:0">Department</label>
   <select id="dsel" name="dept" style="width:auto" onchange="this.form.submit()">{% for d in depts %}<option value="{{ d['id'] }}" {{ 'selected' if d['id'] == dept['id'] }}>{{ d['name'] }}</option>{% endfor %}</select><input type="hidden" name="tab" value="invoices"></form>{% endif %}
 <form class="tools" method="get" action="{{ url_for('ddb.index') }}">
-  <input type="hidden" name="tab" value="invoices">{% if depts %}<input type="hidden" name="dept" value="{{ dept['id'] }}">{% endif %}
+  <input type="hidden" name="tab" value="invoices">{% if shared_id %}<input type="hidden" name="shared" value="{{ shared_id }}">{% endif %}{% if depts %}<input type="hidden" name="dept" value="{{ dept['id'] }}">{% endif %}
   {% if invtype_id %}<input type="hidden" name="invtype" value="{{ invtype_id }}">{% endif %}
   <input type="search" name="q" value="{{ q }}" placeholder="Search customer, invoice number or share code like HRC-48392" aria-label="Search invoices">
   <select name="user" aria-label="Filter by user"><option value="">All users</option>{% if show_mine %}<option value="mine" {{ 'selected' if user_filter == 'mine' }}>My invoices</option>{% endif %}{% if show_others %}<option value="others" {{ 'selected' if user_filter == 'others' }}>Other's invoices</option>{% endif %}
@@ -33,18 +33,19 @@
   {% if q or user_filter or status or sort != 'newest' %}<a href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Clear</a>{% endif %}
 </form>
 <div class="tabs">
-  {% for tb in tabs %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
-  <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices') }}">Invoices</a>
-  <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>{% if show_clients_tab %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients') }}">Client onboarding</a>{% endif %}
+  {% if show_clients_tab %}<a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='clients') }}">Client onboarding</a>{% endif %}
+  {% for tb in tabs %}<a class="tab" href="{{ tb.get('url') or url_for('ddb.index', dept=dept['id'], tab=tb['id']) }}">{{ tb['name'] }}</a>{% endfor %}
+  <a class="tab on" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', **({'shared': shared_id} if shared_id else {})) }}">Invoices</a>
+  <a class="tab" href="{{ url_for('ddb.index', dept=dept['id'], tab='requests') }}">Request items</a>
 </div>
 <div class="tabs" style="margin-top:8px">
-  <a class="tab {{ 'on' if invtype == 'all' and user_filter not in ('mine', 'others') }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user=user_filter, status=status, q=q, sort=sort) }}">All · {{ counts.all }}</a>
-  {% if show_mine %}<a class="tab {{ 'on' if invtype == 'all' and user_filter == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='mine', status=status, q=q, sort=sort) }}">My invoices · {{ counts.mine }}</a>{% endif %}
-  {% if show_others %}<a class="tab {{ 'on' if invtype == 'all' and user_filter == 'others' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='others', status=status, q=q, sort=sort) }}">Other's invoices · {{ counts.others }}</a>{% endif %}
-  {% for st in sub_tabs %}<a class="tab {{ 'on' if invtype_id == st['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', invtype=st['id'], user=user_filter, status=status, q=q, sort=sort) }}">{{ st['name'] }} · {{ counts[st['id']] }}</a>{% endfor %}
+  <a class="tab {{ 'on' if invtype == 'all' and user_filter not in ('mine', 'others') }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user=user_filter, status=status, q=q, sort=sort, **({'shared': shared_id} if shared_id else {})) }}">All · {{ counts.all }}</a>
+  {% if show_mine %}<a class="tab {{ 'on' if invtype == 'all' and user_filter == 'mine' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='mine', status=status, q=q, sort=sort, **({'shared': shared_id} if shared_id else {})) }}">My invoices · {{ counts.mine }}</a>{% endif %}
+  {% if show_others %}<a class="tab {{ 'on' if invtype == 'all' and user_filter == 'others' }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', user='others', status=status, q=q, sort=sort, **({'shared': shared_id} if shared_id else {})) }}">Other's invoices · {{ counts.others }}</a>{% endif %}
+  {% for st in sub_tabs %}<a class="tab {{ 'on' if invtype_id == st['id'] }}" href="{{ url_for('ddb.index', dept=dept['id'], tab='invoices', invtype=st['id'], user=user_filter, status=status, q=q, sort=sort, **({'shared': shared_id} if shared_id else {})) }}">{{ st['name'] }} · {{ counts[st['id']] }}</a>{% endfor %}
 </div>
-<div class="selbtns"><button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if can_portal_admin and rows %} <button class="b dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete</button>{% endif %}</div>
-{% if can_portal_admin and rows %}
+<div class="selbtns">{% if can_manage_tab_sharing %}<a class="b" href="{{ url_for('ddb.special_tab_permissions', key='invoices') }}">Permission</a>{% endif %}{% if not shared_owner %}<button class="b selToggle" type="button">Select</button><button class="b selAllBtn" type="button">Select all</button>{% if can_portal_admin and rows %} <button class="b dg" type="button" onclick="document.getElementById('delPop').style.display='flex';document.getElementById('delCount').textContent=document.querySelectorAll('input.rowck:checked').length">Delete</button>{% endif %}{% endif %}</div>
+{% if can_portal_admin and not shared_owner and rows %}
 <div id="delPop" style="display:none;position:fixed;inset:0;background:rgba(16,40,58,.55);z-index:200;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)this.style.display='none'">
   <div class="card" style="max-width:460px;width:100%;padding:22px">
     <h2 style="margin-top:0">Delete the selected items?</h2>
@@ -64,13 +65,13 @@
 </div>
 {% endif %}
 {% if rows %}
-  {% if can_portal_admin %}<form id="delform" method="post" action="{{ url_for('bulk.delete_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="kind" value="inv"><input type="hidden" name="back" value="{{ request.full_path }}">{% endif %}
+  {% if can_portal_admin and not shared_owner %}<form id="delform" method="post" action="{{ url_for('bulk.delete_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="kind" value="inv"><input type="hidden" name="back" value="{{ request.full_path }}">{% endif %}
   <div class="tb"><table>
     <thead><tr><th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th><th>Share code</th><th>Invoice number</th><th>Format</th><th>Customer / title</th><th>Owner</th><th>Date</th><th>Amount</th><th>Status</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}
       <tr class="r"><td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" aria-label="Select"></td><td><b>{{ r['public_code'] or '—' }}</b></td><td>{{ r['number'] or 'Draft' }}</td><td>{{ r['template_name'] or '' }}</td><td>{{ r['customer_name'] or '—' }}</td><td><span class="{{ user_name_class(r) }}">{{ r['owner_name'] or '' }}</span>{% if r['department_id'] != dept['id'] %} <span class="sub">({{ r['dept_name'] }})</span>{% endif %}</td><td>{{ r['invoice_date'] or '' }}</td><td class="num">{{ '%.2f'|format(r['total']) }} {{ r['currency'] }}</td><td><span class="s {{ 'g' if r['status'] in ('issued','paid','approved') else 'a' if r['status'] in ('draft','pending') else 'r' }}">{{ r['status']|title }}</span></td><td class="actcell noprint"><a class="b sm" href="{{ url_for('invoices.detail', iid=r['id']) }}">View</a><a class="b sm" href="{{ url_for('invoices.invoice_pdf', iid=r['id']) }}">PDF</a>{% if r['public_code'] %}<a class="b sm" href="{{ url_for('invoices.code_page', code=r['public_code']) }}">QR</a>{% endif %}{% if can_edit_invoice(r) %}<a class="b sm" href="{{ url_for('invoices.invoice_edit', iid=r['id']) }}">Edit</a>{% endif %}</td></tr>
     {% endfor %}</tbody></table></div>
-  {% if can_portal_admin %}</form>{% endif %}
+  {% if can_portal_admin and not shared_owner %}</form>{% endif %}
   {{ pager(page, pages, 'ddb.index', keep) }}
 {% else %}
   <div class="tb"><div class="empty">{% if q or user_filter or status %}Nothing matches your filter.{% else %}No invoices yet. Choose a format above to create one.{% endif %}</div></div>

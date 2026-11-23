@@ -1506,6 +1506,55 @@ def ddb_shared_tabs(db, user):
     return out
 
 
+# ---------------------------------------------------------------- special-tab sharing (build 109)
+SPECIAL_TABS = {"clients": "Client onboarding", "invoices": "Invoices", "requests": "Request items"}
+
+
+def special_tab_shares_for(db, user, tab_key=None):
+    """The special Department Database tabs shared with this user — a whole
+    tab (Client onboarding, Invoices or Request items) shared by the
+    department that owns it, with a department grant or a personal grant.
+    Each entry: the tab key, the owning department's id and name, the
+    display name 'TabName(OwnerDept)', and the access — always 'view':
+    special tabs are never shared with Edit (build 109). The portal admin
+    never needs a share, so this returns [] for him. A department grant
+    and a personal grant for the same tab collapse into one entry."""
+    if is_portal_admin(user):
+        return []
+    q = ("SELECT s.tab_key AS tab_key, s.owner_dept_id AS owner_dept_id, d.name AS dept_name "
+         "FROM special_tab_shares s JOIN departments d ON d.id=s.owner_dept_id "
+         "WHERE (s.department_id=? OR s.user_id=?)")
+    params = [user["department_id"], user["id"]]
+    if tab_key:
+        q += " AND s.tab_key=?"
+        params.append(tab_key)
+    q += " ORDER BY d.name, s.tab_key"
+    out, seen = [], set()
+    for r in db.execute(q, params).fetchall():
+        key = (r["tab_key"], r["owner_dept_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"tab_key": r["tab_key"], "owner_dept_id": r["owner_dept_id"],
+                    "dept_name": r["dept_name"], "access": "view",
+                    "display_name": ddb_shared_tab_name(SPECIAL_TABS[r["tab_key"]], r["dept_name"])})
+    return out
+
+
+def special_tab_access(db, user, tab_key, owner_dept_id):
+    """'view' when this special tab was shared with the user by that owner
+    department — a grant to his whole department, or to him personally —
+    else None. A user in the owner department and the portal admin are
+    not 'shared' users, so this returns None for them."""
+    if is_portal_admin(user) or user["department_id"] == owner_dept_id:
+        return None
+    row = db.execute(
+        "SELECT 1 FROM special_tab_shares WHERE tab_key=? AND owner_dept_id=? "
+        "AND (department_id=? OR user_id=?) LIMIT 1",
+        (tab_key, owner_dept_id, user["department_id"], user["id"])).fetchone()
+    return "view" if row else None
+
+
 def first_text_value(db, row_id):
     """The value of a row's first text/longtext column (its display name)."""
     row = db.execute(

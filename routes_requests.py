@@ -156,6 +156,13 @@ def _can_view(db, user, req):
     # Only the recipient can edit it — _can_edit is unchanged.
     if user["department_id"] == hr_admin_dept_id(db):
         return True
+    # Build 109: the department admin shared this department's whole
+    # Request items tab with this user's department, or with him
+    # personally. He sees every request in it, view only — only the
+    # recipient can change its status, as before.
+    from core import special_tab_access
+    if special_tab_access(db, user, "requests", req["department_id"]) is not None:
+        return True
     # Anyone picked as a step on this request can open it and its PDF —
     # whatever department they are in — so an approver from another
     # department is never met with a 403. They can only approve or
