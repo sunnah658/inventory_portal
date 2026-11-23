@@ -1,4 +1,13 @@
 ==============================================================================
+ CLIENT LIST FILTER: A CALENDAR WITH DATE SELECTION, AND
+ ACTIVATION / TERMINATION (2026-11-23)
+==============================================================================
+ The Client onboarding filter's From and To boxes are now date
+ boxes with a calendar — pick exact days instead of whole
+ months — and the dropdown beside them reads just "Activation"
+ and "Termination". Old month links still work, counting a month
+ as its first day to its last day.
+==============================================================================
  EVERY PAGE WIDER, CENTRED USER MENU, SHORT SAN LABEL, SAME-SIZE
  CONTACT BOX, ONE SAN REPORT PER SOF, APPROVAL NOTICE FIX, SOF
  COLUMNS AND SOF VIEW PAGE (2026-11-23)

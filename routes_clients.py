@@ -34,6 +34,7 @@ Used by: app.py (registers it, tab link), routes_deptdb.py (list page = tab "cli
 Uses: core.py, models.py, routes_deptdb.py (file saving), utils.py
 Templates: deptdb_clients, client_form, client_detail, client_setup, client_form_setup, sof_code.
 """
+import calendar
 import json
 import os
 import re
@@ -97,6 +98,41 @@ def client_status(value):
 
 
 # ---------------------------------------------------------------- which department plays which part
+def _date_or_month_start(value):
+    """A YYYY-MM-DD date as-is, or a YYYY-MM month as its first day;
+    anything else (including an impossible date) is dropped."""
+    if not value:
+        return ""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+            return value
+        except ValueError:
+            return ""
+    if re.fullmatch(r"\d{4}-\d{2}", value):
+        return value + "-01"
+    return ""
+
+
+def _date_or_month_end(value):
+    """A YYYY-MM-DD date as-is, or a YYYY-MM month as its last day;
+    anything else (including an impossible date) is dropped."""
+    if not value:
+        return ""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+            return value
+        except ValueError:
+            return ""
+    if re.fullmatch(r"\d{4}-\d{2}", value):
+        y, m = int(value[:4]), int(value[5:7])
+        if 1 <= m <= 12:
+            return "%s-%02d" % (value, calendar.monthrange(y, m)[1])
+        return ""
+    return ""
+
+
 def _guess_dept(role, names):
     """Match a department by its name when the setup page was never saved."""
     for did, name in names:
@@ -423,22 +459,22 @@ def client_tab_view(db, dept, is_admin, args):
     q = " ".join((args.get("q") or "").split())
     # Build 102 filters: the account manager, and one month with
     # Activation or Termination — the list then shows only the clients
-    # with an activation (or a termination) in that month. Build 104
-    # widens the month to a From/To range, same choice of Activation or
-    # Termination; an old single ?month= link still works and counts as
-    # From = To = that month.
+    # with an activation (or a termination) on a date inside the chosen
+    # range. Build 106 replaces the month boxes with date boxes: the
+    # browser shows a calendar, and the filter compares exact dates.
+    # An old single ?month= link, or a ?month_from=/?month_to= in
+    # YYYY-MM form, still works: a month counts as its first day to
+    # its last day.
     am = args.get("am", type=int)
     month_from = (args.get("month_from") or "").strip()
     month_to = (args.get("month_to") or "").strip()
     month = (args.get("month") or "").strip()
     if month and re.fullmatch(r"\d{4}-\d{2}", month) and not month_from and not month_to:
         month_from = month_to = month
-    if month_from and not re.fullmatch(r"\d{4}-\d{2}", month_from):
-        month_from = ""
-    if month_to and not re.fullmatch(r"\d{4}-\d{2}", month_to):
-        month_to = ""
     if month_from and month_to and month_from > month_to:
         month_from, month_to = month_to, month_from
+    month_from = _date_or_month_start(month_from)
+    month_to = _date_or_month_end(month_to)
     mtype = args.get("mtype") or "activation"
     if mtype not in ("activation", "termination"):
         mtype = "activation"
@@ -480,14 +516,14 @@ def client_tab_view(db, dept, is_admin, args):
         where.append("c.account_manager_id=?"); params.append(am)
     if month_from or month_to:
         # A client matches when one of its SOFs was activated (or
-        # terminated) inside the chosen month range.
+        # terminated) on a date inside the chosen range.
         col = "activation_date" if mtype == "activation" else "termination_date"
         conds, cparams = [], []
         if month_from:
-            conds.append(f"DATE_FORMAT(s.{col},'%Y-%m')>=?")
+            conds.append(f"s.{col}>=?")
             cparams.append(month_from)
         if month_to:
-            conds.append(f"DATE_FORMAT(s.{col},'%Y-%m')<=?")
+            conds.append(f"s.{col}<=?")
             cparams.append(month_to)
         where.append("EXISTS (SELECT 1 FROM client_services s WHERE s.client_id=c.id AND "
                      + " AND ".join(conds) + ")")

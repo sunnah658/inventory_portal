@@ -31,9 +31,9 @@
     <option value="sof_terminated" {{ 'selected' if status == 'sof_terminated' }}>Terminated SOF</option></select>
   <select name="am" aria-label="Filter by account manager"><option value="">All account managers</option>
     {% for m in managers %}<option value="{{ m['id'] }}" {{ 'selected' if am == m['id'] }}>{{ m['full_name'] }}</option>{% endfor %}</select>
-  <label style="margin:0">From <input type="month" name="month_from" value="{{ month_from }}" aria-label="From month"></label>
-  <label style="margin:0">To <input type="month" name="month_to" value="{{ month_to }}" aria-label="To month"></label>
-  <select name="mtype" aria-label="Month filter shows"><option value="activation" {{ 'selected' if mtype == 'activation' }}>Activation in month</option><option value="termination" {{ 'selected' if mtype == 'termination' }}>Termination in month</option></select>
+  <label style="margin:0">From <input type="date" name="month_from" value="{{ month_from }}" aria-label="From date"></label>
+  <label style="margin:0">To <input type="date" name="month_to" value="{{ month_to }}" aria-label="To date"></label>
+  <select name="mtype" aria-label="Date filter shows"><option value="activation" {{ 'selected' if mtype == 'activation' }}>Activation</option><option value="termination" {{ 'selected' if mtype == 'termination' }}>Termination</option></select>
   <button class="b" type="submit">Apply</button>
   {% if q or status or am or month_from or month_to %}<a href="{{ url_for('ddb.index', tab='clients', view=view, **({'dept': keep.dept} if keep.dept else {})) }}">Clear</a>{% endif %}
 </form>

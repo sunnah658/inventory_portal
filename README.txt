@@ -6549,3 +6549,40 @@
  buttons, the SAN reports card), the SOF page, the form page
  (contact box the same width as the account manager's box),
  the dashboard and the user menu centred over the user card.
+
+==============================================================================
+ 125. CLIENT LIST FILTER: A CALENDAR WITH DATE SELECTION, AND
+     ACTIVATION / TERMINATION (2026-11-23)
+==============================================================================
+ Two small changes to the Client onboarding filter, from your
+ message of 2026-11-23:
+
+ (1) A CALENDAR FOR FROM AND TO. The From and To boxes were
+     month-only boxes — you could only pick a month. They are
+     now date boxes: click one and the browser opens a calendar,
+     and you pick an exact day. The filter then matches clients
+     whose activation date (or termination date) falls between
+     the two days you picked, instead of matching a whole month.
+     An impossible date is ignored and the list is left
+     unfiltered. If From is later than To, the two are swapped
+     instead of giving an empty list. Picking only a From date
+     works (from that day onward), and only a To date works (up
+     to that day).
+
+ (2) ACTIVATION AND TERMINATION, NOT "ACTIVATION MONTH". The
+     dropdown beside the From and To boxes read "Activation in
+     month" and "Termination in month". The two choices now read
+     just "Activation" and "Termination". Picking Activation
+     filters by the SOF activation date, picking Termination
+     filters by the SOF termination date.
+
+ Old links still work: a single ?month=2026-12 counts as the
+ whole of December (the 1st to the 31st), and a From/To pair
+ written as months counts the same way. The chosen dates stay
+ in the boxes and in the sub-tab links after you click Apply.
+
+ Tested: 186 client-flow checks and the full 647/647 regression
+ suite against real MySQL 8.0, on the work copy and on a fresh
+ extract of the zip. The list was rendered to JPG and read back
+ (b106-client-list.jpg) — the From and To boxes are date boxes
+ and the dropdown reads "Activation".
