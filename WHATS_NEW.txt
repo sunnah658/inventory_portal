@@ -1,4 +1,12 @@
 ==============================================================================
+ THE MIDDLE FILLS THE WIDTH — NO MORE EMPTY SPACE ON THE RIGHT (2026-11-24)
+==============================================================================
+ The pages were capped at 1560px wide, so on a wide screen the middle
+ floated with a wide empty band on its right. The cap is gone: the
+ middle now fills the whole width, so the space on its right matches
+ the small space on its left, and wide tables get more room.
+
+==============================================================================
  THE CLIENT DETAIL PAGE FITS AT 100% BROWSER ZOOM (2026-11-24)
 ==============================================================================
  Opening a client used to cut the right-hand rail off the screen, and

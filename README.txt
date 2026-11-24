@@ -7264,3 +7264,38 @@ scrolls inside its own card if it is wider than the column.
 
 Tests: 320/320 client checks and the full 728/728 regression
 suite, work copy AND fresh extract, real MySQL 8.0. CSS audit: 0 errors, 150 defined classes.
+
+
+134. THE MIDDLE FILLS THE WIDTH — NO MORE EMPTY SPACE ON THE RIGHT
+(no files added or removed)
+
+Every page was capped at 1560px wide (build 105 — the client list's
+width), so on a wide screen the middle floated with a wide empty band
+on its right (and a matching one on its left, next to the sidebar).
+The user asked to use the extra space on the right so the middle is
+wider and the space on its right matches the space on its left.
+
+The fix is one CSS rule: the max-width:1560px cap is removed from
+main in static/style.css, so the middle now fills the whole mainwrap
+— its left edge sits the usual small gap from the sidebar and its
+right edge sits the same small gap from the screen edge. Nothing else
+changes: the 280px rail, the page padding, the phone collapse and the
+centred narrow forms are untouched, and the login page (main.bare)
+already had no cap. The wider middle also gives wide tables more
+room, so the client detail page's Services table is less likely to
+need its sideways scroll (build 114's rule stays as the safety net).
+
+This changes EVERY page, not just Invoice templates — it is the one
+width rule for the whole portal. The look was shown to the user first
+(probe115-before / probe115-after at a 1920px screen) and approved
+before building.
+
+Tests: 323/323 client checks and the full 731/731 regression
+suite, work copy AND fresh extract, real MySQL 8.0. CSS audit: 0
+errors, 150 defined classes. Renders read back: the Invoice
+templates page at full width with its rail, the client list and the
+client detail page as before, only wider.
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms,
+one-by-one delete password question, 07:00 reminder + accounts_user
+confirmations still unanswered.

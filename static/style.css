@@ -105,7 +105,7 @@ html[data-theme=dark] .usermenu summary{background:rgba(255,255,255,.07)}
 .panel label{margin-top:8px}.panel form{margin:0}.panel .row{display:flex;gap:8px;margin-top:12px}
 /* Every page uses the wide cap (build 105): the client onboarding
    list's width is now the width of the whole portal. */
-main{padding:24px 84px 24px 28px;max-width:1560px;width:100%;margin:0 auto}main.bare{padding:0;max-width:none}
+main{padding:24px 84px 24px 28px;width:100%;margin:0 auto}main.bare{padding:0;max-width:none}
 .print-head{display:none}
 /* ---------- messages, cards */
 .msg{padding:11px 14px;border-radius:var(--r);margin-bottom:14px;border:1px solid;animation:up .4s both}
