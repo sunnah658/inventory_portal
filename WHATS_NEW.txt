@@ -1,4 +1,32 @@
 ==============================================================================
+ THE ADD-SERVICE OVERWRITE FIX, SOF FILES KEPT, AND RA'S DATE
+ BOXES ONLY WHEN THE ACCOUNT MANAGER SET THEM (2026-11-24)
+==============================================================================
+ When the account manager added a new service to an existing
+ customer, the new service was typed over the existing SOF
+ instead of being added as a new one. Now the Add services
+ form shows the account manager a blank services page — no
+ existing SOF is shown, so a new service can only be entered
+ as a new SOF — the client page stays locked and the contacts
+ stay editable, and an existing SOF is changed only from its
+ own Edit button. The SOF file is required on a new service
+ and on every edit, even a date-only one; the Edit page has
+ the upload now. Every file a SOF ever had is kept: the
+ Download SOF column lists them all, oldest first, each with
+ its own Download, and the SOF View page shows the same list.
+ While Revenue Assurance forwards a change to Finance, the
+ termination and commercial impact boxes appear together only
+ when the account manager's change carries one of those
+ dates — a new service never does, so RA sees only the
+ activation date box there. The new service still runs the
+ same staged flow, and the Sales admin's notification still
+ carries its name, its description and the client name. The
+ live 90 Mbps SOF already overwritten on /clients/12 does not
+ come back by itself — its old values are in the SOF changes
+ history, so it can be added again as a new SOF after this
+ build if you want it back.
+
+==============================================================================
  SIX SMALL FIXES FROM YOUR 2026-11-24 PHOTOS (2026-11-24)
 ==============================================================================
  The portal admin's three date boxes on a SOF row now sit one under

@@ -20,7 +20,7 @@
   <div class="kv"><b>Commercial impact date</b><span>{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '—' }}</span></div>
   {% if s['termination_reason'] %}<div class="kv"><b>Termination reason</b><span style="white-space:pre-wrap">{{ s['termination_reason'] }}</span></div>{% endif %}
   <div class="kv"><b>Status</b><span><span class="s {{ 'g' if s['status'] == 'activated' else 'r' if s['status'] == 'terminated' else 'a' }}">{{ sof_status_label[s['status']] }}</span></span></div>
-  <div class="kv"><b>Uploaded SOF file</b><span>{% if f %}<a class="b sm" href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">Download {{ f['original'] }}</a>{% else %}—{% endif %}</span></div>
+  <div class="kv"><b>SOF file{{ 's' if sof_files|length > 1 }}</b><span>{% if sof_files %}{% for up in sof_files %}<a class="b sm" href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id'], up=up['id']) }}">Download {{ up['file']['original'] }}</a>{% if up['edit_id'] %} <small style="color:var(--soft)">for the edited SOF</small>{% endif %}{% if up['by'] or up['at'] %} <span class="hint">Uploaded by {{ up['by'] or '—' }}{% if up['at'] %} · {{ up['at']|showdttz }}{% endif %}</span>{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</span></div>
 </div>
 
 <div class="card"><h2>SAN report{{ 's' if san_uploads|length > 1 }}</h2>

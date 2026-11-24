@@ -7071,3 +7071,84 @@
  in the Flow column, the SOF View page with every SAN report
  and no share code, and the Notifications page without its
  warn-me and who-gets-told cards.
+
+ 131. THE ADD-SERVICE OVERWRITE FIX, SOF FILES KEPT, AND RA'S DATE
+     BOXES ONLY WHEN THE ACCOUNT MANAGER SET THEM (2026-11-24)
+==============================================================================
+ This build fixes the bug you reported on 2026-11-24: when the
+ account manager added a new service to an existing customer, the
+ new service was typed over the existing SOF instead of being
+ added as a new one.
+
+ (1) ADD SERVICES IS BLANK FOR THE ACCOUNT MANAGER. The Add
+     services form no longer shows the existing SOFs at all —
+     the services page is blank, with one empty block where the
+     account manager fills the new service and uploads its SOF.
+     The client page stays locked (view only) and the contacts
+     stay editable. An existing SOF can no longer be overwritten
+     from this form, even by a crafted request: the server
+     ignores any row carrying an existing SOF. To change a SOF,
+     the account manager uses that SOF's own Edit button. The
+     portal admin's own form is unchanged — the existing SOFs
+     still show there, and the admin's changes still apply at
+     once.
+
+ (2) THE SOF FILE IS REQUIRED — ON A NEW SERVICE AND ON EVERY
+     EDIT. A new service cannot be saved without its SOF file,
+     and neither can an edited service — not even when the edit
+     only changes a date. The Edit page has a file upload now,
+     marked required for the account manager. The portal admin
+     may still leave it off; if the admin does replace a file,
+     it joins the same history below.
+
+ (3) EVERY SOF FILE IS KEPT — ONE DOWNLOAD PER FILE. A SOF
+     used to keep only its latest file; approving an edit
+     deleted the old one. Now every file a SOF ever had is
+     kept: the Download SOF column on the client page lists
+     them all, oldest first, each with its own Download, and
+     the SOF View page shows the same list. A file uploaded
+     for an edited SOF is marked "for the edited SOF". A
+     rejected change still removes the file it uploaded, as
+     before. On upgrade, each SOF's current file becomes the
+     first row of its history (57 tables in total).
+
+ (4) RA'S TERMINATION AND COMMERCIAL IMPACT BOXES ONLY WHEN
+     THE ACCOUNT MANAGER SET THEM. While Revenue Assurance
+     forwards a SOF change to Finance, the termination date
+     and commercial impact date boxes now appear together only
+     when the account manager's change carries one of those
+     dates. A new service never carries them, so RA sees only
+     the activation date box there. A date posted for a change
+     that carries neither is ignored. The activation box is
+     unchanged.
+
+ The new service still runs the same staged flow — Sales
+ admin approval, Revenue Assurance forward, a new SAN report,
+ Revenue Assurance dates, forward to Finance — and the Sales
+ admin's notification still carries the new service's name,
+ its description and the client name.
+
+ One thing this build cannot undo: the live 90 Mbps SOF-0001
+ on /clients/12 was already overwritten by the 100 Mbps
+ SOF-0002 before this fix. The fix stops it happening again,
+ but the old SOF does not come back by itself — its old
+ values are in the SOF changes history, so after applying
+ this build the 90 Mbps service can be added again as a new
+ SOF if you want it back.
+
+ OPEN, carried forward: (h) the Department Database All-rows
+     column picker; the narrow centred forms (the small centred
+     boxes will not visibly widen under the 1560px page size);
+     whether one-by-one row and personal-record deletes should
+     ask for a password; whether the 07:00 signature reminder
+     arrives at 07:00 Dhaka; whether accounts_user is gone and
+     the Accounts department deleted.
+
+ Tested: 307 client-flow checks and the full 718/718
+ regression suite against real MySQL 8.0, on the work copy
+ and on a fresh extract of the zip. CSS audit: 0 parse
+ errors, 150 defined classes. Renders read back: the client
+ page with two SOF downloads on one SOF and the staged flow,
+ the account manager's blank Add services page, the SOF View
+ page with both SOF files, and the Client onboarding list as
+ before.

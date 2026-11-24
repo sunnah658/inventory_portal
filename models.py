@@ -965,6 +965,24 @@ CREATE TABLE IF NOT EXISTS client_sof_san_uploads (
     FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Every SOF file ever uploaded for a SOF (build 112): the current one
+-- lives on client_services.sof_file as before, and every upload — the
+-- first one, and the one uploaded for each edited SOF — is kept here,
+-- so the old file is never lost when a new one replaces it. edit_id is
+-- the SOF change the file belongs to, when it was uploaded for an edit;
+-- NULL for a file uploaded in the normal flow.
+CREATE TABLE IF NOT EXISTS client_sof_file_uploads (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    edit_id     INT,
+    sof_file    TEXT NOT NULL,
+    uploaded_by INT,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE,
+    FOREIGN KEY (edit_id) REFERENCES client_sof_edits(id) ON DELETE SET NULL,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- The Sales & Marketing admin's fields for the three Add Client pages.
 -- The fields the client was built with are the defaults (is_default=1,
 -- field_key = the fixed column they map to); the admin adds his own
@@ -1278,6 +1296,24 @@ def _upgrade_sof_san_history(conn):
                      "VALUES (?,?,?, ?, ?)", (_s["id"], None, _s["san_file"], _s["uid"], _s["san_at"]))
 
 
+def _upgrade_sof_file_history(conn):
+    """Build 112 keeps every SOF file a SOF ever had (build 112): a file
+    uploaded for an edited SOF does not replace the old one. The current
+    file on each SOF becomes the first row of the history."""
+    if "sof_file" not in _columns(conn, "client_services"):
+        return
+    rows = conn.execute("SELECT id, sof_file FROM client_services WHERE sof_file IS NOT NULL").fetchall()
+    for _s in rows:
+        done = conn.execute("SELECT COUNT(*) FROM client_sof_file_uploads WHERE sof_id=?",
+                            (_s["id"],)).fetchone()[0]
+        if done:
+            continue
+        # The uploader of a file from before the history existed is not
+        # recorded anywhere, so the row keeps no uploader.
+        conn.execute("INSERT INTO client_sof_file_uploads(sof_id,edit_id,sof_file,uploaded_by) "
+                     "VALUES (?,?,?,NULL)", (_s["id"], None, _s["sof_file"]))
+
+
 def _upgrade_sof_san(conn):
     """Build 105 gives every SOF its own SAN report (build 105). A client
     that already has the one client-level SAN report keeps it: the file is
@@ -1571,6 +1607,7 @@ def init_db():
         _upgrade_sof_san(conn)
         _upgrade_client_serial(conn)
         _upgrade_sof_san_history(conn)
+        _upgrade_sof_file_history(conn)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")

@@ -499,6 +499,37 @@ def _remove_files(stored_list):
     routes_deptdb._delete_ddb_files([s for s in stored_list if s])
 
 
+def _record_sof_file(db, sof_id, file_json, edit_id, user_id):
+    """Build 112: every SOF file a SOF ever had is kept — the first one,
+    and the one uploaded for each edited SOF. The current file on
+    client_services.sof_file stays the latest, and the history lists
+    them all for the Download SOF column. The same file is never
+    recorded twice for one SOF."""
+    if not file_json:
+        return
+    done = db.execute("SELECT COUNT(*) FROM client_sof_file_uploads WHERE sof_id=? AND sof_file=?",
+                      (sof_id, file_json)).fetchone()[0]
+    if done:
+        return
+    db.execute("INSERT INTO client_sof_file_uploads(sof_id,edit_id,sof_file,uploaded_by) VALUES (?,?,?,?)",
+               (sof_id, edit_id, file_json, user_id))
+
+
+def _sof_file_uploads(db, sid):
+    """Every SOF file a SOF ever had, oldest first — the history rows,
+    plus the SOF's current file when no history row covers it yet, so
+    the Download SOF column is never empty for a SOF that has a file."""
+    row = db.execute("SELECT sof_file FROM client_services WHERE id=?", (sid,)).fetchone()
+    out = [{"id": u["id"], "file": _file_info(u["sof_file"]),
+            "by": (db.execute("SELECT full_name FROM users WHERE id=?", (u["uploaded_by"],)).fetchone() or {}).get("full_name") if u["uploaded_by"] else None,
+            "at": u["uploaded_at"], "edit_id": u["edit_id"]}
+           for u in db.execute("SELECT * FROM client_sof_file_uploads WHERE sof_id=? ORDER BY id", (sid,)).fetchall()]
+    current = _file_info(row["sof_file"]) if row else None
+    if current and not any((u["file"] or {}).get("stored") == current.get("stored") for u in out):
+        out.append({"id": None, "file": current, "by": None, "at": None, "edit_id": None})
+    return out
+
+
 def _dept_row(db, dept_id):
     return db.execute("SELECT * FROM departments WHERE id=?", (dept_id,)).fetchone() if dept_id else None
 
@@ -781,12 +812,19 @@ def detail(cid):
                       "activation_date": str(_srow["activation_date"])[:10] if _srow and _srow["activation_date"] else "",
                       "termination_date": str(_srow["termination_date"])[:10] if _srow and _srow["termination_date"] else "",
                       "commercial_impact_date": str(_srow["commercial_impact_date"])[:10] if _srow and _srow["commercial_impact_date"] else "",
+                      # Build 112: Revenue Assurance sees the termination
+                      # and commercial impact date boxes only when the
+                      # account manager's change carries one of those
+                      # dates — a new service never does.
+                      "has_term_dates": bool((new.get("termination_date") or "")
+                                             or (new.get("commercial_impact_date") or "")),
                       "num": old.get("sof_number") or new.get("sof_number") or "",
                       "change": _sof_new_text(new) if not e["service_id"] else _sof_change_text(old, new)})
     edit_stage = {e["service_id"]: e["stage"] for e in edits if e["service_id"]}
     return render_template(
         "client_detail.html", c=c, contacts=contacts, services=services, history=history,
         sof=[(s, _file_info(s["sof_file"])) for s in services], san_perm=san_perm, san_uploads=san_uploads,
+        sof_files={s["id"]: _sof_file_uploads(db, s["id"]) for s in services},
         perm=_perms(db, g.user, roles, c), timeline=_timeline(db, c),
         fields=_fields,
         fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
@@ -863,7 +901,7 @@ def _pick(lst, i):
     return lst[i] if i < len(lst) else ""
 
 
-def _read_form(db, existing, am_mode=False):
+def _read_form(db, existing, am_mode=False, require_sof_file=False):
     """Read and check the posted form.
     Returns (form for redisplay, errors, contacts, services, new files saved, old files to delete after commit).
     `existing` is {service id: row} of the client being edited (empty for a new client).
@@ -1029,6 +1067,11 @@ def _read_form(db, existing, am_mode=False):
             delete_old.append((_file_info(old_file) or {}).get("stored"))
         row["file_json"] = file_json
         row["file_name"] = (_file_info(file_json) or {}).get("original", "")
+        # Build 112: on Add services the account manager must upload the
+        # SOF file with every new service — a new service without its file
+        # cannot be saved.
+        if require_sof_file and not sid and not has_upload:
+            errors.append(f"Page 3: upload the SOF file for service {n}.")
         services.append(row)
     for sid, old in existing.items():                    # a service row the user deleted from the form
         if sid not in used_old and old["sof_file"]:
@@ -1087,6 +1130,10 @@ def _write_children(db, cid, contacts, services, custom1):
                           (old["termination_reason"] if old else None),
                           (old["status"] if old else "pending"), code)).lastrowid
         _save_custom(db, cid, "service", nid, r.get("custom") or {})
+        # Build 112: the SOF's file joins its file history — the first
+        # file, and the one each rebuild carries.
+        if r.get("file_json"):
+            _record_sof_file(db, nid, r["file_json"], None, g.user["id"])
     _save_custom(db, cid, "client", cid, custom1 or {})
 
 
@@ -1101,7 +1148,8 @@ def _write_contacts(db, cid, contacts):
         _save_custom(db, cid, "contact", nid, r.get("custom") or {})
 
 
-def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_locked=False):
+def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_locked=False,
+               services_blank=False):
     managers = _account_managers(db)
     managers_info = {m["id"]: {"full_name": m["full_name"] or "", "designation": m["designation"] or "",
                                "phone": m["phone"] or "", "email": m["email"] or ""} for m in managers}
@@ -1113,6 +1161,7 @@ def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_loc
     return render_template("client_form.html", form=form, cid=cid, c=c, errors=errors or [],
                            managers=managers, managers_info=managers_info, max_rows=MAX_ROWS,
                            fields=fields, fmap=fmap, am_mode=am_mode, page1_locked=page1_locked,
+                           services_blank=services_blank,
                            back=url_for("ddb.index", tab="clients"))
 
 
@@ -1184,16 +1233,29 @@ def _edit_services(db, c, roles):
     SOF he changes goes to pending as soon as he saves. One change at a
     time per SOF: a SOF that already has a change in flight cannot take
     another until that one finishes (approved through to Finance, or
-    rejected)."""
+    rejected). Build 112: the account manager's services page is blank —
+    no existing SOF is shown, so a new service can only be entered as a
+    new SOF; an existing SOF is changed only from its own Edit button,
+    and every new SOF must carry its SOF file."""
     cid = c["id"]
     portal_admin = is_portal_admin(g.user)
     if request.method == "GET":
-        return _show_form(db, _form_from_db(db, c), cid=cid, c=c, am_mode=True, page1_locked=not portal_admin)
+        # Build 112: the account manager sees a blank services page — no
+        # existing SOF is shown, so a new service can only be entered as
+        # a new SOF and never typed over an old one. The portal admin
+        # keeps the existing SOFs on the form, as before.
+        _f = _form_from_db(db, c)
+        if not portal_admin:
+            _f["services"] = [_blank_form()["services"][0]]
+        return _show_form(db, _f, cid=cid, c=c, am_mode=True, page1_locked=not portal_admin,
+                          services_blank=not portal_admin)
     existing = {r["id"]: r for r in db.execute("SELECT * FROM client_services WHERE client_id=?", (cid,)).fetchall()}
-    form, errors, contacts, services, saved_new, delete_old = _read_form(db, existing, am_mode=True)
+    form, errors, contacts, services, saved_new, delete_old = _read_form(
+        db, existing, am_mode=True, require_sof_file=not portal_admin)
     if errors:
         _remove_files(saved_new)
-        return _show_form(db, form, cid=cid, c=c, errors=errors, am_mode=True, page1_locked=not portal_admin)
+        return _show_form(db, form, cid=cid, c=c, errors=errors, am_mode=True, page1_locked=not portal_admin,
+                          services_blank=not portal_admin)
     try:
         if portal_admin:
             # The portal admin is the authority: page 1 applies at once.
@@ -1214,6 +1276,12 @@ def _edit_services(db, c, roles):
         added, changed, skipped = [], [], []
         for row in services:
             sid = row.get("id")
+            if sid and not portal_admin:
+                # Build 112: the account manager changes an existing SOF
+                # only from its own Edit button — the Add services form
+                # shows no existing SOFs, so a row carrying one here is
+                # ignored, never written over the old SOF.
+                continue
             if not sid:
                 new = {"sof_number": row["sof_number"], "service": row["service"],
                        "service_type": row["service_type"], "service_description": row["service_description"],
@@ -1231,13 +1299,16 @@ def _edit_services(db, c, roles):
                     # for the date (the portal admin sets it from the
                     # Dates form on the client page).
                     _st = "activated" if row.get("activation_date") else "pending"
-                    db.execute("INSERT INTO client_services(client_id,position,sof_number,service,service_type,"
-                               "service_description,details,sof_file,activation_date,public_code,status) "
-                               "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                               (cid, pos, new["sof_number"], new["service"], new["service_type"],
-                                new["service_description"] or None, new["details"] or None,
-                                row.get("file_json"), row.get("activation_date") or None,
-                                new_random_code_text(db), _st))
+                    _nid = db.execute("INSERT INTO client_services(client_id,position,sof_number,service,service_type,"
+                                      "service_description,details,sof_file,activation_date,public_code,status) "
+                                      "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                      (cid, pos, new["sof_number"], new["service"], new["service_type"],
+                                       new["service_description"] or None, new["details"] or None,
+                                       row.get("file_json"), row.get("activation_date") or None,
+                                       new_random_code_text(db), _st)).lastrowid
+                    # Build 112: the file joins the SOF's file history.
+                    if row.get("file_json"):
+                        _record_sof_file(db, _nid, row["file_json"], None, g.user["id"])
                     _history(db, cid, g.user, f"SOF {new['sof_number']} added by the portal admin",
                              "Activated." if _st == "activated" else "Pending — set its activation date from the Dates form.")
                 else:
@@ -1279,6 +1350,10 @@ def _edit_services(db, c, roles):
                            (new["sof_number"], new["service"], new["service_type"],
                             new["service_description"] or None, new["details"] or None,
                             new.get("sof_file") or old["sof_file"], sid))
+                # Build 112: a file the portal admin replaces joins the
+                # SOF's file history — the old one stays downloadable.
+                if new.get("sof_file") and new["sof_file"] != (old["sof_file"] or None):
+                    _record_sof_file(db, sid, new["sof_file"], None, g.user["id"])
                 _history(db, cid, g.user, f"SOF {old['sof_number']} changed by the portal admin", diff)
             else:
                 db.execute("INSERT INTO client_sof_edits(client_id,service_id,editor_id,old_values,new_values)"
@@ -1765,7 +1840,9 @@ def sof_edit(cid, sid):
     the SOF goes to pending and the Sales admin is told the SOF number
     and what changed. The SOF itself keeps its old values until the
     change has run the whole flow. The portal admin's change applies at
-    once."""
+    once. Build 112: every edit carries a new SOF file — the account
+    manager must upload one, even for a date-only change; the old file
+    stays downloadable, it is not replaced."""
     db, c, roles = _load(cid)
     row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
     if row is None:
@@ -1775,7 +1852,7 @@ def sof_edit(cid, sid):
     if c["status"] != "completed" or not (portal_admin or (am and row["status"] in ("activated", "terminated"))):
         abort(403)
     if request.method == "GET":
-        return render_template("sof_edit.html", c=c, s=row, back=_link(cid),
+        return render_template("sof_edit.html", c=c, s=row, f=_file_info(row["sof_file"]), back=_link(cid),
                                portal_admin=portal_admin)
     new = {"sof_number": _clean(request.form.get("sof_number"), 255),
            "service": _clean(request.form.get("service"), 255),
@@ -1807,13 +1884,36 @@ def sof_edit(cid, sid):
                            (new["sof_number"].lower(), sid)).fetchone()
         if clash:
             errors.append(f"SOF number {new['sof_number']} is already used on another client.")
+    # Build 112: the SOF file is uploaded here, and it is required for
+    # the account manager — every edit carries a new SOF file, even a
+    # date-only one. The portal admin may leave it off.
+    upload = request.files.get("sof_file")
+    has_upload = bool(upload and upload.filename)
+    file_json = None
+    file_name = ""
+    if has_upload:
+        _dept = db.execute("SELECT * FROM departments WHERE id=?", (c["department_id"],)).fetchone()
+        file_json, _err = routes_deptdb._save_ddb_file(upload, _dept)
+        if _err:
+            errors.append(_err)
+        else:
+            file_name = (_file_info(file_json) or {}).get("original", "")
+    elif not portal_admin:
+        errors.append("Upload the SOF file for this change.")
     if errors:
+        if file_json:
+            _remove_files([(_file_info(file_json) or {}).get("stored")])
         for e in errors:
             flash(e, "error")
-        return render_template("sof_edit.html", c=c, s={**dict(row), **new}, back=_link(cid),
-                               portal_admin=portal_admin)
+        return render_template("sof_edit.html", c=c, s={**dict(row), **new}, f=_file_info(row["sof_file"]),
+                               back=_link(cid), portal_admin=portal_admin)
     old = _sof_snapshot(row)
     diff = _sof_change_text(old, new)
+    new["sof_file"] = file_json
+    new["file_name"] = file_name
+    if has_upload and file_json != (row["sof_file"] or None):
+        diff = (diff + "; SOF file: replaced" if diff != "No fields changed."
+                else "SOF file: replaced")
     if diff == "No fields changed.":
         flash("Nothing changed.", "ok")
         return redirect(_link(cid))
@@ -1822,12 +1922,17 @@ def sof_edit(cid, sid):
         # and a termination takes effect at once.
         status = "terminated" if new["termination_date"] else ("activated" if row["activation_date"] else "pending")
         db.execute("UPDATE client_services SET sof_number=?, service=?, service_type=?, service_description=?, "
-                   "details=?, termination_date=?, commercial_impact_date=?, termination_reason=?, status=? "
+                   "details=?, sof_file=?, termination_date=?, commercial_impact_date=?, termination_reason=?, status=? "
                    "WHERE id=? AND client_id=?",
                    (new["sof_number"], new["service"], new["service_type"],
                     new["service_description"] or None, new["details"] or None,
+                    new.get("sof_file") or row["sof_file"],
                     new["termination_date"] or None, new["commercial_impact_date"] or None,
                     new["termination_reason"] or None, status, sid, cid))
+        # Build 112: a file the portal admin replaces joins the SOF's
+        # file history — the old one stays downloadable.
+        if has_upload and file_json != (row["sof_file"] or None):
+            _record_sof_file(db, sid, file_json, None, g.user["id"])
         _history(db, cid, g.user, f"SOF {row['sof_number']} changed by the portal admin", diff)
         notify(db, {c["account_manager_id"]} | set(_sales_admin_ids(db)),
                f"The portal admin changed SOF {row['sof_number']} of '{c['client_name']}': {diff}",
@@ -1860,7 +1965,8 @@ def sof_edit_approve(cid, eid):
     told the approval and what changed; Revenue Assurance then forwards
     it to Transmission, Core and Technical support for a new SAN report.
     A termination takes effect only when Revenue Assurance forwards the
-    finished change to Finance."""
+    finished change to Finance. Build 112: a SOF file the change carries
+    joins the SOF's file history — the old file is kept, never deleted."""
     db, c, roles = _load(cid)
     if not _is_sales_admin(db, g.user):
         abort(403)
@@ -1872,14 +1978,12 @@ def sof_edit_approve(cid, eid):
     new = json.loads(edit["new_values"])
     old = json.loads(edit["old_values"]) if edit["old_values"] else {}
     change = _sof_new_text(new) if not edit["service_id"] else _sof_change_text(old, new)
-    old_file = None
     if edit["service_id"]:
         row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?",
                          (edit["service_id"], cid)).fetchone()
         if row is None:
             abort(404)
         num = row["sof_number"]
-        old_file = row["sof_file"]
         # The SOF goes to pending when the change is approved — unless it
         # was not activated to begin with, in which case it keeps its state.
         was = old.get("status") or row["status"]
@@ -1892,6 +1996,10 @@ def sof_edit_approve(cid, eid):
                     new.get("sof_file") or row["sof_file"],
                     new["termination_date"] or None, new["commercial_impact_date"] or None,
                     new["termination_reason"] or None, new_status, edit["service_id"]))
+        # Build 112: the new file joins the SOF's file history, and the
+        # old one stays on disk and downloadable.
+        if new.get("sof_file") and new["sof_file"] != (row["sof_file"] or None):
+            _record_sof_file(db, edit["service_id"], new["sof_file"], eid, edit["editor_id"])
     else:
         num = new["sof_number"]
         pos = db.execute("SELECT COALESCE(MAX(position), -1)+1 FROM client_services WHERE client_id=?",
@@ -1907,6 +2015,9 @@ def sof_edit_approve(cid, eid):
                           new.get("sof_file"), new.get("activation_date") or None,
                           new_random_code_text(db))).lastrowid
         db.execute("UPDATE client_sof_edits SET service_id=? WHERE id=?", (nid, eid))
+        # Build 112: the new SOF's file is the first row of its history.
+        if new.get("sof_file"):
+            _record_sof_file(db, nid, new["sof_file"], eid, edit["editor_id"])
     db.execute("UPDATE client_sof_edits SET status='approved', decided_by=?, "
                "decided_at=datetime('now','localtime') WHERE id=?", (g.user["id"], eid))
     _history(db, cid, g.user, f"SOF {num} change approved",
@@ -1917,8 +2028,6 @@ def sof_edit_approve(cid, eid):
            f"The SOF {num} change on '{c['client_name']}' was approved by {g.user['full_name']}: {change} "
            "Revenue Assurance forwards it for a new SAN report.", _link(cid), skip=g.user["id"])
     db.commit()
-    if old_file and new.get("sof_file") and new["sof_file"] != old_file:
-        _remove_files([(_file_info(old_file) or {}).get("stored")])
     flash(f"SOF {num} approved. Revenue Assurance forwards it to Transmission, Core and Technical support for a new SAN report.", "ok")
     return redirect(_link(cid))
 
@@ -2008,10 +2117,12 @@ def sof_edit_forward(cid, eid):
 @login_required
 def sof_edit_dates(cid, eid):
     """Revenue Assurance changes the dates of the edited SOF once its new
-    SAN report is up — the activation date the account manager set, the
-    termination date and the commercial impact date, whatever the account
-    manager changed at first. The dates are saved on the SOF; forwarding
-    it to Finance is the next step."""
+    SAN report is up — the activation date the account manager set, and
+    the termination date and the commercial impact date when the account
+    manager's change carries one of them. Build 112: for a new service
+    the change carries no termination or commercial impact date, so
+    Revenue Assurance sees only the activation date there. The dates are
+    saved on the SOF; forwarding it to Finance is the next step."""
     db, c, roles = _load(cid)
     if not _perms(db, g.user, roles, c)["ra_sof_forward"]:
         abort(403)
@@ -2026,6 +2137,11 @@ def sof_edit_dates(cid, eid):
                      (edit["service_id"], cid)).fetchone()
     if row is None:
         abort(404)
+    # Build 112: the termination and commercial impact boxes are only
+    # there when the account manager's change carries one of those dates
+    # — a value posted for a change that carries neither is ignored.
+    _nv = json.loads(edit["new_values"])
+    _has_term = bool((_nv.get("termination_date") or "") or (_nv.get("commercial_impact_date") or ""))
     new = {}
     errors = []
     for key, label in (("activation_date", "Activation date"),
@@ -2040,6 +2156,9 @@ def sof_edit_dates(cid, eid):
                 errors.append(f"{label} does not look like a date.")
         else:
             new[key] = None
+    if not _has_term:
+        new["termination_date"] = str(row["termination_date"])[:10] if row["termination_date"] else None
+        new["commercial_impact_date"] = str(row["commercial_impact_date"])[:10] if row["commercial_impact_date"] else None
     if errors:
         for e in errors:
             flash(e, "error")
@@ -2150,7 +2269,17 @@ def _send_stored(info):
 def sof_download(cid, sid):
     db, c, roles = _load(cid)
     row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
-    info = _file_info(row["sof_file"]) if row else None
+    if row is None:
+        abort(404)
+    # Build 112: ?up=<upload id> downloads one earlier file from the
+    # history; without it, the SOF's current file.
+    up = request.args.get("up", type=int)
+    info = None
+    if up:
+        _u = db.execute("SELECT * FROM client_sof_file_uploads WHERE id=? AND sof_id=?", (up, sid)).fetchone()
+        info = _file_info(_u["sof_file"]) if _u else None
+    if info is None:
+        info = _file_info(row["sof_file"])
     if info is None:
         abort(404)
     return _send_stored(info)
@@ -2201,6 +2330,7 @@ def sof_view(cid, sid):
         for u in db.execute("SELECT * FROM client_sof_san_uploads WHERE sof_id=? ORDER BY id", (sid,)).fetchall()]
     return render_template(
         "sof_view.html", c=c, s=row, f=_file_info(row["sof_file"]),
+        sof_files=_sof_file_uploads(db, sid),
         san_uploads=san_uploads,
         history=history, sof_status_label=SOF_STATUS_LABEL,
         san_perm={"upload": _can_upload_sof_san(db, g.user, roles, c, row),

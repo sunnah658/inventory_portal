@@ -86,7 +86,7 @@
     </section>
 
     <section class="step" data-step="3">
-      <h2>Page 3 · Services</h2><p class="hint">One block per SOF (Service Order Form). Add as many as the client ordered. The SOF file is optional (PDF, Word, Excel or an image).{% if am_mode %} A new SOF may have its activation date set here — Revenue Assurance can change it before the change goes to Finance.{% else %} Every SOF must have an activation date.{% endif %}</p>
+      <h2>Page 3 · Services</h2><p class="hint">One block per SOF (Service Order Form). Add as many as the client ordered. The SOF file is {% if services_blank %}required for every new SOF{% else %}optional{% endif %} (PDF, Word, Excel or an image).{% if am_mode %} A new SOF may have its activation date set here — Revenue Assurance can change it before the change goes to Finance.{% else %} Every SOF must have an activation date.{% endif %}</p>
       <div id="serviceRows">
       {% for r in form.services %}
         <div class="rowbox">{% if not am_mode %}<div class="rowhead"><button class="b sm dg" type="button" data-remove>Remove</button></div>{% endif %}
@@ -98,7 +98,7 @@
             <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date" value="{{ r.activation_date }}"{% if not am_mode %} required{% endif %}></div>
             {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2">{{ r.details }}</textarea></div>{% endif %}
             {% for fld in fields[3] %}{% if not fld.is_default %}{{ cfield(fld, 'cf3_' ~ fld.id, r.custom.get(fld.id, '')) }}{% endif %}{% endfor %}
-            <div class="fd full"><label>SOF file</label><input name="sof_file" type="file">
+            <div class="fd full"><label>SOF file{% if services_blank %} <span class="req">*</span>{% endif %}</label><input name="sof_file" type="file">
               {% if r.id and r.file_name %}<div class="sub">Now: {{ r.file_name }} — choose a file to replace it. <label class="ck"><input type="checkbox" name="sof_remove" value="{{ r.id }}"> Remove this file</label></div>{% endif %}</div>
           </div></div>
       {% endfor %}
@@ -131,7 +131,7 @@
   <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date"{% if not am_mode %} required{% endif %}></div>
   {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2"></textarea></div>{% endif %}
   {% for fld in fields[3] %}{% if not fld.is_default %}{{ cfield(fld, 'cf3_' ~ fld.id, '') }}{% endif %}{% endfor %}
-  <div class="fd full"><label>SOF file</label><input name="sof_file" type="file"></div></div></div></template>
+  <div class="fd full"><label>SOF file{% if services_blank %} <span class="req">*</span>{% endif %}</label><input name="sof_file" type="file"></div></div></div></template>
 <script>
 (function(){
   var form=document.getElementById('clientForm'), max={{ max_rows }};
