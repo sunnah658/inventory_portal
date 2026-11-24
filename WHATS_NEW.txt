@@ -1,4 +1,14 @@
 ==============================================================================
+ THE RIGHT GAP NOW MATCHES THE LEFT — THE MIDDLE IS A BIT WIDER (2026-11-24)
+==============================================================================
+ After build 115 the middle still had more empty space on its right
+ than on its left: its right padding was 84px against 28px on the left.
+ The right padding now matches the left, so the gaps on both sides are
+ equal and the middle is 56px wider on every page. The notification
+ bell sits in the top margin above the page title, so it still never
+ covers a page's action buttons.
+
+==============================================================================
  THE MIDDLE FILLS THE WIDTH — NO MORE EMPTY SPACE ON THE RIGHT (2026-11-24)
 ==============================================================================
  The pages were capped at 1560px wide, so on a wide screen the middle

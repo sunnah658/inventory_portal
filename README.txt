@@ -7299,3 +7299,25 @@ client detail page as before, only wider.
 OPEN: (h) DeptDB All-rows column picker, narrow centred forms,
 one-by-one delete password question, 07:00 reminder + accounts_user
 confirmations still unanswered.
+
+==============================================================================
+135. Build 116 — even side gaps, wider middle (24 November 2026)
+==============================================================================
+The middle still had more empty space on its right than on its left,
+after build 115. Cause: the middle's right padding was 84px while its
+left padding was 28px — the extra 56px was the empty band on the right.
+Fix: main's right padding is now 28px, matching the left, so the gaps on
+both sides of the middle are equal and the middle is 56px wider on every
+page. The 84px right padding existed to keep the fixed notification bell
+clear of a page's action buttons (it floated level with the page title);
+the bell now sits in the top margin above the title row (top:8px instead
+of top:24px), so it still never covers an action button — the Invoice
+templates department picker and the client page's Back to Client
+onboarding / Print buttons stay fully clear of it. Nothing else changes:
+the 280px rail, the page padding, the phone collapse and the centred
+narrow forms are untouched. No template, route or database change; no
+files added or removed (131 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms,
+one-by-one delete password question, 07:00 reminder + accounts_user
+confirmations still unanswered.
