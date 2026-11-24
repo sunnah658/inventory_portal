@@ -15,7 +15,7 @@ import config
 import exports
 from auth import admin_required, login_required
 from core import (display_record_value, record_columns, MANAGE_LEVELS, PERM_WORDS, clean_permission, share_with_department, share_with_user, access_level, add_history, build_table, ddb_can_delete_row, ddb_history, dept_member_ids,
-                  get_record, notify, notify_ddb_task, rec_select, reminder_rows, search_clause, soft_delete,
+                  get_record, notify, notify_ddb_task, rec_select, reminder_rows, renumber_clients, renumber_invoices, renumber_requests, search_clause, soft_delete,
                   summaries_for, values_for)
 from models import get_db, log, setting_get
 from routes_admin import _record_filters
@@ -134,6 +134,8 @@ def delete_selected():
     kind = request.form.get("kind") or ""
     counts = {"row": 0, "inv": 0, "req": 0, "cli": 0}
     row_groups = {}
+    inv_tpls = set()
+    req_kinds = set()
     for raw in request.form.getlist("ids"):
         raw = (raw or "").strip()
         if ":" in raw:
@@ -160,6 +162,7 @@ def delete_selected():
             db.execute("UPDATE invoices SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
                        (g.user["id"], iid))
             log(db, "invoice_deleted", inv["number"] or "draft")
+            inv_tpls.add(inv["template_id"])
             counts["inv"] += 1
         elif k == "req":
             req = db.execute("SELECT * FROM item_requests WHERE id=?", (iid,)).fetchone()
@@ -168,6 +171,7 @@ def delete_selected():
             db.execute("UPDATE item_requests SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
                        (g.user["id"], iid))
             log(db, "item_request_deleted", req["number"] or "request")
+            req_kinds.add(req["kind_id"])
             counts["req"] += 1
         elif k == "cli":
             cli = db.execute("SELECT * FROM client_onboardings WHERE id=?", (iid,)).fetchone()
@@ -187,6 +191,14 @@ def delete_selected():
     if total == 0:
         flash("Nothing was deleted. Tick at least one row first.", "error")
         return redirect(back)
+    # Build 110: the serial numbers close ranks — a deleted client,
+    # invoice or request leaves no gap; every later number moves up one.
+    if counts["cli"]:
+        renumber_clients(db)
+    for tid in inv_tpls:
+        renumber_invoices(db, tid)
+    for kid in req_kinds:
+        renumber_requests(db, kid)
     log(db, "bulk_delete_selected", f"{counts['row']} row(s), {counts['inv']} invoice(s), {counts['req']} request(s), {counts['cli']} client(s)")
     db.commit()
     parts = []

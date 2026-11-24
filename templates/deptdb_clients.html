@@ -43,7 +43,7 @@
   <label for="clientpick" style="margin:0">Approved client</label>
   <select id="clientpick" name="client" style="width:auto;min-width:220px" aria-label="Approved clients">
     <option value="">Pick a client…</option>
-    {% for a in approved %}<option value="{{ a['id'] }}">{{ a['client_name'] }} ({{ a['id']|client_no }})</option>{% endfor %}</select>
+    {% for a in approved %}<option value="{{ a['id'] }}">{{ a['client_name'] }} ({{ a|client_no }})</option>{% endfor %}</select>
   <button class="b" type="submit">Open</button>
 </form>
 {% endif %}
@@ -77,7 +77,7 @@
   <div class="tb"><table class="ctable">
     <thead><tr>{% if can_portal_admin and not shared_owner %}<th class="selcol"><input type="checkbox" class="selall" aria-label="Select all"></th>{% endif %}<th>No.</th><th>Client</th><th>Account manager</th><th>Services</th><th>Status</th><th>Flow</th><th>Activation</th><th>Terminated</th><th class="noprint"></th></tr></thead>
     <tbody>{% for r in rows %}
-      <tr class="r">{% if can_portal_admin and not shared_owner %}<td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" aria-label="Select"></td>{% endif %}<td><b>{{ r['id']|client_no }}</b></td><td>{{ r['client_name'] }}</td><td>{{ r['am_name'] or '—' }}</td><td class="num">{{ r['sof_count'] }}</td>
+      <tr class="r">{% if can_portal_admin and not shared_owner %}<td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" aria-label="Select"></td>{% endif %}<td><b>{{ r|client_no }}</b></td><td>{{ r['client_name'] }}</td><td>{{ r['am_name'] or '—' }}</td><td class="num">{{ r['sof_count'] }}</td>
         <td class="stcol"><span class="s g">Activated {{ r['n_activated'] }}</span> <span class="s r">Terminated {{ r['n_terminated'] }}</span>{% if r['n_pending'] %} <span class="s a">Pending {{ r['n_pending'] }}</span>{% endif %}</td>
         <td><span class="s {{ 'g' if r['status'] == 'completed' else 'r' if r['status'] == 'rejected' else 'a' }}">{{ status_label[r['status']] }}</span></td>
         <td>{{ r['sof_activations'] or '—' }}</td>

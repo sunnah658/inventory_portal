@@ -1,4 +1,25 @@
 ==============================================================================
+ THE EDITED-SOF FLOW, THE DATE LOCK, AND SERIAL NUMBERS THAT
+ CLOSE RANKS (2026-11-23)
+==============================================================================
+ Changing an activated SOF now runs in stages: the account manager
+ saves and the SOF goes to pending at once, the Sales admin approves
+ (or rejects) it, Revenue Assurance forwards it to Transmission,
+ Core and Technical support, one of them uploads another SAN report
+ for the edited SOF (the old report stays), Revenue Assurance can
+ change the dates, and forwarding to Finance makes the change take
+ effect. After Finance, the dates lock for everyone except the
+ portal admin and an administrative permission user, who change
+ them from a small form on the SOF row. Adding a SOF now lets the
+ account manager set its activation date and upload its file.
+ Serial numbers close ranks: deleting a client, invoice or request
+ leaves no gap — the later numbers move up, the next one added
+ takes the freed number, and restoring from the Recycle Bin gives
+ a new number at the end. Please note: an issued invoice's number
+ can now change when an earlier invoice in the same template is
+ deleted.
+
+==============================================================================
  CLIENT ONBOARDING IS THE SALES DEFAULT TAB, EVERY TAB HAS A
  PERMISSION BUTTON, AND THE RECYCLE BIN GETS BULK DELETE FOREVER
  (2026-11-23)

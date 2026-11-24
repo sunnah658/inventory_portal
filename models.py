@@ -830,6 +830,7 @@ CREATE TABLE IF NOT EXISTS item_request_steps (
 -- a user never blocks and never deletes a client.
 CREATE TABLE IF NOT EXISTS client_onboardings (
     id                 INT AUTO_INCREMENT PRIMARY KEY,
+    serial             INT,
     department_id      INT NOT NULL,
     owner_id           INT,
     client_name        VARCHAR(255) NOT NULL,
@@ -922,8 +923,14 @@ CREATE TABLE IF NOT EXISTS client_services (
 -- A change the account manager made to a SOF on a finished client
 -- (build 102): the new values wait here until the Sales admin approves
 -- them. service_id is NULL for a brand-new SOF. old_values / new_values
--- are JSON snapshots of the SOF row; status is awaiting, approved or
--- rejected; reason is the Sales admin's reason when rejecting.
+-- are JSON snapshots of the SOF row; reason is the Sales admin's reason
+-- when rejecting. status is the stage of the change (build 110):
+-- awaiting (the Sales admin has not decided), approved (approved, waiting
+-- for Revenue Assurance to forward it), san (forwarded, waiting for
+-- Transmission, Core or Technical support to upload a new SAN report),
+-- ra_dates (the SAN report is up, Revenue Assurance may change the dates),
+-- done (Revenue Assurance forwarded it to Finance and the SOF is final),
+-- rejected.
 CREATE TABLE IF NOT EXISTS client_sof_edits (
     id         INT AUTO_INCREMENT PRIMARY KEY,
     client_id  INT NOT NULL,
@@ -938,6 +945,24 @@ CREATE TABLE IF NOT EXISTS client_sof_edits (
     decided_at DATETIME,
     FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE,
     FOREIGN KEY (service_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every SAN report ever uploaded for a SOF (build 110): the current one
+-- lives on client_services.san_file as before, and every upload — the
+-- first one, and the one for an edited SOF — is kept here, so the old
+-- report is never lost when a new one is uploaded for an edited SOF.
+-- edit_id is the SOF change the upload belongs to, when it was uploaded
+-- for an edit; NULL for an upload in the normal flow.
+CREATE TABLE IF NOT EXISTS client_sof_san_uploads (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    edit_id     INT,
+    san_file    TEXT NOT NULL,
+    uploaded_by INT,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE,
+    FOREIGN KEY (edit_id) REFERENCES client_sof_edits(id) ON DELETE SET NULL,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- The Sales & Marketing admin's fields for the three Add Client pages.
@@ -1190,11 +1215,21 @@ def _upgrade_sof_status(conn):
         _ensure_column(conn, "client_services", _col, _ddl)
     conn.execute("UPDATE client_services SET service_type=service "
                  "WHERE service_type IS NULL OR service_type=''")
+    # A SOF with a change still in flight keeps its pending state: the
+    # backfill is only for SOFs from before the flow existed, which have
+    # no open change. Without the guard, a restart while a change waits
+    # for its SAN report would wrongly show the SOF as activated — and a
+    # termination the Sales admin only just approved would take effect
+    # before Revenue Assurance forwards it to Finance (build 110).
     conn.execute("UPDATE client_services s JOIN client_onboardings c ON c.id=s.client_id "
                  "SET s.status='activated' WHERE c.status='completed' AND s.activation_date IS NOT NULL "
-                 "AND (s.status IS NULL OR s.status='' OR s.status='pending')")
+                 "AND (s.status IS NULL OR s.status='' OR s.status='pending') "
+                 "AND NOT EXISTS (SELECT 1 FROM client_sof_edits e WHERE e.service_id=s.id "
+                 "AND e.status IN ('awaiting','approved','san','ra_dates'))")
     conn.execute("UPDATE client_services SET status='terminated' "
-                 "WHERE termination_date IS NOT NULL AND status<>'terminated'")
+                 "WHERE termination_date IS NOT NULL AND status<>'terminated' "
+                 "AND NOT EXISTS (SELECT 1 FROM client_sof_edits e WHERE e.service_id=client_services.id "
+                 "AND e.status IN ('awaiting','approved','san','ra_dates'))")
 
 
 def _upgrade_sof_dates(conn):
@@ -1210,6 +1245,37 @@ def _upgrade_sof_dates(conn):
         conn.execute("UPDATE client_services SET activation_date=?"
                      " WHERE client_id=? AND activation_date IS NULL",
                      (_c["activation_date"], _c["id"]))
+
+
+def _upgrade_client_serial(conn):
+    """Build 110 gives every client its own serial number (build 110):
+    the number shown on the Client onboarding tab, from 1. It starts as
+    the client's id, and it is the number that closes ranks when a client
+    is deleted — the id itself never changes."""
+    if "serial" not in _columns(conn, "client_onboardings"):
+        return
+    conn.execute("UPDATE client_onboardings SET serial=id WHERE serial IS NULL")
+
+
+def _upgrade_sof_san_history(conn):
+    """Build 110 keeps every SAN report a SOF ever had (build 110): the
+    upload for an edited SOF does not replace the old one. The current
+    report on each SOF becomes the first row of the history."""
+    if "san_file" not in _columns(conn, "client_services"):
+        return
+    # The uploader is joined, not copied blindly: on a database whose
+    # users table is still empty when the upgrade runs (or whose uploader
+    # is gone), the history row keeps no uploader instead of breaking
+    # the upgrade on the foreign key.
+    rows = conn.execute("SELECT s.id, s.san_file, u.id AS uid, s.san_at FROM client_services s "
+                        "LEFT JOIN users u ON u.id = s.san_by WHERE s.san_file IS NOT NULL").fetchall()
+    for _s in rows:
+        done = conn.execute("SELECT COUNT(*) FROM client_sof_san_uploads WHERE sof_id=?",
+                            (_s["id"],)).fetchone()[0]
+        if done:
+            continue
+        conn.execute("INSERT INTO client_sof_san_uploads(sof_id,edit_id,san_file,uploaded_by,uploaded_at) "
+                     "VALUES (?,?,?, ?, ?)", (_s["id"], None, _s["san_file"], _s["uid"], _s["san_at"]))
 
 
 def _upgrade_sof_san(conn):
@@ -1490,6 +1556,7 @@ def init_db():
         _ensure_column(conn, "client_onboardings", "am_email", "VARCHAR(255)")
         _ensure_column(conn, "client_onboardings", "deleted_at", "DATETIME")  # soft delete to the Recycle Bin (2026-11-23)
         _ensure_column(conn, "client_onboardings", "deleted_by", "INT")
+        _ensure_column(conn, "client_onboardings", "serial", "INT")  # the client's own serial number, from 1 (2026-11-23)
         _ensure_column(conn, "client_services", "activation_date", "DATE")  # the activation date of THIS SOF (2026-11-19)
         _ensure_column(conn, "client_services", "public_code", "VARCHAR(255)")  # the SOF's own share code HRC-##### for the QR on its PDF
         _ensure_column(conn, "client_services", "public_enabled", "INT NOT NULL DEFAULT 1")
@@ -1502,6 +1569,8 @@ def init_db():
         _upgrade_sof_status(conn)
         _upgrade_sof_dates(conn)
         _upgrade_sof_san(conn)
+        _upgrade_client_serial(conn)
+        _upgrade_sof_san_history(conn)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")

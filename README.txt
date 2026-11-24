@@ -6872,3 +6872,114 @@
  number, Service, Activation date, Service description,
  SOF file — no Service type box). The password pop-up only
  opens after a click, so it cannot appear in a still render.
+
+ 129. THE EDITED-SOF FLOW, THE DATE LOCK, AND SERIAL NUMBERS THAT
+     CLOSE RANKS (2026-11-23)
+==============================================================================
+ This build is the one you confirmed in eight answers on 2026-11-23.
+
+ (1) THE EDITED-SOF FLOW, IN STAGES. After the flow has finished, an
+     account manager changing an activated SOF, or setting its
+     termination date and commercial impact date, works like this:
+       a. As soon as the account manager saves, that SOF goes to
+          pending — the client itself stays finished — and the
+          Sales admin is told the SOF number and what changed.
+       b. The Sales admin approves or rejects it. A rejection puts
+          the SOF back to activated with its old values, and the
+          account manager is told why. An approval applies the
+          change to the SOF (it stays pending) and tells Revenue
+          Assurance the approval and what changed. A termination
+          takes effect only at the very end, never at approval.
+       c. Revenue Assurance forwards the change to Transmission,
+          Core and Technical support. Revenue Assurance cannot
+          reject it — there is no reject step here, only forward.
+       d. One of those three departments uploads ANOTHER SAN report
+          for the edited SOF. The old report stays: the SOF keeps
+          every report it ever had, listed under SAN reports with
+          who uploaded each one and when, and every one of them
+          still downloads. After the upload, Revenue Assurance,
+          Sales and the account manager are told.
+       e. Revenue Assurance can change the dates — activation,
+          termination and commercial impact, all three — if
+          required, and then forwards the finished change to
+          Finance.
+       f. Forwarding to Finance makes the change take effect: the
+          SOF becomes activated, or terminated if it has a
+          termination date. Finance, the account manager who
+          made the change and the Sales admin are told.
+     One change at a time per SOF: while a change is in flight, the
+     SOF takes no second change — the Add services form leaves it
+     alone and says so, and the single-SOF edit page only opens for
+     an activated SOF. A restart while a change is in flight no
+     longer flips the SOF to activated: the old upgrade backfill
+     now leaves every SOF with an open change alone.
+
+ (2) THE DATES LOCK AFTER FINANCE. Once Revenue Assurance has
+     forwarded the record to Finance, the activation date, the
+     termination date and the commercial impact date cannot be
+     changed by Revenue Assurance any more — the date box is gone
+     from the SOF row for everyone except the portal admin and an
+     administrative permission user. The row stays where it is; it
+     locks, it does not disappear. The portal admin (or
+     administrative permission user) changes the dates from a small
+     form on the SOF row itself, and Revenue Assurance, Finance
+     and Sales are told what changed and what the SOF now is.
+
+ (3) ADDING A SOF WORKS NOW. When the account manager adds another
+     SOF to a finished client, he CAN set its activation date and
+     upload the SOF file — both travel with the change and land on
+     the SOF when the Sales admin approves it. The date he sets
+     stays; Revenue Assurance does not set it fresh, it only
+     changes it at the dates stage of the flow. A SOF he adds
+     without a date waits for one: Revenue Assurance sets it at
+     the dates stage, or the portal admin sets it from the dates
+     form on the client page.
+
+ (4) SERIAL NUMBERS CLOSE RANKS. Wherever a number starts from 1
+     — clients, invoices and item requests — deleting one leaves
+     no gap:
+       - If records 2 to 4 are deleted and there is a 5th, the 5th
+         becomes 2, the 6th becomes 3, and so on.
+       - If there is no later record, the next one added takes the
+         freed number.
+     Invoices close ranks inside their own template, requests
+     inside their own kind, clients across the whole list. The
+     numbers are renumbered at the delete itself (a single delete
+     or a bulk delete), and the template or kind counter is reset
+     to one past the last live number. Restoring a deleted
+     invoice, request or client from the Recycle Bin gives it a
+     NEW number at the end of the sequence — its old number was
+     already taken by the renumbering.
+     PLEASE NOTE: an issued invoice's number can now change when
+     an earlier invoice in the same template is deleted. The
+     invoice number is still the official number for payment
+     and accounts; only its position in the sequence moves.
+
+ (5) THE SAN HISTORY. A new table, client_sof_san_uploads, holds
+     every SAN report a SOF ever had (56 tables in total). The
+     SOF's own san_file always points at the latest upload, so the
+     SOF page and the SOF PDF are unchanged. On upgrade, each
+     SOF's current report becomes the first row of its history.
+     Removing a report (portal admin, while the record is not
+     finished) takes the latest one off and brings the previous
+     one back as the current report; if the removed report was
+     the edited SOF's, its change waits for a new upload again.
+
+ OPEN, carried forward: (h) the Department Database All-rows
+     column picker; the narrow centred forms (the small centred
+     boxes will not visibly widen under the 1560px page size);
+     whether one-by-one row and personal-record deletes should
+     ask for a password; whether the 07:00 signature reminder
+     arrives at 07:00 Dhaka; whether accounts_user is gone and
+     the Accounts department deleted.
+
+ Tested: 283 client-flow checks and the full 696/696
+ regression suite against real MySQL 8.0, on the work copy
+ and on a fresh extract of the zip. CSS audit: 0 parse
+ errors, 150 defined classes. Renders read back: the staged
+ SOF-edit flow on a client page (the dates form and Forward
+ to Finance for one change, the Forward button for another,
+ and the portal admin's three-date form on the SOF row), the
+ Client onboarding list (serials 1 to 7 in order, Select,
+ Select all and Delete in the toolbar), and the shared
+ clients view and the Recycle Bin as before.

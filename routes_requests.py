@@ -48,7 +48,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import external_url, notify, notify_admin_task, notify_ddb_row_task, notify_ddb_task, notify_dept_task
+from core import external_url, notify, notify_admin_task, notify_ddb_row_task, notify_ddb_task, notify_dept_task, renumber_requests
 from models import get_db, log, setting_get
 
 bp = Blueprint("requests", __name__)
@@ -851,7 +851,9 @@ def request_delete(rid):
     permission user may do it, and only after typing their own password in
     the warning pop-up. The request, its lines, its edit history and its
     chain steps stay in the bin for 30 days and can be restored; its number
-    is never reused. If the owner deletes it, the department admin is told.
+    closes ranks with the others of the same kind (build 110) — the requests
+    after it move up one number. If the owner deletes it, the department
+    admin is told.
     (Follows the invoice delete: password, soft delete, owner deletes ->
     dept admin told, portal admin deletes -> nobody told.)"""
     from security import reauth_ok
@@ -866,6 +868,7 @@ def request_delete(rid):
     db.execute("UPDATE item_requests SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
                (g.user["id"], rid))
     log(db, "item_request_deleted", number)
+    renumber_requests(db, req["kind_id"])
     # If the owner deletes it, the department admin is told. A portal
     # admin deleting it tells nobody (the watcher rule: nobody is told
     # about a portal admin's own actions).

@@ -33,7 +33,7 @@ from core import (ddb_attachment_info, ddb_can_add, ddb_columns, ddb_history, dd
                   share_with_user, access_level, add_history, admin_ids, build_csv, can_use_record_attachments,
                   column_names, col_weight, create_record, dept_member_ids, filter_clause, get_record,
                   hidden_mine_columns, set_hidden_mine_columns, record_columns,
-                  names_for_records, notify, notify_admin_task, notify_ddb_task, parse_code_text, parse_form, print_col_widths, purge_client, purge_ddb_row, purge_ddb_tab, purge_invoice, purge_record, purge_request, purge_user_account, rec_select, reminder_rows,
+                  names_for_records, next_client_serial, notify, notify_admin_task, notify_ddb_task, parse_code_text, parse_form, print_col_widths, purge_client, purge_ddb_row, purge_ddb_tab, purge_invoice, purge_record, purge_request, purge_user_account, rec_select, reminder_rows,
                   restore, search_clause, soft_delete, sort_clause, summaries_for, table_context, USER_COLUMN_TYPES,
                   update_record, values_for, viewable_departments, USER_TYPE_LABEL)
 from models import get_db, log
@@ -1617,18 +1617,25 @@ def bin_tab_purge(tab_id):
 @login_required
 def bin_invoice_restore(iid):
     """Restore a deleted invoice from the Recycle Bin. The owner or a
-    portal admin can do it; the invoice comes back with its number and
-    its chain exactly as it was."""
+    portal admin can do it; the invoice comes back with its chain exactly
+    as it was — but with a NEW number at the end of its template's
+    sequence (build 110: the old number was taken when the numbers closed
+    ranks after the delete). A draft keeps no number."""
     db = get_db()
     inv = db.execute("SELECT * FROM invoices WHERE id=?", (iid,)).fetchone()
     if inv is None or not inv["deleted_at"]:
         abort(404)
     if not (is_portal_admin(g.user) or inv["owner_id"] == g.user["id"]):
         abort(403)
-    db.execute("UPDATE invoices SET deleted_at=NULL, deleted_by=NULL, updated_at=datetime('now','localtime') WHERE id=?", (iid,))
-    log(db, "invoice_restore", inv["number"] or "draft")
+    number = inv["number"]
+    if number:
+        tpl = db.execute("SELECT * FROM invoice_templates WHERE id=?", (inv["template_id"],)).fetchone()
+        number = f"{tpl['number_prefix']}-{tpl['next_number']:04d}"
+        db.execute("UPDATE invoice_templates SET next_number=next_number+1 WHERE id=?", (tpl["id"],))
+    db.execute("UPDATE invoices SET deleted_at=NULL, deleted_by=NULL, number=?, updated_at=datetime('now','localtime') WHERE id=?", (number, iid))
+    log(db, "invoice_restore", number or "draft")
     db.commit()
-    flash(f"Invoice {inv['number'] or 'draft'} restored.", "ok")
+    flash(f"Invoice {number or 'draft'} restored.", "ok")
     return redirect(url_for("records.bin_page"))
 
 
@@ -1660,14 +1667,17 @@ def bin_invoice_purge(iid):
 def bin_client_restore(cid):
     """Restore a deleted client from the Recycle Bin. The owner or a
     portal admin can do it; the client comes back with its SOFs,
-    contacts, history and share codes exactly as they were."""
+    contacts, history and share codes exactly as they were — but with a
+    NEW serial at the end of the sequence (build 110: the old serial was
+    taken when the serials closed ranks after the delete)."""
     db = get_db()
     cli = db.execute("SELECT * FROM client_onboardings WHERE id=?", (cid,)).fetchone()
     if cli is None or not cli["deleted_at"]:
         abort(404)
     if not (is_portal_admin(g.user) or cli["owner_id"] == g.user["id"]):
         abort(403)
-    db.execute("UPDATE client_onboardings SET deleted_at=NULL, deleted_by=NULL, updated_at=datetime('now','localtime') WHERE id=?", (cid,))
+    db.execute("UPDATE client_onboardings SET deleted_at=NULL, deleted_by=NULL, serial=?, updated_at=datetime('now','localtime') WHERE id=?",
+               (next_client_serial(db), cid))
     log(db, "client_restore", cli["client_name"])
     db.commit()
     flash(f"Client {cli['client_name']} restored.", "ok")
@@ -1702,18 +1712,25 @@ def bin_client_purge(cid):
 @login_required
 def bin_request_restore(rid):
     """Restore a deleted item request from the Recycle Bin. The owner or a
-    portal admin can do it; the request comes back with its number and
-    its chain exactly as it was."""
+    portal admin can do it; the request comes back with its chain exactly
+    as it was — but with a NEW number at the end of its kind's sequence
+    (build 110: the old number was taken when the numbers closed ranks
+    after the delete)."""
     db = get_db()
     req = db.execute("SELECT * FROM item_requests WHERE id=?", (rid,)).fetchone()
     if req is None or not req["deleted_at"]:
         abort(404)
     if not (is_portal_admin(g.user) or req["owner_id"] == g.user["id"]):
         abort(403)
-    db.execute("UPDATE item_requests SET deleted_at=NULL, deleted_by=NULL, updated_at=datetime('now','localtime') WHERE id=?", (rid,))
-    log(db, "item_request_restore", req["number"] or "request")
+    number = req["number"]
+    if number:
+        kind = db.execute("SELECT * FROM item_request_kinds WHERE id=?", (req["kind_id"],)).fetchone()
+        number = f"{kind['number_prefix']}-{kind['next_number']:04d}"
+        db.execute("UPDATE item_request_kinds SET next_number=next_number+1 WHERE id=?", (kind["id"],))
+    db.execute("UPDATE item_requests SET deleted_at=NULL, deleted_by=NULL, number=?, updated_at=datetime('now','localtime') WHERE id=?", (number, rid))
+    log(db, "item_request_restore", number or "request")
     db.commit()
-    flash(f"Item request {req['number'] or 'request'} restored.", "ok")
+    flash(f"Item request {number or 'request'} restored.", "ok")
     return redirect(url_for("records.bin_page"))
 
 

@@ -39,7 +39,7 @@ import config
 import exports
 from auth import login_required
 from utils import is_portal_admin
-from core import display_code, external_url, new_random_code_text, notify, notify_admin_task, notify_ddb_row_task, notify_ddb_task, notify_dept_task
+from core import display_code, external_url, new_random_code_text, notify, notify_admin_task, notify_ddb_row_task, notify_ddb_task, notify_dept_task, renumber_invoices
 from models import get_db, log, setting_get
 
 bp = Blueprint("invoices", __name__)
@@ -703,8 +703,9 @@ def invoice_delete(iid):
     for good). Only the owner or a portal admin may do it, and only after
     typing their own password in the warning pop-up. The invoice, its lines
     and its chain stay in the bin for 30 days and can be restored; its
-    number is never reused. If the owner deletes it, the department admin
-    is told."""
+    number closes ranks with the others in the same template (build 110) —
+    the invoices after it move up one number. If the owner deletes it, the
+    department admin is told."""
     from security import reauth_ok
     db = get_db(); inv = _invoice(db, iid)
     if not (inv["owner_id"] == g.user["id"] or is_portal_admin(g.user)):
@@ -717,6 +718,7 @@ def invoice_delete(iid):
     db.execute("UPDATE invoices SET deleted_at=datetime('now','localtime'), deleted_by=? WHERE id=?",
                (g.user["id"], iid))
     log(db, "invoice_deleted", number)
+    renumber_invoices(db, inv["template_id"])
     # If the owner deletes it, the department admin is told. A portal
     # admin deleting it tells nobody (the watcher rule: nobody is told
     # about a portal admin's own actions).

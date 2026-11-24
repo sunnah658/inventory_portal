@@ -557,10 +557,80 @@ def purge_client(db, cid):
         _remove_client_file(raw)
     for (raw,) in db.execute("SELECT san_file FROM client_services WHERE client_id=?", (cid,)).fetchall():
         _remove_client_file(raw)
+    # Build 110: the SAN history keeps every upload, including the ones
+    # that are no longer the SOF's current report — erase those files too.
+    for (raw,) in db.execute("SELECT u.san_file FROM client_sof_san_uploads u "
+                             "JOIN client_services s ON s.id=u.sof_id WHERE s.client_id=?", (cid,)).fetchall():
+        _remove_client_file(raw)
     _row = db.execute("SELECT san_file FROM client_onboardings WHERE id=?", (cid,)).fetchone()
     if _row:
         _remove_client_file(_row[0])
     db.execute("DELETE FROM client_onboardings WHERE id=?", (cid,))
+
+
+def next_client_serial(db):
+    """The serial number a new client takes (build 110): one past the
+    highest serial among the live clients, so it fills the first gap
+    left by a deletion."""
+    row = db.execute("SELECT COALESCE(MAX(serial),0) FROM client_onboardings "
+                     "WHERE deleted_at IS NULL").fetchone()
+    return (row[0] or 0) + 1
+
+
+def renumber_clients(db):
+    """Build 110: after a client is deleted, the surviving live clients
+    close ranks — their serial numbers become 1, 2, 3… with no gaps, in
+    the order they had. The id itself never changes, so links, history
+    and share codes are untouched."""
+    rows = db.execute("SELECT id, serial FROM client_onboardings WHERE deleted_at IS NULL "
+                      "ORDER BY COALESCE(serial, id), id").fetchall()
+    for n, r in enumerate(rows, 1):
+        if (r["serial"] or r["id"]) != n:
+            db.execute("UPDATE client_onboardings SET serial=? WHERE id=?", (n, r["id"]))
+
+
+def _number_suffix(number):
+    """The numeric part of a BIL-0001 / REQ-0001 number, or 0 when it
+    does not look like one."""
+    try:
+        return int((number or "").rsplit("-", 1)[1])
+    except (ValueError, IndexError):
+        return 0
+
+
+def renumber_invoices(db, template_id):
+    """Build 110: after an invoice is deleted, the surviving live invoices
+    of that template close ranks — BIL-0001, BIL-0002… with no gaps — and
+    the template's next number is set one past the last, so the next
+    invoice fills the gap. Drafts have no number and are untouched."""
+    tpl = db.execute("SELECT * FROM invoice_templates WHERE id=?", (template_id,)).fetchone()
+    if tpl is None:
+        return
+    rows = db.execute("SELECT id, number FROM invoices WHERE template_id=? AND deleted_at IS NULL "
+                      "AND number IS NOT NULL", (template_id,)).fetchall()
+    rows = sorted(rows, key=lambda r: (_number_suffix(r["number"]), r["id"]))
+    for n, r in enumerate(rows, 1):
+        new = f"{tpl['number_prefix']}-{n:04d}"
+        if r["number"] != new:
+            db.execute("UPDATE invoices SET number=? WHERE id=?", (new, r["id"]))
+    db.execute("UPDATE invoice_templates SET next_number=? WHERE id=?", (len(rows) + 1, template_id))
+
+
+def renumber_requests(db, kind_id):
+    """Build 110: the same closing of ranks for the live item requests
+    of one kind — REQ-0001, REQ-0002… with no gaps, and the kind's next
+    number set one past the last."""
+    kind = db.execute("SELECT * FROM item_request_kinds WHERE id=?", (kind_id,)).fetchone()
+    if kind is None:
+        return
+    rows = db.execute("SELECT id, number FROM item_requests WHERE kind_id=? AND deleted_at IS NULL "
+                      "AND number IS NOT NULL", (kind_id,)).fetchall()
+    rows = sorted(rows, key=lambda r: (_number_suffix(r["number"]), r["id"]))
+    for n, r in enumerate(rows, 1):
+        new = f"{kind['number_prefix']}-{n:04d}"
+        if r["number"] != new:
+            db.execute("UPDATE item_requests SET number=? WHERE id=?", (new, r["id"]))
+    db.execute("UPDATE item_request_kinds SET next_number=? WHERE id=?", (len(rows) + 1, kind_id))
 
 
 def _remove_client_file(raw):
