@@ -5,7 +5,7 @@
 <div class="tw"><div>
 <div class="card medium">
   <h1>Edit SOF {{ s['sof_number'] }} · {{ c['client_name'] }}</h1>
-  <p class="hint" style="margin-bottom:14px">Only this SOF is affected — the client itself stays as it is. <span class="req">*</span> means required. The activation date is set by Revenue Assurance, not here.{% if not portal_admin %} Upload a new SOF file with this change — it is required, even when you only change a date. The old file stays downloadable.{% endif %}</p>
+  <p class="hint" style="margin-bottom:14px">Only this SOF is affected — the client itself stays as it is. <span class="req">*</span> means required. Set the activation date here if it changes — Revenue Assurance can still change it before the change goes to Finance.{% if not portal_admin %} Upload a new SOF file with this change — it is required, even when you only change a date. The old file stays downloadable.{% endif %}</p>
   <form method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fm">
@@ -14,20 +14,20 @@
       <div class="fd full"><label>Service description <span class="req">*</span></label><textarea name="service_description" rows="2" required>{{ s['service_description'] or '' }}</textarea></div>
       <div class="fd full"><label>Details</label><textarea name="details" rows="2">{{ s['details'] or '' }}</textarea></div>
       <div class="fd full"><label>SOF file{% if not portal_admin %} <span class="req">*</span>{% endif %}</label><input name="sof_file" type="file"{% if not portal_admin %} required{% endif %}>{% if f %}<div class="sub">Now: {{ f['original'] }} — the new file is kept alongside it, the old one stays downloadable.</div>{% endif %}</div>
-      <div class="fd"><label>Activation date</label><input type="date" value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" disabled><p class="sub">Set by Revenue Assurance.</p></div>
+      <div class="fd"><label>Activation date <span class="req">*</span></label><input name="activation_date" type="date" value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" required></div>
       <div class="fd"><label>Termination date</label><input name="termination_date" type="date" value="{{ (s['termination_date']|string)[:10] if s['termination_date'] else '' }}"></div>
       <div class="fd"><label>Commercial impact date</label><input name="commercial_impact_date" type="date" value="{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '' }}"></div>
       <div class="fd full"><label>Termination reason</label><textarea name="termination_reason" rows="2">{{ s['termination_reason'] or '' }}</textarea></div>
     </div>
     {% if portal_admin %}<p class="hint">As portal admin, this change applies at once, and a termination takes effect at once.</p>
-    {% else %}<p class="hint">The Sales admin approves or rejects this change. Once approved, this SOF goes to pending and Revenue Assurance sets its activation date to finish the flow. A termination takes effect only then.</p>{% endif %}
+    {% else %}<p class="hint">The Sales admin approves or rejects this change. Once approved, this SOF goes to pending and Revenue Assurance may change the dates before forwarding it to Finance. A termination takes effect only then.</p>{% endif %}
     <div class="acts"><a class="b" href="{{ back }}">Cancel</a> <button class="b p" type="submit">Save SOF change</button></div>
   </form>
 </div>
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens next</h2>
-    <p class="hint">The Sales admin approves or rejects this SOF change. Once approved, the SOF goes to pending and Revenue Assurance sets its activation date to finish the flow. A termination takes effect only then.</p></div>
+    <p class="hint">The Sales admin approves or rejects this SOF change. Once approved, the SOF goes to pending and Revenue Assurance may change the dates before forwarding it to Finance. A termination takes effect only then.</p></div>
   {{ quick_card([('Back to the client', back, True)]) }}
 </div></div>
 {% endblock %}

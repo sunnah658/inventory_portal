@@ -518,12 +518,19 @@ def _record_sof_file(db, sof_id, file_json, edit_id, user_id):
 def _sof_file_uploads(db, sid):
     """Every SOF file a SOF ever had, oldest first — the history rows,
     plus the SOF's current file when no history row covers it yet, so
-    the Download SOF column is never empty for a SOF that has a file."""
+    the Download SOF column is never empty for a SOF that has a file.
+    Build 113: the "for the edited SOF" note belongs only to a file
+    uploaded by editing this SOF. A new SOF's first file is recorded
+    against the edit that created it — that edit has no old values —
+    so its note is dropped here, and files already live are fixed
+    without a data migration."""
     row = db.execute("SELECT sof_file FROM client_services WHERE id=?", (sid,)).fetchone()
     out = [{"id": u["id"], "file": _file_info(u["sof_file"]),
             "by": (db.execute("SELECT full_name FROM users WHERE id=?", (u["uploaded_by"],)).fetchone() or {}).get("full_name") if u["uploaded_by"] else None,
-            "at": u["uploaded_at"], "edit_id": u["edit_id"]}
-           for u in db.execute("SELECT * FROM client_sof_file_uploads WHERE sof_id=? ORDER BY id", (sid,)).fetchall()]
+            "at": u["uploaded_at"], "edit_id": u["edit_id"] if u["edit_id"] and u["edit_old"] else None}
+           for u in db.execute("SELECT h.*, e.old_values AS edit_old FROM client_sof_file_uploads h "
+                               "LEFT JOIN client_sof_edits e ON e.id=h.edit_id "
+                               "WHERE h.sof_id=? ORDER BY h.id", (sid,)).fetchall()]
     current = _file_info(row["sof_file"]) if row else None
     if current and not any((u["file"] or {}).get("stored") == current.get("stored") for u in out):
         out.append({"id": None, "file": current, "by": None, "at": None, "edit_id": None})
@@ -1345,11 +1352,15 @@ def _edit_services(db, c, roles):
                 skipped.append(old["sof_number"])
                 continue
             if portal_admin:
+                # Build 113: the activation date lands here too, as it
+                # does on approval and on the portal admin's Edit save —
+                # a blank box keeps the old date rather than wiping it.
                 db.execute("UPDATE client_services SET sof_number=?, service=?, service_type=?, "
-                           "service_description=?, details=?, sof_file=? WHERE id=?",
+                           "service_description=?, details=?, sof_file=?, activation_date=? WHERE id=?",
                            (new["sof_number"], new["service"], new["service_type"],
                             new["service_description"] or None, new["details"] or None,
-                            new.get("sof_file") or old["sof_file"], sid))
+                            new.get("sof_file") or old["sof_file"],
+                            new.get("activation_date") or old["activation_date"] or None, sid))
                 # Build 112: a file the portal admin replaces joins the
                 # SOF's file history — the old one stays downloadable.
                 if new.get("sof_file") and new["sof_file"] != (old["sof_file"] or None):
@@ -1835,14 +1846,17 @@ def sof_dates(cid, sid):
 @login_required
 def sof_edit(cid, sid):
     """The account manager edits ONE activated or terminated SOF on a finished client —
-    its fields, and its termination date, commercial impact date and
+    its fields, its activation date, and its termination date, commercial impact date and
     termination reason. Build 110: as soon as the account manager saves,
     the SOF goes to pending and the Sales admin is told the SOF number
     and what changed. The SOF itself keeps its old values until the
     change has run the whole flow. The portal admin's change applies at
     once. Build 112: every edit carries a new SOF file — the account
     manager must upload one, even for a date-only change; the old file
-    stays downloadable, it is not replaced."""
+    stays downloadable, it is not replaced. Build 113: the activation
+    date is editable here too — it lands when the Sales admin approves,
+    and Revenue Assurance may change it again before forwarding the
+    change to Finance."""
     db, c, roles = _load(cid)
     row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
     if row is None:
@@ -1860,19 +1874,23 @@ def sof_edit(cid, sid):
            "service_type": _clean(request.form.get("service"), 255),
            "service_description": (request.form.get("service_description") or "").strip()[:2000],
            "details": (request.form.get("details") or "").strip()[:2000],
-           # The activation date is not on this page: the SOF already has
-           # one, and Revenue Assurance may change it later in the flow.
-           "activation_date": str(row["activation_date"])[:10] if row.get("activation_date") else "",
+           # Build 113: the activation date is set here when it changes —
+           # it lands when the Sales admin approves, and Revenue Assurance
+           # may change it again before forwarding the change to Finance.
+           # A finished SOF always has one, so it cannot be cleared here.
+           "activation_date": (request.form.get("activation_date") or "").strip(),
            "status": row.get("status") or "",
            "termination_date": (request.form.get("termination_date") or "").strip(),
            "commercial_impact_date": (request.form.get("commercial_impact_date") or "").strip(),
            "termination_reason": (request.form.get("termination_reason") or "").strip()[:2000]}
     errors = []
     for key, label in (("sof_number", "SOF number"), ("service", "Service"),
-                       ("service_description", "Service description")):
+                       ("service_description", "Service description"),
+                       ("activation_date", "Activation date")):
         if not new[key]:
             errors.append(f"{label} is required.")
-    for key, label in (("termination_date", "Termination date"),
+    for key, label in (("activation_date", "Activation date"),
+                       ("termination_date", "Termination date"),
                        ("commercial_impact_date", "Commercial impact date")):
         if new[key]:
             try:
@@ -1919,14 +1937,16 @@ def sof_edit(cid, sid):
         return redirect(_link(cid))
     if portal_admin:
         # The portal admin is the authority: the change applies at once,
-        # and a termination takes effect at once.
-        status = "terminated" if new["termination_date"] else ("activated" if row["activation_date"] else "pending")
+        # and a termination takes effect at once. Build 113: the
+        # activation date the admin set lands here too.
+        status = "terminated" if new["termination_date"] else ("activated" if new["activation_date"] else "pending")
         db.execute("UPDATE client_services SET sof_number=?, service=?, service_type=?, service_description=?, "
-                   "details=?, sof_file=?, termination_date=?, commercial_impact_date=?, termination_reason=?, status=? "
-                   "WHERE id=? AND client_id=?",
+                   "details=?, sof_file=?, activation_date=?, termination_date=?, commercial_impact_date=?, "
+                   "termination_reason=?, status=? WHERE id=? AND client_id=?",
                    (new["sof_number"], new["service"], new["service_type"],
                     new["service_description"] or None, new["details"] or None,
                     new.get("sof_file") or row["sof_file"],
+                    new["activation_date"] or None,
                     new["termination_date"] or None, new["commercial_impact_date"] or None,
                     new["termination_reason"] or None, status, sid, cid))
         # Build 112: a file the portal admin replaces joins the SOF's
@@ -1988,12 +2008,16 @@ def sof_edit_approve(cid, eid):
         # was not activated to begin with, in which case it keeps its state.
         was = old.get("status") or row["status"]
         new_status = "pending" if was in ("activated", "pending") else was
+        # Build 113: the activation date the change carries lands here
+        # too — approving a change used to leave the old date on the
+        # SOF, so an edited activation date never reached the list.
         db.execute("UPDATE client_services SET sof_number=?, service=?, service_type=?, service_description=?, "
-                   "details=?, sof_file=?, termination_date=?, commercial_impact_date=?, termination_reason=?, "
-                   "status=? WHERE id=?",
+                   "details=?, sof_file=?, activation_date=?, termination_date=?, commercial_impact_date=?, "
+                   "termination_reason=?, status=? WHERE id=?",
                    (new["sof_number"], new["service"], new["service_type"],
                     new["service_description"] or None, new["details"] or None,
                     new.get("sof_file") or row["sof_file"],
+                    new.get("activation_date") or None,
                     new["termination_date"] or None, new["commercial_impact_date"] or None,
                     new["termination_reason"] or None, new_status, edit["service_id"]))
         # Build 112: the new file joins the SOF's file history, and the

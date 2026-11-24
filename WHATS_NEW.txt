@@ -1,4 +1,22 @@
 ==============================================================================
+ THE ACCOUNT MANAGER EDITS THE ACTIVATION DATE, THE APPROVAL
+ WRITES IT, THE EDITED-SOF NOTE SITS ONLY ON EDIT FILES, AND
+ THE TYPE COLUMN IS SERVICE DESCRIPTION (2026-11-24)
+==============================================================================
+ The activation date box on the Edit SOF page is no longer
+ locked: the account manager sets it there when it changes,
+ and the SOF file is still required on the edit. Approving
+ the change now writes the edited activation date to the SOF,
+ so it shows on the Services list at once — the same hole is
+ fixed in the portal admin's own Edit save and Add services
+ save. The "for the edited SOF" note sits only on a file an
+ edit uploaded; a new SOF's first file carries no note, and
+ files already live are fixed by this build. The Services
+ table has a Service description column instead of Type, and
+ the SOF View page loses its Type row. An edit with no
+ activation date is refused.
+
+==============================================================================
  THE ADD-SERVICE OVERWRITE FIX, SOF FILES KEPT, AND RA'S DATE
  BOXES ONLY WHEN THE ACCOUNT MANAGER SET THEM (2026-11-24)
 ==============================================================================

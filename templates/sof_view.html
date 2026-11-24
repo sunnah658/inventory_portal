@@ -11,7 +11,6 @@
 <div class="card"><h2>SOF details</h2>
   <div class="kv"><b>SOF number</b><span>{{ s['sof_number'] }}</span></div>
   <div class="kv"><b>Service</b><span>{{ s['service'] }}</span></div>
-  <div class="kv"><b>Type</b><span>{{ s['service_type'] or '—' }}</span></div>
   {% if s['service_description'] %}<div class="kv"><b>Service description</b><span style="white-space:pre-wrap">{{ s['service_description'] }}</span></div>{% endif %}
   {% if 'sof_details' in fmap %}<div class="kv"><b>Details</b><span style="white-space:pre-wrap">{{ s['details'] or '—' }}</span></div>{% endif %}
   {% for fld in fields[3] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('service', s['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}

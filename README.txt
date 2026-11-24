@@ -7152,3 +7152,72 @@
  the account manager's blank Add services page, the SOF View
  page with both SOF files, and the Client onboarding list as
  before.
+
+132. THE ACCOUNT MANAGER EDITS THE ACTIVATION DATE, THE APPROVAL
+     WRITES IT, THE EDITED-SOF NOTE SITS ONLY ON EDIT FILES, AND
+     THE TYPE COLUMN IS SERVICE DESCRIPTION (2026-11-24)
+==============================================================================
+ This build fixes the four things you reported on 2026-11-24
+ from your photos of /clients/12:
+
+ (1) THE ACCOUNT MANAGER EDITS THE ACTIVATION DATE FROM THE
+     EDIT BUTTON. The activation date box on the Edit SOF page
+     is no longer locked: the account manager sets it there
+     when it changes, just like the other fields. The SOF file
+     is still required on the edit, even for a date-only
+     change. The page no longer says the date is set by
+     Revenue Assurance instead — Revenue Assurance can still
+     change it later in the flow, before forwarding the change
+     to Finance.
+
+ (2) THE APPROVAL WRITES THE EDITED ACTIVATION DATE TO THE
+     SOF. Approving a SOF change used to write every edited
+     field to the SOF except the activation date, so an edited
+     activation date never reached the Services list. Now it
+     lands at the Sales admin's approval, like the rest of the
+     change. The same hole existed in two more places and is
+     fixed there too: the portal admin's own Edit save, and the
+     portal admin's Add services save for an existing SOF
+     (a blank box there keeps the old date rather than wiping
+     it). A date Revenue Assurance sets at the dates stage
+     already reached the list — that part was checked and
+     works — and still does.
+
+ (3) "FOR THE EDITED SOF" ONLY ON A FILE AN EDIT UPLOADED.
+     The Download SOF list used to mark every file "for the
+     edited SOF" — including a new SOF's very first file — so
+     both files on /clients/12 carried the note. Now the note
+     sits only on a file uploaded by editing that SOF; a new
+     SOF's first file carries no note. Files already live are
+     fixed by this build with no data change needed. The SAN
+     reports are untouched — their note stays as it was.
+
+ (4) THE TYPE COLUMN IS NOW SERVICE DESCRIPTION. There is no
+     field called Type, so the Services table no longer has a
+     Type column: it has a Service description column instead,
+     with the description under it, and the Service column
+     shows only the service name. The SOF View page loses its
+     Type row too; its Service description row stays. The
+     short name in brackets after each date on the client
+     list is unchanged — that is the service name, and it was
+     never the Type column.
+
+ An edit with no activation date is refused — a finished SOF
+ always has one, so it cannot be cleared from the Edit page.
+
+ OPEN, carried forward: (h) the Department Database All-rows
+     column picker; the narrow centred forms (the small centred
+     boxes will not visibly widen under the 1560px page size);
+     whether one-by-one row and personal-record deletes should
+     ask for a password; whether the 07:00 signature reminder
+     arrives at 07:00 Dhaka; whether accounts_user is gone and
+     the Accounts department deleted.
+
+ Tested: 317 client-flow checks and the full 725
+ regression suite against real MySQL 8.0, on the work copy
+ and on a fresh extract of the zip. CSS audit: 0 parse
+ errors, 150 defined classes. Renders read back: the client
+ page with the Service description column and one note only
+ on the edited file, the SOF View page with no Type row, the
+ Edit SOF page with the activation date editable, and the
+ Client onboarding list as before.
