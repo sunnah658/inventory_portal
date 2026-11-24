@@ -1,4 +1,12 @@
 ==============================================================================
+ THE CLIENT DETAIL PAGE FITS AT 100% BROWSER ZOOM (2026-11-24)
+==============================================================================
+ Opening a client used to cut the right-hand rail off the screen, and
+ zooming the browser out to 70% only shrank the whole page. The wide
+ Services table forced the page wider than the screen; now the page
+ fits at 100% zoom and the table scrolls inside its own card.
+
+==============================================================================
  THE ACCOUNT MANAGER EDITS THE ACTIVATION DATE, THE APPROVAL
  WRITES IT, THE EDITED-SOF NOTE SITS ONLY ON EDIT FILES, AND
  THE TYPE COLUMN IS SERVICE DESCRIPTION (2026-11-24)

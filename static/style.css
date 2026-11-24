@@ -211,7 +211,7 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--p
 .k1 span{font-size:.8rem;color:var(--soft);font-weight:700}.k1 b{display:block;font-size:1.9rem;font-weight:800;line-height:1.2}.k1.txt b{font-size:1.1rem;font-weight:700;line-height:1.35}.k1 small{font-size:.78rem;font-weight:700;color:var(--g-tx)}.k1.w small{color:var(--a-tx)}.k1.d small{color:var(--r-tx)}
 .g3{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 /* ---------- record pages */
-.tw{display:grid;grid-template-columns:1fr 280px;gap:22px;align-items:start}.stack>*{margin-bottom:20px}
+.tw{display:grid;grid-template-columns:1fr 280px;gap:22px;align-items:start}.tw>*{min-width:0}.stack>*{margin-bottom:20px}
 .tb table.ctable{min-width:1080px}
 .stcol .s{white-space:nowrap}
 /* ---------- Design 6: KPI row + split layout + vertical bar chart.

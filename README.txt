@@ -7221,3 +7221,46 @@
  on the edited file, the SOF View page with no Type row, the
  Edit SOF page with the activation date editable, and the
  Client onboarding list as before.
+
+
+133. THE CLIENT DETAIL PAGE FITS AT 100% BROWSER ZOOM (no files added or removed)
+
+The client detail page looked zoomed in: opening a client (for example
+/clients/13 "tusar") cut the right-hand "Where it is in the flow" rail
+off the screen, and zooming the browser out to 70% shrank the whole page
+to a tiny 49% instead of fixing it. The list page looked fine at the
+same zoom. The text size was the same on both pages — the detail page
+was not zoomed, it was WIDER than the screen.
+
+Root cause: the Services (SOF) table's min-content is wider than the
+page's main column — eleven columns, nowrap download buttons with long
+filenames ("Download report_activity_2026-11-24.xlsx"), three date
+inputs and nowrap headers. The page layout is the .tw grid (1fr + 280px
+rail), and a grid item's default min-width:auto refuses to shrink below
+its content's min-content, so the table forced the whole main column
+wider than the viewport and pushed the 280px rail off-screen. The list
+page's table is narrower, so it never hit this. Reproduced locally with
+a client carrying the same long SOF filenames: the render shows the rail
+and the Download column cut off at the right edge, exactly like the
+user's photo.
+
+Fix (one CSS rule, static/style.css): .tw>*{min-width:0}. The grid
+children may now shrink below their content size, and the table's
+existing .tb{overflow-x:auto} scrolls the wide Services table inside
+its own card instead of blowing out the page. Nothing else changes:
+where the content already fits (the list page and every other .tw
+page), min-width:0 has no effect, and the 280px rail track is
+unchanged. No template, route or database change.
+
+Verification note: WeasyPrint cannot show this fix — its grid
+implementation ignores min-width:0 on grid items and expands wide
+tables to full content width instead of scrolling them, so the
+before/after renders are identical. The fix is the standard CSS grid
+rule (the same min-width:0 principle as build 104's chart-label fix,
+which works live). Please confirm live: open a client detail page at
+100% browser zoom — the whole page including the right-hand rail
+should be visible with no sideways scroll, and the Services table
+scrolls inside its own card if it is wider than the column.
+
+Tests: 320/320 client checks and the full 728/728 regression
+suite, work copy AND fresh extract, real MySQL 8.0. CSS audit: 0 errors, 150 defined classes.
