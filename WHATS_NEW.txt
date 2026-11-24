@@ -1,4 +1,21 @@
 ==============================================================================
+ SIX SMALL FIXES FROM YOUR 2026-11-24 PHOTOS (2026-11-24)
+==============================================================================
+ The portal admin's three date boxes on a SOF row now sit one under
+ each heading — activation, termination, commercial impact — with
+ one Save dates button for the row. The Client onboarding list no
+ longer says Completed while a SOF change is still in flight: the
+ Flow column shows where that change is, with its SOF number and
+ an amber pill. The SOF's own View page no longer shows a Share
+ code row, and it now lists every SAN report the SOF ever had
+ instead of only the latest one. The account manager can edit a
+ terminated SOF again — saving sends it to Pending and the change
+ runs the whole flow again. And the Notifications page lost its
+ "Warn me" card, its "Warn me before a reminder date" dropdown
+ and its "Who gets told what" card; the reminders themselves do
+ not change.
+
+==============================================================================
  THE EDITED-SOF FLOW, THE DATE LOCK, AND SERIAL NUMBERS THAT
  CLOSE RANKS (2026-11-23)
 ==============================================================================

@@ -6983,3 +6983,91 @@
  Client onboarding list (serials 1 to 7 in order, Select,
  Select all and Delete in the toolbar), and the shared
  clients view and the Recycle Bin as before.
+
+ 130. SIX SMALL FIXES FROM YOUR 2026-11-24 PHOTOS (2026-11-24)
+==============================================================================
+ This build is the six fixes you reported on 2026-11-24, after
+ build 110 went live.
+
+ (1) THE ADMIN'S DATES, ONE PER COLUMN. The portal admin's three
+     date boxes on a SOF row were all stacked inside the
+     Activation date column, with Termination date and
+     Commercial impact date showing only a dash. Now there is
+     one box under each heading — activation under Activation
+     date, termination under Termination date, commercial
+     impact under Commercial impact date — and one Save dates
+     button for the row. The same three dates, the same
+     permission (portal admin and administrative permission
+     user), the same notifications to Revenue Assurance,
+     Finance and Sales. The boxes are one form split across
+     the three columns, so saving still sends all three dates
+     together.
+
+ (2) THE FLOW SHOWS WHERE A SOF CHANGE IS. The Client onboarding
+     list showed a client's Flow as Completed even while one
+     of its SOFs was pending with a change in flight. Now,
+     while a SOF change is in flight, the Flow column shows
+     that change's stage — "Waiting for the Sales admin",
+     "Approved — waiting for Revenue Assurance to forward it",
+     "Forwarded — waiting for a new SAN report", or "SAN report
+     uploaded — Revenue Assurance may change the dates" — with
+     the SOF number in front, and the pill turns amber. If two
+     SOFs have changes in flight, the column shows each SOF
+     with its own stage. When the change finishes, the Flow
+     goes back to the client's own status.
+
+ (3) NO SHARE CODE ON THE SOF VIEW PAGE. The SOF's own View page
+     no longer shows a Share code row. The SOF's public code
+     page itself is unchanged — the code still exists and
+     still opens from Search QR.
+
+ (4) EVERY SAN REPORT ON THE SOF VIEW PAGE. The SOF's own View
+     page showed only the latest SAN report. Now it lists
+     every report the SOF ever had, oldest first, each with
+     its own Download, who uploaded it and when, and "for the
+     edited SOF" where it was uploaded for an edited SOF —
+     the same list as the client page shows. Uploading and
+     removing a report work as before.
+
+ (5) THE ACCOUNT MANAGER CAN EDIT A TERMINATED SOF. After the
+     termination date was confirmed, a terminated SOF had no
+     Edit button for the account manager. Now the Edit button
+     shows for an activated or a terminated SOF, and the edit
+     page opens for both. Saving sends the SOF to Pending and
+     the change runs the whole staged flow again, exactly as
+     an edit of an activated SOF does — including through the
+     Add services form, which now also sends a changed
+     terminated SOF to pending. The portal admin already had
+     Edit on every SOF; nobody else gains it.
+
+ (6) THE NOTIFICATIONS PAGE, TIDIER. Three pieces are gone from
+     the Notifications page: the "Warn me — 3 days ahead" card
+     at the top, the "Warn me before a reminder date" dropdown
+     with its Save button, and the "Who gets told what" card
+     on the right. The Notifications and Unread cards, the
+     Select / Mark all as read / Clear all buttons, the
+     message list, and the My records / Reminders links stay
+     exactly as they were. The reminders themselves do not
+     change: records you own still warn 1 day before and on
+     the day itself from 07:00, and the extra days-ahead
+     reminder keeps going at whatever each user already saved
+     — the setting stays in the database, the page just no
+     longer shows it or lets anyone change it.
+
+ OPEN, carried forward: (h) the Department Database All-rows
+     column picker; the narrow centred forms (the small centred
+     boxes will not visibly widen under the 1560px page size);
+     whether one-by-one row and personal-record deletes should
+     ask for a password; whether the 07:00 signature reminder
+     arrives at 07:00 Dhaka; whether accounts_user is gone and
+     the Accounts department deleted.
+
+ Tested: 293 client-flow checks and the full 704/704
+ regression suite against real MySQL 8.0, on the work copy
+ and on a fresh extract of the zip. CSS audit: 0 parse
+ errors, 150 defined classes. Renders read back: the client
+ page with one date box under each heading and the staged
+ flow, the Client onboarding list showing a change in flight
+ in the Flow column, the SOF View page with every SAN report
+ and no share code, and the Notifications page without its
+ warn-me and who-gets-told cards.

@@ -12,14 +12,8 @@
 <div class="kp">
   {{ kpi('Notifications', rows|length) }}
   {{ kpi('Unread', ns.unread) }}
-  {{ kpi('Warn me', warn_days ~ ' days ahead') }}
 </div>
 <div class="tw"><div>
-<div class="card" style="margin-bottom:16px"><form method="post" action="{{ url_for('flow.notification_settings') }}" class="acts" style="align-items:flex-end"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="fd" style="margin:0;min-width:220px"><label for="wd">Warn me before a reminder date</label>
-    <select id="wd" name="warn_days">{% for n in choices %}<option value="{{ n }}" {{ 'selected' if n == warn_days }}>{{ n }} day{{ '' if n == 1 else 's' }} ahead</option>{% endfor %}</select></div>
-  <button class="b p" type="submit">Save</button></form>
-  <div class="sub" style="margin-top:8px">For the records you own you always get a message 1 day before and on the day itself (from {{ '%02d' % hour }}:00 in the morning), plus one more at the number of days you choose here.</div></div>
 <div class="tb notif">{% if rows %}<form method="post" action="{{ url_for('flow.notifications_mark_selected') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div id="selActions" class="acts" style="display:none;margin-bottom:10px"><button class="b p" type="submit">Mark as read</button><button class="b dg" type="submit" formaction="{{ url_for('flow.notifications_clear_selected') }}" onclick="return confirm('Clear the selected notifications?');">Clear</button></div>
 <table><thead><tr><th class="selcol" style="display:none"></th><th>Message</th><th>When</th></tr></thead><tbody>
@@ -39,10 +33,6 @@
 </script>
 </div>
 <div class="stack rail">
-  <div class="card"><h2>Who gets told what</h2>
-    <p class="hint">Nobody is told about the portal admin's tasks. The portal admin is told about permission-user and department-admin tasks. A permission user is told about department-admin tasks. A department admin is told when a user in their department adds, edits or deletes a Department Database row, creates an invoice draft, finalises an invoice, changes an invoice's status to Approved or Pending, deletes an invoice, sends an Item Request, edits a request, or when a request from their department has its status changed.</p>
-    <p class="hint">Every morning (from {{ '%02d' % hour }}:00), every user except the portal admin and the administrative permission users gets "Please upload your signature from my settings" if they have not uploaded a signature in My settings yet — once a day, until they upload one. Clicking it opens My settings.</p>
-    <p class="hint">Editing an invoice draft, or changing a public QR, tells nobody.</p></div>
   {{ quick_card([
     ('My records', url_for('records.list_records'), True),
     ('Reminders', url_for('records.reminders'), False),

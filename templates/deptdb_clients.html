@@ -79,7 +79,7 @@
     <tbody>{% for r in rows %}
       <tr class="r">{% if can_portal_admin and not shared_owner %}<td class="selcol"><input type="checkbox" class="rowck" name="ids" value="{{ r['id'] }}" aria-label="Select"></td>{% endif %}<td><b>{{ r|client_no }}</b></td><td>{{ r['client_name'] }}</td><td>{{ r['am_name'] or '—' }}</td><td class="num">{{ r['sof_count'] }}</td>
         <td class="stcol"><span class="s g">Activated {{ r['n_activated'] }}</span> <span class="s r">Terminated {{ r['n_terminated'] }}</span>{% if r['n_pending'] %} <span class="s a">Pending {{ r['n_pending'] }}</span>{% endif %}</td>
-        <td><span class="s {{ 'g' if r['status'] == 'completed' else 'r' if r['status'] == 'rejected' else 'a' }}">{{ status_label[r['status']] }}</span></td>
+        <td>{% if open_edits.get(r['id']) %}{% for num, stage in open_edits[r['id']] %}<span class="s a">{{ num }}: {{ edit_stage_label[stage] }}</span>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}<span class="s {{ 'g' if r['status'] == 'completed' else 'r' if r['status'] == 'rejected' else 'a' }}">{{ status_label[r['status']] }}</span>{% endif %}</td>
         <td>{{ r['sof_activations'] or '—' }}</td>
         <td>{{ r['sof_terminations'] or '—' }}</td>
         <td class="actcell noprint"><a class="b sm" href="{{ url_for('clients.detail', cid=r['id']) }}">Open</a></td></tr>

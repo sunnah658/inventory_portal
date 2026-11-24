@@ -628,6 +628,26 @@ def client_tab_view(db, dept, is_admin, args, shared_owner=None, shared_id=None)
         "WHERE s.client_id=c.id AND s.status='terminated' AND s.termination_date IS NOT NULL) AS sof_terminations "
         + base + sql_where + " ORDER BY c.id ASC LIMIT ? OFFSET ?", params + [config.PER_PAGE, offset]).fetchall()
 
+    # Build 111: the Flow column shows where a SOF change is, not the
+    # client's own status, while a change is in flight — a completed
+    # client with a pending SOF change no longer reads "Completed".
+    open_edits = {}
+    if rows:
+        _ids = [r["id"] for r in rows]
+        _ph = ",".join("?" * len(_ids))
+        for e in db.execute(
+                "SELECT e.client_id, e.status, e.new_values, s.sof_number FROM client_sof_edits e "
+                "LEFT JOIN client_services s ON s.id=e.service_id "
+                "WHERE e.client_id IN (" + _ph + ") AND e.status IN ('awaiting','approved','san','ra_dates') "
+                "ORDER BY e.id", _ids).fetchall():
+            _num = e["sof_number"]
+            if not _num:
+                try:
+                    _num = json.loads(e["new_values"] or "{}").get("sof_number") or ""
+                except ValueError:
+                    _num = ""
+            open_edits.setdefault(e["client_id"], []).append((_num, e["status"]))
+
     # The dropdown of approved clients (everyone who can see them)
     approved = db.execute(
         "SELECT c.id, c.serial, c.client_name FROM client_onboardings c WHERE " + vis +
@@ -649,6 +669,7 @@ def client_tab_view(db, dept, is_admin, args, shared_owner=None, shared_id=None)
         can_setup=is_portal_admin(g.user), can_form_setup=_is_sales_admin(db, g.user),
         statuses=ALL_STATUSES, status_label=STATUS_LABEL,
         sof_statuses=SOF_STATUSES, sof_status_label=SOF_STATUS_LABEL,
+        open_edits=open_edits, edit_stage_label=EDIT_STAGE_LABEL,
         shared_owner=shared_owner, shared_id=shared_id,
         can_manage_tab_sharing=shared_owner is None and _is_sales_admin(db, g.user))
 
@@ -1265,7 +1286,7 @@ def _edit_services(db, c, roles):
                            (cid, sid, g.user["id"], json.dumps(_sof_snapshot(old)), json.dumps(new)))
                 # Build 110: the SOF goes to pending as soon as the
                 # account manager saves the change.
-                if old["status"] == "activated":
+                if old["status"] in ("activated", "terminated"):
                     db.execute("UPDATE client_services SET status='pending' WHERE id=?", (sid,))
                 _history(db, cid, g.user, f"SOF {old['sof_number']} change sent for approval", diff)
                 notify(db, set(_sales_admin_ids(db)),
@@ -1738,7 +1759,7 @@ def sof_dates(cid, sid):
 @bp.route("/<int:cid>/sof/<int:sid>/edit", methods=["GET", "POST"])
 @login_required
 def sof_edit(cid, sid):
-    """The account manager edits ONE activated SOF on a finished client —
+    """The account manager edits ONE activated or terminated SOF on a finished client —
     its fields, and its termination date, commercial impact date and
     termination reason. Build 110: as soon as the account manager saves,
     the SOF goes to pending and the Sales admin is told the SOF number
@@ -1751,7 +1772,7 @@ def sof_edit(cid, sid):
         abort(404)
     am = c.get("account_manager_id") == g.user["id"]
     portal_admin = is_portal_admin(g.user)
-    if c["status"] != "completed" or not (portal_admin or (am and row["status"] == "activated")):
+    if c["status"] != "completed" or not (portal_admin or (am and row["status"] in ("activated", "terminated"))):
         abort(403)
     if request.method == "GET":
         return render_template("sof_edit.html", c=c, s=row, back=_link(cid),
@@ -2160,8 +2181,8 @@ def sof_san_download(cid, sid):
 @bp.route("/<int:cid>/sof/<int:sid>/view")
 @login_required
 def sof_view(cid, sid):
-    """One SOF on its own page: every field, the uploaded SOF file, its own
-    SAN report, its share code and its change history. Anyone who may open
+    """One SOF on its own page: every field, the uploaded SOF file, every
+    SAN report uploaded for it, and its change history. Anyone who may open
     the client may open it."""
     db, c, roles = _load(cid)
     row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
@@ -2171,20 +2192,22 @@ def sof_view(cid, sid):
     history = [h for h in db.execute(
         "SELECT * FROM client_history WHERE client_id=? ORDER BY id DESC", (cid,)).fetchall()
         if row["sof_number"] in (h["action"] or "") or row["sof_number"] in (h["detail"] or "")]
-    san_by_name = None
-    if row["san_by"]:
-        _u = db.execute("SELECT full_name FROM users WHERE id=?", (row["san_by"],)).fetchone()
-        san_by_name = _u["full_name"] if _u else None
+    # Build 111: every SAN report for this SOF, oldest first — the same
+    # list as the client page shows, not just the latest one.
+    san_uploads = [
+        {"id": u["id"], "file": _file_info(u["san_file"]),
+         "by": (db.execute("SELECT full_name FROM users WHERE id=?", (u["uploaded_by"],)).fetchone() or {}).get("full_name") if u["uploaded_by"] else None,
+         "at": u["uploaded_at"], "edit_id": u["edit_id"]}
+        for u in db.execute("SELECT * FROM client_sof_san_uploads WHERE sof_id=? ORDER BY id", (sid,)).fetchall()]
     return render_template(
         "sof_view.html", c=c, s=row, f=_file_info(row["sof_file"]),
-        san=_file_info(row["san_file"]), san_by_name=san_by_name,
+        san_uploads=san_uploads,
         history=history, sof_status_label=SOF_STATUS_LABEL,
         san_perm={"upload": _can_upload_sof_san(db, g.user, roles, c, row),
                   "remove": _can_remove_sof_san(g.user, c, row)},
         fields=_fields,
         fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
         custom=_load_custom(db, cid),
-        code_url=external_url(db, "clients.sof_code_page", code=row["public_code"]) if row["public_code"] else None,
         back=_link(cid))
 
 

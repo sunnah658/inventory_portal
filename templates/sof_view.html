@@ -21,13 +21,12 @@
   {% if s['termination_reason'] %}<div class="kv"><b>Termination reason</b><span style="white-space:pre-wrap">{{ s['termination_reason'] }}</span></div>{% endif %}
   <div class="kv"><b>Status</b><span><span class="s {{ 'g' if s['status'] == 'activated' else 'r' if s['status'] == 'terminated' else 'a' }}">{{ sof_status_label[s['status']] }}</span></span></div>
   <div class="kv"><b>Uploaded SOF file</b><span>{% if f %}<a class="b sm" href="{{ url_for('clients.sof_download', cid=c['id'], sid=s['id']) }}">Download {{ f['original'] }}</a>{% else %}—{% endif %}</span></div>
-  <div class="kv"><b>Share code</b><span>{% if s['public_code'] %}<a href="{{ code_url }}">Share code: {{ s['public_code'] }}</a>{% else %}—{% endif %}</span></div>
 </div>
 
-<div class="card"><h2>SAN report</h2>
-  {% if san %}
-    <p><a class="b sm" href="{{ url_for('clients.sof_san_download', cid=c['id'], sid=s['id']) }}">Download {{ san['original'] }}</a></p>
-    <p class="hint">Uploaded by {{ san_by_name or '—' }} · {{ s['san_at']|showdttz }}</p>
+<div class="card"><h2>SAN report{{ 's' if san_uploads|length > 1 }}</h2>
+  {% if san_uploads %}
+    {% for u in san_uploads %}<p style="margin:0 0 4px"><a class="b sm" href="{{ url_for('clients.sof_san_download', cid=c['id'], sid=s['id'], up=u['id']) }}">Download {{ u['file']['original'] }}</a></p>
+    <p class="hint">Uploaded by {{ u['by'] or '—' }} · {{ u['at']|showdttz }}{% if u['edit_id'] %} · for the edited SOF{% endif %}</p>{% endfor %}
     {% if san_perm['remove'] %}<form method="post" action="{{ url_for('clients.sof_san_remove', cid=c['id'], sid=s['id']) }}" onsubmit="return confirm('Remove the SAN report for SOF {{ s['sof_number'] }} so a new one can be uploaded?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="b sm dg" type="submit">Remove (portal admin)</button></form>{% endif %}
   {% elif san_perm['upload'] %}
     <p class="hint">No SAN report for this SOF yet. Transmission, Core or Technical support uploads it here.</p>
