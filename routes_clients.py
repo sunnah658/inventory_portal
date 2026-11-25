@@ -3,8 +3,10 @@ routes_clients.py - CLIENT ONBOARDING, a default tab of the Department Database 
 
 The flow (from the customer workflow diagram):
 
-  Sales user fills 3 pages ......... 1 client info, 2 contacts + account manager,
-                                     3 services (one SOF per service, several allowed)
+  Sales user fills 2 pages ......... 1 client info + its contacts (BIN, BIN address, TIN;
+                                     Client contact and HRC Technologies Ltd contacts,
+                                     each account manager / technical / billing),
+                                     2 services (one SOF per service, several allowed)
   Click Save ....................... the request goes to the Sales admin for approval
   Sales admin ...................... approves or rejects
       rejected ..................... goes back to the Sales user, who fixes it and saves again
@@ -20,10 +22,10 @@ Which department plays which part is set once on the setup page (portal admin);
 until it is saved, departments are matched by name (Sales, Revenue Assurance,
 Transmission, Core, Technical support, Finance).
 
-The three Add Client pages are configurable (build 93): the Sales & Marketing
+The two Add Client pages are configurable (build 93): the Sales & Marketing
 admin sets each page's fields (column name, input type, required or not) on
 the form setup page. The fields the client was built with are the defaults;
-the activation date lives on every SOF (page 3), never on the client page.
+the activation date lives on every SOF (page 2), never on the client page.
 Every SOF has its own Download PDF button (one PDF per SOF) and its own
 share code HRC-##### for the QR on that PDF.
 
@@ -333,7 +335,7 @@ def _perms(db, user, roles, c):
 # ---------------------------------------------------------------- the configurable Add Client form (build 93)
 FIELD_TYPES = [("text", "Text"), ("longtext", "Long text"), ("number", "Number"),
                ("date", "Date"), ("dropdown", "Dropdown"), ("yesno", "Yes-No")]
-STRUCTURAL_REQUIRED = {"client_name", "contact_name", "sof_number", "sof_service",
+STRUCTURAL_REQUIRED = {"client_name", "sof_number", "sof_service",
                        "sof_service_description", "sof_activation_date"}
 
 # Build 95: where a deletable default field's values live. Deleting the
@@ -345,9 +347,6 @@ DEFAULT_FIELD_COLUMNS = {
     "phone": ("client_onboardings", "phone"),
     "email": ("client_onboardings", "email"),
     "notes": ("client_onboardings", "notes"),
-    "contact_designation": ("client_contacts", "designation"),
-    "contact_phone": ("client_contacts", "phone"),
-    "contact_email": ("client_contacts", "email"),
     "sof_details": ("client_services", "details"),
     "sof_service_description": ("client_services", "service_description"),
 }
@@ -796,7 +795,7 @@ def detail(cid):
              "by": (db.execute("SELECT full_name FROM users WHERE id=?", (u["uploaded_by"],)).fetchone() or {}).get("full_name") if u["uploaded_by"] else None,
              "at": u["uploaded_at"], "edit_id": u["edit_id"]}
             for u in db.execute("SELECT * FROM client_sof_san_uploads WHERE sof_id=? ORDER BY id", (s["id"],)).fetchall()]
-    _fields = {p: _form_fields(db, p) for p in (1, 2, 3)}
+    _fields = {p: _form_fields(db, p) for p in (1, 2)}
     # Build 102: the SOF changes waiting for the Sales admin to approve,
     # with the field-by-field change already worked out for the page.
     # Build 110: a change stays on the page through every stage — approval,
@@ -830,11 +829,12 @@ def detail(cid):
     edit_stage = {e["service_id"]: e["stage"] for e in edits if e["service_id"]}
     return render_template(
         "client_detail.html", c=c, contacts=contacts, services=services, history=history,
+        contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
         sof=[(s, _file_info(s["sof_file"])) for s in services], san_perm=san_perm, san_uploads=san_uploads,
         sof_files={s["id"]: _sof_file_uploads(db, s["id"]) for s in services},
         perm=_perms(db, g.user, roles, c), timeline=_timeline(db, c),
         fields=_fields,
-        fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
+        fmap={fld["field_key"]: fld for p in (1, 2) for fld in _fields[p] if fld["field_key"]},
         custom=_load_custom(db, cid), edits=edits, edit_stage=edit_stage, sof_status_label=SOF_STATUS_LABEL,
         can_approve_sof=_is_sales_admin(db, g.user),
         can_ra_sof_forward=_is_ra_admin(db, g.user),
@@ -863,18 +863,36 @@ def _account_managers(db):
                       "ORDER BY full_name").fetchall()
 
 
+# Build 118: the six fixed contact slots — two sides (client / HRC), three
+# kinds each (account manager / technical / billing). An HRC slot also
+# carries the portal department and user it was picked from.
+CONTACT_SIDES = (("client", "Client contact"), ("hrc", "HRC Technologies Ltd contacts"))
+CONTACT_KINDS = (("account_manager", "Account manager"), ("technical", "Technical contact"),
+                 ("billing", "Billing contact"))
+
+
+def _blank_contact():
+    return {"department_id": None, "user_id": None, "name": "", "designation": "", "phone": "", "email": ""}
+
+
+def _blank_contacts():
+    return {side: {kind: _blank_contact() for kind, _l in CONTACT_KINDS} for side, _l in CONTACT_SIDES}
+
+
 def _blank_form():
     return {"client_name": "", "business_type": "", "address": "", "phone": "", "email": "", "notes": "",
+            "bin": "", "bin_address": "", "tin": "",
             "account_manager_id": None, "am_full_name": "", "am_designation": "", "am_phone": "", "am_email": "",
             "custom1": {},
-            "contacts": [{"name": "", "designation": "", "phone": "", "email": "", "custom": {}}],
+            "contacts": _blank_contacts(),
             "services": [{"id": "", "sof_number": "", "service": "", "service_type": "",
                           "service_description": "", "details": "", "file_name": "",
                           "activation_date": "", "public_code": "", "custom": {}}]}
 
 
 def _form_from_db(db, c):
-    form = {k: c[k] or "" for k in ("client_name", "business_type", "address", "phone", "email", "notes")}
+    form = {k: c[k] or "" for k in ("client_name", "business_type", "address", "phone", "email", "notes",
+                                   "bin", "bin_address", "tin")}
     form["account_manager_id"] = c["account_manager_id"]
     # The account manager's information is this client's own copy (build 93):
     # what the Sales person typed on the form, never the manager's profile.
@@ -884,12 +902,16 @@ def _form_from_db(db, c):
     form["am_email"] = c["am_email"] or ""
     custom = _load_custom(db, c["id"])
     form["custom1"] = {fid: v for (tt, _tid, fid), v in custom.items() if tt == "client"}
-    form["contacts"] = [dict(name=r["name"] or "", designation=r["designation"] or "", phone=r["phone"] or "",
-                             email=r["email"] or "",
-                             custom={fid: v for (tt, tid, fid), v in custom.items()
-                                     if tt == "contact" and tid == r["id"]})
-                        for r in db.execute("SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id",
-                                            (c["id"],)).fetchall()] or _blank_form()["contacts"]
+    # Build 118: the six fixed slots, keyed by side and kind. A row with
+    # no side or kind predates the slots and is not shown.
+    form["contacts"] = _blank_contacts()
+    for r in db.execute("SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id",
+                        (c["id"],)).fetchall():
+        if r["side"] in form["contacts"] and r["ctype"] in form["contacts"][r["side"]]:
+            form["contacts"][r["side"]][r["ctype"]] = dict(
+                department_id=r["department_id"], user_id=r["user_id"],
+                name=r["name"] or "", designation=r["designation"] or "",
+                phone=r["phone"] or "", email=r["email"] or "")
     form["services"] = [dict(id=r["id"], sof_number=r["sof_number"] or "", service=r["service"] or "",
                              service_type=r.get("service_type") or "",
                              service_description=r.get("service_description") or "",
@@ -912,25 +934,28 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
     """Read and check the posted form.
     Returns (form for redisplay, errors, contacts, services, new files saved, old files to delete after commit).
     `existing` is {service id: row} of the client being edited (empty for a new client).
-    The activation date lives on every SOF (page 3, build 93) — never on the
-    client page. The admin's fields are read by their id (cf1_/cf2_/cf3_).
+    The activation date lives on every SOF (page 2, build 93) — never on the
+    client page. The admin's fields are read by their id (cf1_/cf2_).
     `am_mode` (build 102) is the Add-services save on a finished client:
     page 1 is not changed by the account manager, and the activation date
     of a SOF is the Revenue Assurance department's — so neither is
     required here; a new SOF may be added without a date, and Revenue
-    Assurance sets it once the change is approved."""
+    Assurance sets it once the change is approved. The contacts stay
+    editable in Add-services mode (build 118): the six slots are read
+    from the form and apply at once, except the HRC account manager's
+    department and user, which stay as they are — the portal account
+    manager does not change on the Add services page, only his four
+    details can.
+    """
 
     f = request.form
     form = {k: _clean(f.get(k), 255) for k in ("client_name", "business_type", "phone", "email")}
     form["address"] = (f.get("address") or "").strip()[:2000]
     form["notes"] = (f.get("notes") or "").strip()[:4000]
-    form["account_manager_id"] = f.get("account_manager_id", type=int)
-    # The account manager's information, for THIS client only: the Sales
-    # person may change it on the form and the manager's profile is never touched.
-    form["am_full_name"] = _clean(f.get("am_full_name"), 255)
-    form["am_designation"] = _clean(f.get("am_designation"), 255)
-    form["am_phone"] = _clean(f.get("am_phone"), 255)
-    form["am_email"] = _clean(f.get("am_email"), 255)
+    # Build 118: the client's tax details — optional fields on the Client page.
+    form["bin"] = _clean(f.get("bin"), 255)
+    form["bin_address"] = (f.get("bin_address") or "").strip()[:2000]
+    form["tin"] = _clean(f.get("tin"), 255)
     errors = []
 
     # ---- page 1 (the fields the admin set: name, type, required or not)
@@ -943,8 +968,6 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
             errors.append(err)
     if form["email"] and "@" not in form["email"]:
         errors.append("Page 1: the client email does not look right.")
-    if form["am_email"] and "@" not in form["am_email"]:
-        errors.append("Page 2: the account manager's email does not look right.")
     custom1 = {}
     for fld in fields1:
         if fld["is_default"]:
@@ -958,48 +981,73 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
             errors.append(err)
     form["custom1"] = custom1
 
+    # ---- the contacts: six fixed slots on the Client page (build 118).
+    # Every slot must be filled — name, designation, phone and email.
+    # An HRC slot is picked from a department and a user, and the four
+    # details fill in from that user's account; they stay editable and
+    # change only this client, never the user's own profile. The HRC
+    # account manager IS the client's account manager in the portal:
+    # his user id and his four details are the account_manager_id and
+    # the am_* columns every notification and filter already uses.
+    contacts = _blank_contacts()
+    for side, side_label in CONTACT_SIDES:
+        for kind, kind_label in CONTACT_KINDS:
+            key = f"c_{side}_{kind}"
+            slot = {"department_id": None, "user_id": None,
+                    "name": _clean(f.get(key + "_name"), 255),
+                    "designation": _clean(f.get(key + "_designation"), 255),
+                    "phone": _clean(f.get(key + "_phone"), 255),
+                    "email": _clean(f.get(key + "_email"), 255)}
+            label = f"Page 1: {side_label} — {kind_label}"
+            if side == "hrc":
+                dept = f.get(key + "_dept", type=int)
+                user = f.get(key + "_user", type=int)
+                if dept is not None and db.execute(
+                        "SELECT 1 FROM departments WHERE id=?", (dept,)).fetchone() is None:
+                    dept = None
+                if user is not None and db.execute(
+                        "SELECT 1 FROM users WHERE id=? AND is_active=1 AND is_deleted=0",
+                        (user,)).fetchone() is None:
+                    user = None
+                _wrong_dept = False
+                if dept is not None and user is not None and db.execute(
+                        "SELECT 1 FROM users WHERE id=? AND department_id=?", (user, dept)).fetchone() is None:
+                    _wrong_dept = True
+                    user = None
+                slot["department_id"], slot["user_id"] = dept, user
+                # On the Add services page the HRC account manager's two
+                # dropdowns are disabled (the portal account manager stays
+                # as he is), so they are not posted and no error is raised
+                # for them — the caller keeps the old department and user.
+                _am_locked = am_mode and kind == "account_manager"
+                if dept is None and not _am_locked:
+                    errors.append(f"{label}: pick the department.")
+                if user is None and not _am_locked and not _wrong_dept:
+                    errors.append(f"{label}: pick the user.")
+                if _wrong_dept:
+                    errors.append(f"{label}: the user is not in that department.")
+            for _field in ("name", "designation", "phone", "email"):
+                if not slot[_field]:
+                    errors.append(f"{label}: the {_field} is required.")
+            if slot["email"] and "@" not in slot["email"]:
+                errors.append(f"{label}: the email does not look right.")
+            contacts[side][kind] = slot
+    form["contacts"] = contacts
+    _hrc_am = contacts["hrc"]["account_manager"]
+    form["account_manager_id"] = _hrc_am["user_id"]
+    form["am_full_name"] = _hrc_am["name"]
+    form["am_designation"] = _hrc_am["designation"]
+    form["am_phone"] = _hrc_am["phone"]
+    form["am_email"] = _hrc_am["email"]
+    if am_mode:
+        # The account manager stays as he is in Add-services mode; the
+        # caller keeps the old account_manager_id (the HRC account
+        # manager's department and user were not posted).
+        form["account_manager_id"] = None
+
     # ---- page 2
     fields2 = _form_fields(db, 2)
     custom2 = {fld["id"]: f.getlist(f"cf2_{fld['id']}") for fld in fields2 if not fld["is_default"]}
-    contacts = []
-    names = f.getlist("contact_name")
-    for i in range(min(len(names), MAX_ROWS)):
-        row = {"name": _clean(names[i]),
-               "designation": _clean(_pick(f.getlist("contact_designation"), i)),
-               "phone": _clean(_pick(f.getlist("contact_phone"), i)),
-               "email": _clean(_pick(f.getlist("contact_email"), i)),
-               "custom": {fid: _clean(_pick(vals, i), 2000) for fid, vals in custom2.items()}}
-        if not any(v for k, v in row.items() if k != "custom") and not any(row["custom"].values()):
-            continue
-        n = len(contacts) + 1
-        _ckey = {"contact_name": "name", "contact_designation": "designation",
-                 "contact_phone": "phone", "contact_email": "email"}
-        for fld in fields2:
-            val = row.get(_ckey.get(fld["field_key"], ""), "")
-            err = _check_value(val, fld, f"Page 2: {fld['name']} of contact {n}")
-            if err:
-                errors.append(err)
-        if row["email"] and "@" not in row["email"]:
-            errors.append(f"Page 2: the email of contact {n} does not look right.")
-        for fid, val in row["custom"].items():
-            fld = next(x for x in fields2 if x["id"] == fid)
-            err = _check_value(val, fld, f"Page 2: {fld['name']} of contact {n}")
-            if err:
-                errors.append(err)
-        contacts.append(row)
-    if not contacts:
-        errors.append("Page 2: add at least one contact person.")
-    form["contacts"] = contacts or _blank_form()["contacts"]
-    if form["account_manager_id"] is None or db.execute(
-            "SELECT 1 FROM users WHERE id=? AND is_active=1 AND is_deleted=0",
-            (form["account_manager_id"],)).fetchone() is None:
-        if not am_mode:
-            # In Add-services mode the account manager stays as it is.
-            errors.append("Page 2: pick the account manager.")
-
-    # ---- page 3
-    fields3 = _form_fields(db, 3)
-    custom3 = {fld["id"]: f.getlist(f"cf3_{fld['id']}") for fld in fields3 if not fld["is_default"]}
     sales_dept = _dept_row(db, _sales_dept_id(db))
     removed = set(f.getlist("sof_remove"))
     numbers, files = f.getlist("sof_number"), request.files.getlist("sof_file")
@@ -1016,7 +1064,7 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
                "service_type": _clean(_pick(f.getlist("sof_service"), i)),
                "service_description": (_pick(f.getlist("sof_service_description"), i) or "").strip()[:2000],
                "details": (_pick(f.getlist("sof_details"), i) or "").strip()[:2000], "file_name": "",
-               "custom": {fid: _clean(_pick(vals, i), 2000) for fid, vals in custom3.items()}}
+               "custom": {fid: _clean(_pick(vals, i), 2000) for fid, vals in custom2.items()}}
         # The activation date of THIS SOF: the Sales user sets it here, and
         # it is required on every SOF — except in Add-services mode, where
         # a new SOF has no date yet and Revenue Assurance sets it once the
@@ -1042,20 +1090,20 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
             used_old.add(sid)
         n = len(services) + 1
         if bad_day:
-            errors.append(f"Page 3: the activation date of service {n} does not look right.")
+            errors.append(f"Page 2: the activation date of service {n} does not look right.")
         _skey = {"sof_number": "sof_number", "sof_service": "service",
                  "sof_service_type": "service_type", "sof_service_description": "service_description",
                  "sof_details": "details", "sof_activation_date": "activation_date"}
-        for fld in fields3:
+        for fld in fields2:
             if fld["field_key"] == "sof_activation_date" and (bad_day or am_mode):
                 continue
             val = row.get(_skey.get(fld["field_key"], ""), "")
-            err = _check_value(val, fld, f"Page 3: {fld['name']} of service {n}")
+            err = _check_value(val, fld, f"Page 2: {fld['name']} of service {n}")
             if err:
                 errors.append(err)
         for fid, val in row["custom"].items():
-            fld = next(x for x in fields3 if x["id"] == fid)
-            err = _check_value(val, fld, f"Page 3: {fld['name']} of service {n}")
+            fld = next(x for x in fields2 if x["id"] == fid)
+            err = _check_value(val, fld, f"Page 2: {fld['name']} of service {n}")
             if err:
                 errors.append(err)
         file_json = None
@@ -1063,7 +1111,7 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
             file_json, err = routes_deptdb._save_ddb_file(upload, sales_dept or db.execute(
                 "SELECT * FROM departments ORDER BY id LIMIT 1").fetchone())
             if err:
-                errors.append("Page 3: " + err)
+                errors.append("Page 2: " + err)
             else:
                 saved_new.append(_file_info(file_json)["stored"])
                 if old_file:
@@ -1078,7 +1126,7 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
         # SOF file with every new service — a new service without its file
         # cannot be saved.
         if require_sof_file and not sid and not has_upload:
-            errors.append(f"Page 3: upload the SOF file for service {n}.")
+            errors.append(f"Page 2: upload the SOF file for service {n}.")
         services.append(row)
     for sid, old in existing.items():                    # a service row the user deleted from the form
         if sid not in used_old and old["sof_file"]:
@@ -1092,7 +1140,7 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
         if not num or num.lower() in _reported:
             continue
         if sum(1 for r in services if (r["sof_number"] or "").strip().lower() == num.lower()) > 1:
-            errors.append(f"Page 3: SOF number {num} is used twice.")
+            errors.append(f"Page 2: SOF number {num} is used twice.")
             _reported.add(num.lower())
     _nums = [(r["sof_number"] or "").strip() for r in services if (r["sof_number"] or "").strip()]
     if _nums:
@@ -1101,16 +1149,15 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
                 "SELECT id, sof_number FROM client_services WHERE LOWER(sof_number) IN (" + _holders + ")",
                 [n.lower() for n in _nums]).fetchall():
             if _sid not in existing and _num.lower() not in _reported:
-                errors.append(f"Page 3: SOF number {_num} is already used on another client.")
+                errors.append(f"Page 2: SOF number {_num} is already used on another client.")
                 _reported.add(_num.lower())
     if not services:
-        errors.append("Page 3: add at least one service with its SOF number.")
+        errors.append("Page 2: add at least one service with its SOF number.")
     form["services"] = services or _blank_form()["services"]
     return form, errors, contacts, services, saved_new, delete_old
 
 
 def _write_children(db, cid, contacts, services, custom1):
-    db.execute("DELETE FROM client_contacts WHERE client_id=?", (cid,))
     # A re-save rebuilds the SOF rows, so each rebuilt row keeps the old
     # row's own state (build 102): its short name, description, status
     # and any termination the account manager set. A new client has no
@@ -1118,10 +1165,7 @@ def _write_children(db, cid, contacts, services, custom1):
     old_sof = {r["id"]: r for r in db.execute("SELECT * FROM client_services WHERE client_id=?", (cid,)).fetchall()}
     db.execute("DELETE FROM client_services WHERE client_id=?", (cid,))
     db.execute("DELETE FROM client_field_values WHERE client_id=?", (cid,))
-    for i, r in enumerate(contacts):
-        nid = db.execute("INSERT INTO client_contacts(client_id,position,name,designation,phone,email) VALUES (?,?,?,?,?,?)",
-                         (cid, i, r["name"], r["designation"] or None, r["phone"] or None, r["email"] or None)).lastrowid
-        _save_custom(db, cid, "contact", nid, r.get("custom") or {})
+    _write_contacts(db, cid, contacts)
     for i, r in enumerate(services):
         code = r.get("public_code") or new_random_code_text(db)
         old = old_sof.get(r["id"]) if r.get("id") else None
@@ -1145,28 +1189,42 @@ def _write_children(db, cid, contacts, services, custom1):
 
 
 def _write_contacts(db, cid, contacts):
-    """Rewrite only the contact persons (build 102, Add services): the
-    services and the client's own fields are untouched."""
+    """Rewrite the six contact slots (build 118, Add services): the
+    services and the client's own fields are untouched. `contacts` is
+    the nested {side: {kind: slot}} dict from _read_form; the slots are
+    written in a fixed order — client account manager, technical,
+    billing, then the HRC ones — so position alone orders them."""
     db.execute("DELETE FROM client_contacts WHERE client_id=?", (cid,))
-    db.execute("DELETE FROM client_field_values WHERE client_id=? AND target_type='contact'", (cid,))
-    for i, r in enumerate(contacts):
-        nid = db.execute("INSERT INTO client_contacts(client_id,position,name,designation,phone,email) VALUES (?,?,?,?,?,?)",
-                         (cid, i, r["name"], r["designation"] or None, r["phone"] or None, r["email"] or None)).lastrowid
-        _save_custom(db, cid, "contact", nid, r.get("custom") or {})
+    for i, (side, _sl) in enumerate(CONTACT_SIDES):
+        for j, (kind, _kl) in enumerate(CONTACT_KINDS):
+            r = contacts[side][kind]
+            db.execute("INSERT INTO client_contacts(client_id,position,name,designation,phone,email,"
+                       "side,ctype,department_id,user_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                       (cid, i * 3 + j, r["name"], r["designation"] or None, r["phone"] or None,
+                        r["email"] or None, side, kind, r.get("department_id"), r.get("user_id")))
 
 
 def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_locked=False,
                services_blank=False):
-    managers = _account_managers(db)
-    managers_info = {m["id"]: {"full_name": m["full_name"] or "", "designation": m["designation"] or "",
-                               "phone": m["phone"] or "", "email": m["email"] or ""} for m in managers}
-    fields = {p: _form_fields(db, p) for p in (1, 2, 3)}
-    for p in (1, 2, 3):
+    # Build 118: the HRC contacts are picked from a department and a
+    # user. The page carries every active portal user (with their
+    # department) so the form can fill the four details in from the
+    # account when a user is picked — the details stay editable and
+    # change only this client.
+    departments = [dict(r) for r in db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()]
+    users_info = {u["id"]: {"department_id": u["department_id"], "full_name": u["full_name"] or "",
+                            "designation": u["designation"] or "", "phone": u["phone"] or "",
+                            "email": u["email"] or ""}
+                  for u in db.execute("SELECT id, department_id, full_name, designation, phone, email FROM users "
+                                     "WHERE is_active=1 AND is_deleted=0 ORDER BY full_name").fetchall()}
+    fields = {p: _form_fields(db, p) for p in (1, 2)}
+    for p in (1, 2):
         for fld in fields[p]:
             fld["opts"] = [o.strip() for o in (fld["options"] or "").splitlines() if o.strip()]
-    fmap = {fld["field_key"]: fld for p in (1, 2, 3) for fld in fields[p] if fld["field_key"]}
+    fmap = {fld["field_key"]: fld for p in (1, 2) for fld in fields[p] if fld["field_key"]}
     return render_template("client_form.html", form=form, cid=cid, c=c, errors=errors or [],
-                           managers=managers, managers_info=managers_info, max_rows=MAX_ROWS,
+                           departments=departments, users_info=users_info, max_rows=MAX_ROWS,
+                           contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
                            fields=fields, fmap=fmap, am_mode=am_mode, page1_locked=page1_locked,
                            services_blank=services_blank,
                            back=url_for("ddb.index", tab="clients"))
@@ -1197,7 +1255,17 @@ def new():
         abort(403)
     if request.method == "GET":
         form = _blank_form()
-        form["account_manager_id"] = g.user["id"] if any(m["id"] == g.user["id"] for m in _account_managers(db)) else None
+        # Build 118: the HRC account manager starts as the Sales user
+        # himself when he is in the Sales department, as the account
+        # manager dropdown did before.
+        if any(m["id"] == g.user["id"] for m in _account_managers(db)):
+            _am = form["contacts"]["hrc"]["account_manager"]
+            _am["department_id"] = g.user["department_id"]
+            _am["user_id"] = g.user["id"]
+            _am["name"] = g.user["full_name"] or ""
+            _am["designation"] = g.user["designation"] or ""
+            _am["phone"] = g.user["phone"] or ""
+            _am["email"] = g.user["email"] or ""
         return _show_form(db, form)
     form, errors, contacts, services, saved_new, delete_old = _read_form(db, {})
     if errors:
@@ -1209,14 +1277,16 @@ def new():
         serial = next_client_serial(db)
         cid = db.execute(
             "INSERT INTO client_onboardings(department_id,owner_id,client_name,business_type,address,phone,email,"
-            "notes,account_manager_id,am_full_name,am_designation,am_phone,am_email,status,serial) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)",
+            "notes,bin,bin_address,tin,account_manager_id,am_full_name,am_designation,am_phone,am_email,status,serial) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)",
             (sales, g.user["id"], form["client_name"], form["business_type"] or None, form["address"] or None,
-             form["phone"] or None, form["email"] or None, form["notes"] or None, form["account_manager_id"],
+             form["phone"] or None, form["email"] or None, form["notes"] or None,
+             form["bin"] or None, form["bin_address"] or None, form["tin"] or None,
+             form["account_manager_id"],
              form["am_full_name"] or None, form["am_designation"] or None, form["am_phone"] or None,
              form["am_email"] or None, serial)).lastrowid
         _write_children(db, cid, contacts, services, form["custom1"])
-        _history(db, cid, g.user, "sent for approval", f"{len(contacts)} contact(s), {len(services)} service(s)")
+        _history(db, cid, g.user, "sent for approval", f"6 contacts, {len(services)} service(s)")
         log(db, "client_new", f"{serial} {form['client_name']}")
         _send_for_approval_notice(db, cid, form["client_name"], False)
         db.commit()
@@ -1267,18 +1337,39 @@ def _edit_services(db, c, roles):
         if portal_admin:
             # The portal admin is the authority: page 1 applies at once.
             db.execute("UPDATE client_onboardings SET client_name=?, business_type=?, address=?, phone=?, email=?, "
-                       "notes=?, account_manager_id=?, am_full_name=?, am_designation=?, am_phone=?, am_email=?, "
-                       "updated_at=datetime('now','localtime') WHERE id=?",
+                       "notes=?, bin=?, bin_address=?, tin=?, account_manager_id=?, am_full_name=?, am_designation=?, "
+                       "am_phone=?, am_email=?, updated_at=datetime('now','localtime') WHERE id=?",
                        (form["client_name"], form["business_type"] or None, form["address"] or None,
                         form["phone"] or None, form["email"] or None, form["notes"] or None,
+                        form["bin"] or None, form["bin_address"] or None, form["tin"] or None,
                         form["account_manager_id"], form["am_full_name"] or None, form["am_designation"] or None,
                         form["am_phone"] or None, form["am_email"] or None, cid))
             _save_custom(db, cid, "client", cid, form["custom1"])
-        old_contacts = [(r["name"] or "", r["designation"] or "", r["phone"] or "", r["email"] or "")
-                        for r in db.execute("SELECT name, designation, phone, email FROM client_contacts "
-                                           "WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()]
+        else:
+            # Build 118: the account manager's HRC account manager stays
+            # as he is — his two dropdowns were disabled on the form, so
+            # they were not posted. Keep the old department and user on
+            # the contact row; his four details (which were editable) do
+            # apply, and so does the account manager's own information.
+            _old_am = db.execute("SELECT department_id, user_id FROM client_contacts WHERE client_id=? "
+                                 "AND side='hrc' AND ctype='account_manager'", (cid,)).fetchone()
+            if _old_am:
+                contacts["hrc"]["account_manager"]["department_id"] = _old_am["department_id"]
+                contacts["hrc"]["account_manager"]["user_id"] = _old_am["user_id"]
+            db.execute("UPDATE client_onboardings SET am_full_name=?, am_designation=?, am_phone=?, am_email=?, "
+                       "updated_at=datetime('now','localtime') WHERE id=?",
+                       (form["am_full_name"] or None, form["am_designation"] or None,
+                        form["am_phone"] or None, form["am_email"] or None, cid))
+        old_contacts = [(r["side"] or "", r["ctype"] or "", r["department_id"], r["user_id"],
+                         r["name"] or "", r["designation"] or "", r["phone"] or "", r["email"] or "")
+                        for r in db.execute("SELECT side, ctype, department_id, user_id, name, designation, phone, "
+                                           "email FROM client_contacts WHERE client_id=? ORDER BY position, id",
+                                           (cid,)).fetchall()]
         _write_contacts(db, cid, contacts)
-        contacts_changed = ([(r["name"], r["designation"], r["phone"], r["email"]) for r in contacts]
+        contacts_changed = ([(side, kind, r.get("department_id"), r.get("user_id"),
+                              r["name"], r["designation"], r["phone"], r["email"])
+                             for side, _sl in CONTACT_SIDES for kind, _kl in CONTACT_KINDS
+                             for r in [contacts[side][kind]]]
                             != old_contacts)
         added, changed, skipped = [], [], []
         for row in services:
@@ -1425,9 +1516,11 @@ def edit(cid):
     was_rejected = c["status"] == "rejected"   # otherwise pending, edited by the account manager (build 97)
     try:
         sets = ["client_name=?", "business_type=?", "address=?", "phone=?", "email=?", "notes=?",
+                "bin=?", "bin_address=?", "tin=?",
                 "account_manager_id=?", "am_full_name=?", "am_designation=?", "am_phone=?", "am_email=?"]
         params = [form["client_name"], form["business_type"] or None, form["address"] or None,
                   form["phone"] or None, form["email"] or None, form["notes"] or None,
+                  form["bin"] or None, form["bin_address"] or None, form["tin"] or None,
                   form["account_manager_id"],
                   form["am_full_name"] or None, form["am_designation"] or None,
                   form["am_phone"] or None, form["am_email"] or None]
@@ -2341,7 +2434,7 @@ def sof_view(cid, sid):
     row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
     if row is None:
         abort(404)
-    _fields = {p: _form_fields(db, p) for p in (1, 2, 3)}
+    _fields = {p: _form_fields(db, p) for p in (1, 2)}
     history = [h for h in db.execute(
         "SELECT * FROM client_history WHERE client_id=? ORDER BY id DESC", (cid,)).fetchall()
         if row["sof_number"] in (h["action"] or "") or row["sof_number"] in (h["detail"] or "")]
@@ -2360,7 +2453,7 @@ def sof_view(cid, sid):
         san_perm={"upload": _can_upload_sof_san(db, g.user, roles, c, row),
                   "remove": _can_remove_sof_san(g.user, c, row)},
         fields=_fields,
-        fmap={fld["field_key"]: fld for p in (1, 2, 3) for fld in _fields[p] if fld["field_key"]},
+        fmap={fld["field_key"]: fld for p in (1, 2) for fld in _fields[p] if fld["field_key"]},
         custom=_load_custom(db, cid),
         back=_link(cid))
 
@@ -2372,7 +2465,7 @@ def _build_sof_pdf(db, c, s):
         "SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id", (c["id"],)).fetchall()]
     custom = _load_custom(db, c["id"])
     custom_vals = [(f["name"], custom.get(("service", s["id"], f["id"]), ""))
-                   for f in _form_fields(db, 3) if not f["is_default"]]
+                   for f in _form_fields(db, 2) if not f["is_default"]]
     custom_vals = [(n, v) for n, v in custom_vals if v]
     client = {"client_name": c["client_name"], "client_no": client_no(c),
               "business_type": c["business_type"] or "", "phone": c["phone"] or "",
@@ -2471,7 +2564,7 @@ def form_setup():
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
         page = request.form.get("page", type=int) or 1
-        if page not in (1, 2, 3):
+        if page not in (1, 2):
             page = 1
         fields = _form_fields(db, page)
         if action == "add":
@@ -2552,7 +2645,7 @@ def form_setup():
             flash("Saved.", "ok")
         return redirect(url_for("clients.form_setup"))
     return render_template("client_form_setup.html",
-                           fields={p: _form_fields(db, p) for p in (1, 2, 3)},
+                           fields={p: _form_fields(db, p) for p in (1, 2)},
                            types=FIELD_TYPES, type_labels=dict(FIELD_TYPES), structural=STRUCTURAL_REQUIRED)
 
 

@@ -13,7 +13,7 @@
   <div class="kv"><b>Service</b><span>{{ s['service'] }}</span></div>
   {% if s['service_description'] %}<div class="kv"><b>Service description</b><span style="white-space:pre-wrap">{{ s['service_description'] }}</span></div>{% endif %}
   {% if 'sof_details' in fmap %}<div class="kv"><b>Details</b><span style="white-space:pre-wrap">{{ s['details'] or '—' }}</span></div>{% endif %}
-  {% for fld in fields[3] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('service', s['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}
+  {% for fld in fields[2] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('service', s['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}
   <div class="kv"><b>Activation date</b><span>{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}</span></div>
   <div class="kv"><b>Termination date</b><span>{{ (s['termination_date']|string)[:10] if s['termination_date'] else '—' }}</span></div>
   <div class="kv"><b>Commercial impact date</b><span>{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '—' }}</span></div>

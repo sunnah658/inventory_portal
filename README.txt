@@ -7341,3 +7341,60 @@ template, route or database change; no files added or removed
 OPEN: (h) DeptDB All-rows column picker, narrow centred forms,
 one-by-one delete password question, 07:00 reminder + accounts_user
 confirmations still unanswered.
+
+==============================================================================
+137. Build 118 — the New client form is two pages: contacts move into the
+    Client page, with BIN, BIN address and TIN (25 November 2026)
+==============================================================================
+The New client form had three steps — Client, Contacts, Services — and the
+Contacts step was one table with a single contact per row. It is now two
+steps: 1 · Client and 2 · Services. The contacts move into the Client page,
+under the client's own fields, in two halves side by side: Client contact
+and HRC Technologies Ltd contacts. Each half has three blocks — Account
+manager, Technical contact and Billing contact — each with Name,
+Designation, Phone and Email, and all six blocks are required. The
+client-side blocks are typed by hand. Each HRC block has a Department
+dropdown (every portal department) and a User dropdown (that department's
+users); picking a user fills the four fields from the portal account, and
+they stay editable — the change applies to this client only, never to the
+user's own profile. A user who is not in the picked department is refused
+with "the user is not in that department". The HRC Account manager picked
+is the client's account manager in the portal (account_manager_id and the
+am_* details), so the notifications and the account-manager filters work
+exactly as before. On the New client form the HRC Account manager starts
+as the Sales user himself when he is in the Sales department, as the
+account-manager dropdown did before.
+
+The Client page also gains three optional fields: BIN, BIN address and TIN.
+They are stored on the client, shown on the client page when set, and
+editable on the Edit page. They do NOT print on the SOF PDF — that half of
+the question was unanswered, so the PDF is unchanged; ask if they should
+be added there.
+
+The client page shows the same two halves, each with its three blocks, in
+place of the old contacts table. The Add services page is unchanged in
+shape (it is now page 2): the client information is locked, the contacts
+stay editable, and the HRC Account manager's Department and User dropdowns
+are disabled there — the portal account manager stays as he is — while his
+four details can still be edited. The form setup lists two pages only
+(Client, Services); the contacts and BIN, BIN address and TIN are fixed
+fields and have no rows there. The Services page, the staged SOF flow, the
+approvals and the notifications are untouched.
+
+Upgrade: on a database from build 117 or earlier, the upgrade deletes the
+old page-2 contact fields (contact_name, contact_designation,
+contact_phone, contact_email, and any custom field the admin added on that
+page) together with their entered values, and moves the service fields
+from page 3 to page 2. Old contact rows that carry no side or kind stay in
+the database but are not shown on the client page. There are no client
+records on the live server yet, so nothing is lost there. A small fix rides
+along: on the Add services page the account manager's edited details used
+to be silently discarded; they now apply.
+
+Tested: 344/344 client checks and 752/752 suite checks on the work copy
+and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors,
+150 defined classes. No files added or removed (131 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one
+delete password question, 07:00 reminder + accounts_user confirmations
+still unanswered. BIN/TIN on the SOF PDF: unanswered.

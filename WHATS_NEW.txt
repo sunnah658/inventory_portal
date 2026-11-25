@@ -1,4 +1,25 @@
 ==============================================================================
+ THE NEW CLIENT FORM IS TWO PAGES — CONTACTS MOVE INTO THE CLIENT PAGE,
+ WITH BIN, BIN ADDRESS AND TIN (2026-11-25)
+==============================================================================
+ The New client form had three steps: Client, Contacts, Services. The
+ separate Contacts step is gone — the contacts now sit inside the Client
+ page, in two halves side by side: Client contact and HRC Technologies
+ Ltd contacts. Each half has an Account manager, a Technical contact and
+ a Billing contact, each with Name, Designation, Phone and Email, and all
+ six must be filled in. The client-side contacts are typed by hand. Each
+ HRC contact is picked from a Department dropdown and a User dropdown;
+ picking a user fills in the name, designation, phone and email from
+ their portal account, and the details can still be edited. The HRC
+ Account manager picked becomes the client's account manager in the
+ portal. The Client page also has optional BIN, BIN address and TIN
+ fields, shown on the client page when they are set. The client page
+ shows the contacts the same way, two halves side by side. On the Add
+ services page the HRC Account manager's Department and User cannot be
+ changed, but his details still can. The form setup lists two pages only.
+ Nothing else about the client flow changes.
+
+==============================================================================
  CALMER BUTTON HOVER — NO MORE JUMP ON HOVER (2026-11-25)
 ==============================================================================
  The white buttons used to jump up and throw a big shadow when the mouse

@@ -10,11 +10,16 @@
 .rowbox{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-bottom:12px}
 /* The Remove button sits on its own row above the fields (build 105):
    floated right it narrowed the two-column grid inside the box, so the
-   contact fields came out smaller than the account manager's. */
+   service fields came out smaller than the client fields. */
 .rowhead{display:flex;justify-content:flex-end;margin-bottom:10px}
 .js-only,.rm{display:none}.js .js-only,.js .rm{display:inline-block}
 .stepnav{display:flex;gap:8px;justify-content:space-between;margin-top:14px;flex-wrap:wrap}
-.aminfo{border:1px dashed var(--line);border-radius:var(--r);padding:12px 14px;margin:12px 0}
+/* Build 118: the contacts sit side by side — Client contact on the left,
+   HRC Technologies Ltd contacts on the right — each with its three blocks. */
+.contacts2{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+@media (max-width:980px){.contacts2{grid-template-columns:1fr}}
+.contacts2 h4{margin:14px 0 8px}
+.rowbox p{margin:0 0 8px}
 </style>{% endblock %}
 {# One input for an admin-set field: name is the form name, value the current value. #}
 {% macro cfield(fld, name, value, lock='') %}
@@ -32,17 +37,17 @@
 <div class="tw"><div>
 <div class="card medium">
   <h1>{{ 'Change client ' ~ (c|client_no) if cid else 'New client' }}</h1>
-  <p class="hint" style="margin-bottom:14px">{% if am_mode %}Change the contacts and the services of this finished client. Contact changes apply at once; every service change goes to the Sales admin for approval.{% else %}Three pages: the client, its contacts, and its services. When you click Save, the request goes to the Sales admin for approval.{% endif %} <span class="req">*</span> means required.</p>
+  <p class="hint" style="margin-bottom:14px">{% if am_mode %}Change the contacts and the services of this finished client. Contact changes apply at once; every service change goes to the Sales admin for approval.{% else %}Two pages: the client with its contacts, and its services. When you click Save, the request goes to the Sales admin for approval.{% endif %} <span class="req">*</span> means required.</p>
   {% if c and c['reject_reason'] %}<div class="alert"><b>Rejected:</b> {{ c['reject_reason'] }}</div>{% endif %}
   {% if errors %}<div class="msg error"><ul style="margin:0;padding-left:18px">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
   <div class="steps" id="steps" hidden>
-    <button type="button" data-go="1" class="on">1 · Client</button><button type="button" data-go="2">2 · Contacts</button><button type="button" data-go="3">3 · Services</button>
+    <button type="button" data-go="1" class="on">1 · Client</button><button type="button" data-go="2">2 · Services</button>
   </div>
   <form method="post" enctype="multipart/form-data" id="clientForm">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <section class="step on" data-step="1">
-      <h2>Page 1 · Client</h2><p class="hint">Basic client information.</p>
+      <h2>Page 1 · Client</h2><p class="hint">Basic client information, and the people on both sides.</p>
       <div class="fm">
         <div class="fd full"><label for="client_name">{{ fmap['client_name'].name }} <span class="req">*</span></label><input id="client_name" name="client_name" type="text" maxlength="255" required value="{{ form.client_name }}" {{ lock }}></div>
         {% if 'business_type' in fmap %}<div class="fd"><label for="business_type">{{ fmap['business_type'].name }}{% if fmap['business_type'].required %} <span class="req">*</span>{% endif %}</label><input id="business_type" name="business_type" type="text" maxlength="255" value="{{ form.business_type }}"{% if fmap['business_type'].required %} required{% endif %} {{ lock }}></div>{% endif %}
@@ -50,43 +55,51 @@
         {% if 'email' in fmap %}<div class="fd"><label for="email">{{ fmap['email'].name }}{% if fmap['email'].required %} <span class="req">*</span>{% endif %}</label><input id="email" name="email" type="text" maxlength="255" value="{{ form.email }}"{% if fmap['email'].required %} required{% endif %} {{ lock }}></div>{% endif %}
         {% if 'address' in fmap %}<div class="fd full"><label for="address">{{ fmap['address'].name }}{% if fmap['address'].required %} <span class="req">*</span>{% endif %}</label><textarea id="address" name="address" rows="2" {{ lock }}>{{ form.address }}</textarea></div>{% endif %}
         {% if 'notes' in fmap %}<div class="fd full"><label for="notes">{{ fmap['notes'].name }}{% if fmap['notes'].required %} <span class="req">*</span>{% endif %}</label><textarea id="notes" name="notes" rows="2" {{ lock }}>{{ form.notes }}</textarea></div>{% endif %}
+        <div class="fd"><label for="bin">BIN</label><input id="bin" name="bin" type="text" maxlength="255" value="{{ form.bin }}" {{ lock }}></div>
+        <div class="fd"><label for="tin">TIN</label><input id="tin" name="tin" type="text" maxlength="255" value="{{ form.tin }}" {{ lock }}></div>
+        <div class="fd full"><label for="bin_address">BIN address</label><textarea id="bin_address" name="bin_address" rows="2" {{ lock }}>{{ form.bin_address }}</textarea></div>
         {% for fld in fields[1] %}{% if not fld.is_default %}{{ cfield(fld, 'cf1_' ~ fld.id, form.custom1.get(fld.id, ''), lock) }}{% endif %}{% endfor %}
       </div>
-      <div class="stepnav"><span></span><button class="b p" type="button" data-go="2">Next: contacts</button></div>
+
+      <h3 style="margin:18px 0 4px">Contacts</h3>
+      <p class="hint">All six are required. On the HRC side, pick a department and a user — their name, designation, phone and email fill in from the portal account, and you can still change them; a change here never touches the person's own profile. The HRC account manager is the client's account manager in the portal.</p>
+      <div class="contacts2">
+      {% for side, side_label in contact_sides %}
+        <div>
+          <h4>{{ side_label }}</h4>
+          {% for kind, kind_label in contact_kinds %}
+          {% set slot = form.contacts[side][kind] %}
+          {% set key = 'c_' ~ side ~ '_' ~ kind %}
+          <div class="rowbox"{% if side == 'hrc' %} data-hrc{% endif %}>
+            <p><b>{{ kind_label }}</b></p>
+            <div class="fm">
+            {% if side == 'hrc' %}
+              <div class="fd"><label>Department <span class="req">*</span></label>
+                <select name="{{ key }}_dept" data-dept required{% if page1_locked and kind == 'account_manager' %} disabled{% endif %}>
+                  <option value="">Pick a department…</option>
+                  {% for d in departments %}<option value="{{ d['id'] }}"{{ ' selected' if slot.department_id == d['id'] }}>{{ d['name'] }}</option>{% endfor %}
+                </select></div>
+              <div class="fd"><label>User <span class="req">*</span></label>
+                <select name="{{ key }}_user" data-user required{% if page1_locked and kind == 'account_manager' %} disabled{% endif %}>
+                  <option value="">Pick a user…</option>
+                  {% for uid, u in users_info.items() if u.department_id == slot.department_id %}<option value="{{ uid }}"{{ ' selected' if slot.user_id == uid }}>{{ u.full_name }}{% if u.designation %} · {{ u.designation }}{% endif %}</option>{% endfor %}
+                </select></div>
+            {% endif %}
+              <div class="fd"><label>Name <span class="req">*</span></label><input name="{{ key }}_name" type="text" maxlength="255" value="{{ slot.name }}" data-f="name" required></div>
+              <div class="fd"><label>Designation <span class="req">*</span></label><input name="{{ key }}_designation" type="text" maxlength="255" value="{{ slot.designation }}" data-f="designation" required></div>
+              <div class="fd"><label>Phone <span class="req">*</span></label><input name="{{ key }}_phone" type="text" maxlength="255" value="{{ slot.phone }}" data-f="phone" required></div>
+              <div class="fd"><label>Email <span class="req">*</span></label><input name="{{ key }}_email" type="text" maxlength="255" value="{{ slot.email }}" data-f="email" required></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+      </div>
+      <div class="stepnav"><span></span><button class="b p" type="button" data-go="2">Next: services</button></div>
     </section>
 
     <section class="step" data-step="2">
-      <h2>Page 2 · Contacts</h2><p class="hint">The people at the client, and our account manager.</p>
-      <div class="fd"><label for="account_manager_id">Account manager <span class="req">*</span></label>
-        <select id="account_manager_id" name="account_manager_id" {{ lock }}><option value="">Pick the account manager…</option>
-          {% for m in managers %}<option value="{{ m['id'] }}" {{ 'selected' if form.account_manager_id == m['id'] }}>{{ m['full_name'] }}{% if m['designation'] %} · {{ m['designation'] }}{% endif %}</option>{% endfor %}</select></div>
-      <div class="aminfo">
-        <p class="hint" style="margin:0 0 8px">The account manager's information, filled in from their account. You can change it here — it changes only for this client, never the manager's own profile.</p>
-        <div class="fm">
-          <div class="fd"><label for="am_full_name">Full name</label><input id="am_full_name" name="am_full_name" type="text" maxlength="255" value="{{ form.am_full_name }}"></div>
-          <div class="fd"><label for="am_designation">Designation</label><input id="am_designation" name="am_designation" type="text" maxlength="255" value="{{ form.am_designation }}"></div>
-          <div class="fd"><label for="am_phone">Phone</label><input id="am_phone" name="am_phone" type="text" maxlength="255" value="{{ form.am_phone }}"></div>
-          <div class="fd"><label for="am_email">Email</label><input id="am_email" name="am_email" type="text" maxlength="255" value="{{ form.am_email }}"></div>
-        </div>
-      </div>
-      <div id="contactRows">
-      {% for r in form.contacts %}
-        <div class="rowbox"><div class="rowhead"><button class="b sm dg" type="button" data-remove>Remove</button></div>
-          <div class="fm">
-            <div class="fd"><label>{{ fmap['contact_name'].name }} <span class="req">*</span></label><input name="contact_name" type="text" maxlength="255" value="{{ r.name }}"></div>
-            {% if 'contact_designation' in fmap %}<div class="fd"><label>{{ fmap['contact_designation'].name }}{% if fmap['contact_designation'].required %} <span class="req">*</span>{% endif %}</label><input name="contact_designation" type="text" maxlength="255" value="{{ r.designation }}"{% if fmap['contact_designation'].required %} required{% endif %}></div>{% endif %}
-            {% if 'contact_phone' in fmap %}<div class="fd"><label>{{ fmap['contact_phone'].name }}{% if fmap['contact_phone'].required %} <span class="req">*</span>{% endif %}</label><input name="contact_phone" type="text" maxlength="255" value="{{ r.phone }}"{% if fmap['contact_phone'].required %} required{% endif %}></div>{% endif %}
-            {% if 'contact_email' in fmap %}<div class="fd"><label>{{ fmap['contact_email'].name }}{% if fmap['contact_email'].required %} <span class="req">*</span>{% endif %}</label><input name="contact_email" type="text" maxlength="255" value="{{ r.email }}"{% if fmap['contact_email'].required %} required{% endif %}></div>{% endif %}
-            {% for fld in fields[2] %}{% if not fld.is_default %}{{ cfield(fld, 'cf2_' ~ fld.id, r.custom.get(fld.id, '')) }}{% endif %}{% endfor %}
-          </div></div>
-      {% endfor %}
-      </div>
-      <button class="b sm js-only" type="button" id="addContact">+ Add another contact</button>
-      <div class="stepnav"><button class="b" type="button" data-go="1">Back</button><button class="b p" type="button" data-go="3">Next: services</button></div>
-    </section>
-
-    <section class="step" data-step="3">
-      <h2>Page 3 · Services</h2><p class="hint">One block per SOF (Service Order Form). Add as many as the client ordered. The SOF file is {% if services_blank %}required for every new SOF{% else %}optional{% endif %} (PDF, Word, Excel or an image).{% if am_mode %} A new SOF may have its activation date set here — Revenue Assurance can change it before the change goes to Finance.{% else %} Every SOF must have an activation date.{% endif %}</p>
+      <h2>Page 2 · Services</h2><p class="hint">One block per SOF (Service Order Form). Add as many as the client ordered. The SOF file is {% if services_blank %}required for every new SOF{% else %}optional{% endif %} (PDF, Word, Excel or an image).{% if am_mode %} A new SOF may have its activation date set here — Revenue Assurance can change it before the change goes to Finance.{% else %} Every SOF must have an activation date.{% endif %}</p>
       <div id="serviceRows">
       {% for r in form.services %}
         <div class="rowbox">{% if not am_mode %}<div class="rowhead"><button class="b sm dg" type="button" data-remove>Remove</button></div>{% endif %}
@@ -97,18 +110,17 @@
             <div class="fd full"><label>{{ fmap['sof_service_description'].name }} <span class="req">*</span></label><textarea name="sof_service_description" rows="2">{{ r.service_description }}</textarea></div>
             <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date" value="{{ r.activation_date }}"{% if not am_mode %} required{% endif %}></div>
             {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2">{{ r.details }}</textarea></div>{% endif %}
-            {% for fld in fields[3] %}{% if not fld.is_default %}{{ cfield(fld, 'cf3_' ~ fld.id, r.custom.get(fld.id, '')) }}{% endif %}{% endfor %}
+            {% for fld in fields[2] %}{% if not fld.is_default %}{{ cfield(fld, 'cf2_' ~ fld.id, r.custom.get(fld.id, '')) }}{% endif %}{% endfor %}
             <div class="fd full"><label>SOF file{% if services_blank %} <span class="req">*</span>{% endif %}</label><input name="sof_file" type="file">
               {% if r.id and r.file_name %}<div class="sub">Now: {{ r.file_name }} — choose a file to replace it. <label class="ck"><input type="checkbox" name="sof_remove" value="{{ r.id }}"> Remove this file</label></div>{% endif %}</div>
           </div></div>
       {% endfor %}
       </div>
       <button class="b sm js-only" type="button" id="addService">+ Add another SOF</button>
-      <div class="stepnav"><button class="b" type="button" data-go="2">Back</button>
+      <div class="stepnav"><button class="b" type="button" data-go="1">Back</button>
         <span><a class="b" href="{{ url_for('clients.detail', cid=cid) if cid else back }}">Cancel</a> <button class="b p" type="submit">{% if am_mode %}Save services{% else %}Save and send for approval{% endif %}</button></span></div>
     </section>
   </form>
-</div>
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens next</h2>
@@ -117,12 +129,6 @@
   {{ quick_card([('Back to Client onboarding', back, True)]) }}
 </div></div>
 
-<template id="contactTpl"><div class="rowbox"><div class="rowhead"><button class="b sm dg" type="button" data-remove>Remove</button></div><div class="fm">
-  <div class="fd"><label>{{ fmap['contact_name'].name }} <span class="req">*</span></label><input name="contact_name" type="text" maxlength="255"></div>
-  {% if 'contact_designation' in fmap %}<div class="fd"><label>{{ fmap['contact_designation'].name }}{% if fmap['contact_designation'].required %} <span class="req">*</span>{% endif %}</label><input name="contact_designation" type="text" maxlength="255"></div>{% endif %}
-  {% if 'contact_phone' in fmap %}<div class="fd"><label>{{ fmap['contact_phone'].name }}{% if fmap['contact_phone'].required %} <span class="req">*</span>{% endif %}</label><input name="contact_phone" type="text" maxlength="255"></div>{% endif %}
-  {% if 'contact_email' in fmap %}<div class="fd"><label>{{ fmap['contact_email'].name }}{% if fmap['contact_email'].required %} <span class="req">*</span>{% endif %}</label><input name="contact_email" type="text" maxlength="255"></div>{% endif %}
-  {% for fld in fields[2] %}{% if not fld.is_default %}{{ cfield(fld, 'cf2_' ~ fld.id, '') }}{% endif %}{% endfor %}</div></div></template>
 <template id="serviceTpl"><div class="rowbox"><div class="rowhead"><button class="b sm dg" type="button" data-remove>Remove</button></div>
   <input type="hidden" name="sof_existing" value=""><div class="fm">
   <div class="fd"><label>{{ fmap['sof_number'].name }} <span class="req">*</span></label><input name="sof_number" type="text" maxlength="255"></div>
@@ -130,7 +136,7 @@
   <div class="fd full"><label>{{ fmap['sof_service_description'].name }} <span class="req">*</span></label><textarea name="sof_service_description" rows="2"></textarea></div>
   <div class="fd"><label>{{ fmap['sof_activation_date'].name }} <span class="req">*</span></label><input name="sof_activation_date" type="date"{% if not am_mode %} required{% endif %}></div>
   {% if 'sof_details' in fmap %}<div class="fd full"><label>{{ fmap['sof_details'].name }}{% if fmap['sof_details'].required %} <span class="req">*</span>{% endif %}</label><textarea name="sof_details" rows="2"></textarea></div>{% endif %}
-  {% for fld in fields[3] %}{% if not fld.is_default %}{{ cfield(fld, 'cf3_' ~ fld.id, '') }}{% endif %}{% endfor %}
+  {% for fld in fields[2] %}{% if not fld.is_default %}{{ cfield(fld, 'cf2_' ~ fld.id, '') }}{% endif %}{% endfor %}
   <div class="fd full"><label>SOF file{% if services_blank %} <span class="req">*</span>{% endif %}</label><input name="sof_file" type="file"></div></div></div></template>
 <script>
 (function(){
@@ -148,29 +154,53 @@
     if(list.children.length>=max)return;
     list.appendChild(document.getElementById(tplId).content.cloneNode(true));
   }
-  document.getElementById('addContact').addEventListener('click',function(){add('contactRows','contactTpl');});
   document.getElementById('addService').addEventListener('click',function(){add('serviceRows','serviceTpl');});
   form.addEventListener('click',function(e){
     var t=e.target.closest('[data-remove]'); if(!t)return;
     var box=t.closest('.rowbox'), list=box.parentNode;
     if(list.children.length>1)box.remove();
   });
-  // the account manager's information fills in from their account when the
-  // manager is picked; it stays editable and changes only this client
-  var AM = {{ managers_info|tojson }};
-  var amSel = document.getElementById('account_manager_id');
-  function fillAM(){
-    var m = AM[amSel.value]; if(!m)return;
-    var set = function(id, val){ var el=document.getElementById(id); if(el)el.value=val; };
-    set('am_full_name', m.full_name); set('am_designation', m.designation);
-    set('am_phone', m.phone); set('am_email', m.email);
-  }
-  amSel.addEventListener('change', fillAM);
-  (function(){
-    var ids = ['am_full_name','am_designation','am_phone','am_email'];
-    var empty = ids.every(function(id){ var el=document.getElementById(id); return el && !el.value; });
-    if(empty)fillAM();
-  })();
+  // the HRC contacts fill in from the portal account when a department
+  // and a user are picked; the details stay editable and change only
+  // this client, never the person's own profile
+  var USERS = {{ users_info|tojson }};
+  document.querySelectorAll('[data-hrc]').forEach(function(block){
+    var deptSel = block.querySelector('[data-dept]'), userSel = block.querySelector('[data-user]');
+    function fillUsers(){
+      var d = deptSel.value, keep = userSel.value;
+      userSel.innerHTML = '<option value="">Pick a user…</option>';
+      Object.keys(USERS).forEach(function(id){
+        var u = USERS[id];
+        if(String(u.department_id) !== String(d)) return;
+        var o = document.createElement('option');
+        o.value = id;
+        o.textContent = u.full_name + (u.designation ? ' · ' + u.designation : '');
+        userSel.appendChild(o);
+      });
+      if(keep && userSel.querySelector('option[value="' + keep + '"]')) userSel.value = keep;
+    }
+    function fillDetails(){
+      var u = USERS[userSel.value]; if(!u) return;
+      var set = function(name, val){ var el = block.querySelector('[data-f="' + name + '"]'); if(el) el.value = val; };
+      set('name', u.full_name); set('designation', u.designation);
+      set('phone', u.phone); set('email', u.email);
+    }
+    function clearDetails(){
+      var set = function(name){ var el = block.querySelector('[data-f="' + name + '"]'); if(el) el.value = ''; };
+      ['name','designation','phone','email'].forEach(set);
+    }
+    deptSel.addEventListener('change', function(){
+      fillUsers();
+      if(userSel.value) fillDetails(); else clearDetails();
+    });
+    userSel.addEventListener('change', fillDetails);
+    fillUsers();
+    (function(){
+      var ids = ['name','designation','phone','email'];
+      var empty = ids.every(function(n){ var el = block.querySelector('[data-f="' + n + '"]'); return el && !el.value; });
+      if(empty && userSel.value) fillDetails();
+    })();
+  });
   // show the page of the first field that fails the browser's own check
   form.addEventListener('invalid',function(e){var s=e.target.closest('.step'); if(s)show(s.getAttribute('data-step'));},true);
   {% if errors %}show(1);{% endif %}

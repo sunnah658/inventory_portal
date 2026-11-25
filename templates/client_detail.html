@@ -12,6 +12,13 @@
 .flow small{display:block;color:var(--soft)}
 .kv{display:flex;padding:8px 0;border-top:1px solid var(--line)}.kv:first-child{border-top:0}
 .kv b{flex:0 0 150px;color:var(--soft);font-weight:500}
+/* Build 118: the contacts sit side by side — Client contact on the left,
+   HRC Technologies Ltd contacts on the right — each with its three blocks. */
+.contacts2{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
+@media (max-width:980px){.contacts2{grid-template-columns:1fr}}
+.contacts2 .kv b{flex-basis:110px}
+.contacts2 h4{margin:14px 0 2px}
+.contacts2 h4:first-child{margin-top:0}
 </style>{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>{{ c|client_no }} · {{ c['client_name'] }}</h1></div>
@@ -72,18 +79,31 @@
   {% if 'email' in fmap %}<div class="kv"><b>Email</b><span>{{ c['email'] or '—' }}</span></div>{% endif %}
   {% if 'address' in fmap %}<div class="kv"><b>Address</b><span style="white-space:pre-wrap">{{ c['address'] or '—' }}</span></div>{% endif %}
   {% if 'notes' in fmap %}<div class="kv"><b>Notes</b><span style="white-space:pre-wrap">{{ c['notes'] or '—' }}</span></div>{% endif %}
+  {% if c['bin'] %}<div class="kv"><b>BIN</b><span>{{ c['bin'] }}</span></div>{% endif %}
+  {% if c['bin_address'] %}<div class="kv"><b>BIN address</b><span style="white-space:pre-wrap">{{ c['bin_address'] }}</span></div>{% endif %}
+  {% if c['tin'] %}<div class="kv"><b>TIN</b><span>{{ c['tin'] }}</span></div>{% endif %}
   {% for fld in fields[1] %}{% if not fld.is_default %}<div class="kv"><b>{{ fld.name }}</b><span style="white-space:pre-wrap">{{ custom.get(('client', c['id'], fld.id), '') or '—' }}</span></div>{% endif %}{% endfor %}
 </div>
 
 <div class="card"><h2>Contacts</h2>
-  <h3>Account manager</h3>
-  <div class="tb"><table class="fixed"><colgroup><col style="width:26%"><col style="width:24%"><col style="width:22%"><col style="width:28%"></colgroup><thead><tr><th>Name</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
-    <tr class="r"><td>{{ c['am_full_name'] or c['am_name'] or '—' }}</td><td>{{ c['am_designation'] or '—' }}</td><td>{{ c['am_phone'] or '—' }}</td><td>{{ c['am_email'] or '—' }}</td></tr>
-  </tbody></table></div>
-  <h3>Client contact person</h3>
-  {% if contacts %}<div class="tb"><table class="fixed"><colgroup><col style="width:26%">{% if 'contact_designation' in fmap %}<col style="width:24%">{% endif %}{% if 'contact_phone' in fmap %}<col style="width:22%">{% endif %}{% if 'contact_email' in fmap %}<col style="width:28%">{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<col style="width:20%">{% endif %}{% endfor %}</colgroup><thead><tr><th>Name</th>{% if 'contact_designation' in fmap %}<th>Designation</th>{% endif %}{% if 'contact_phone' in fmap %}<th>Phone</th>{% endif %}{% if 'contact_email' in fmap %}<th>Email</th>{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
-    {% for r in contacts %}<tr class="r"><td>{{ r['name'] }}</td>{% if 'contact_designation' in fmap %}<td>{{ r['designation'] or '' }}</td>{% endif %}{% if 'contact_phone' in fmap %}<td>{{ r['phone'] or '' }}</td>{% endif %}{% if 'contact_email' in fmap %}<td>{{ r['email'] or '' }}</td>{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<td>{{ custom.get(('contact', r['id'], fld.id), '') }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody></table></div>
-  {% else %}<p class="hint">No contacts.</p>{% endif %}</div>
+  {% set by_slot = {} %}
+  {% for r in contacts %}{% if r['side'] and r['ctype'] %}{% set _ = by_slot.update({(r['side'], r['ctype']): r}) %}{% endif %}{% endfor %}
+  <div class="contacts2">
+  {% for side, side_label in contact_sides %}
+    <div>
+      <h3>{{ side_label }}</h3>
+      {% for kind, kind_label in contact_kinds %}
+      {% set r = by_slot.get((side, kind)) %}
+      <h4>{{ kind_label }}</h4>
+      <div class="kv"><b>Name</b><span>{{ r['name'] if r else '—' }}</span></div>
+      <div class="kv"><b>Designation</b><span>{{ r['designation'] or '—' if r else '—' }}</span></div>
+      <div class="kv"><b>Phone</b><span>{{ r['phone'] or '—' if r else '—' }}</span></div>
+      <div class="kv"><b>Email</b><span>{{ r['email'] or '—' if r else '—' }}</span></div>
+      {% endfor %}
+    </div>
+  {% endfor %}
+  </div>
+</div>
 
 {% if edits %}<div class="card"><h2>SOF changes</h2>
   <p class="hint">Only the SOF named here is affected — the client itself stays as it is.</p>
@@ -106,9 +126,9 @@
   </div>{% endfor %}</div>{% endif %}
 
 <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2>Services (SOF)</h2>{% if perm.add_services %}<a class="b sm noprint" href="{{ url_for('clients.edit', cid=c['id']) }}">+ Add services</a>{% endif %}</div>
-  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Service description</th>{% if 'sof_details' in fmap %}<th>Details</th>{% endif %}{% for fld in fields[3] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}<th>Activation date</th><th>Termination date</th><th>Commercial impact date</th><th>Status</th><th class="noprint">Download SOF</th><th class="noprint"></th></tr></thead><tbody>
+  {% if sof %}<div class="tb"><table><thead><tr><th>SOF number</th><th>Service</th><th>Service description</th>{% if 'sof_details' in fmap %}<th>Details</th>{% endif %}{% for fld in fields[2] %}{% if not fld.is_default %}<th>{{ fld.name }}</th>{% endif %}{% endfor %}<th>Activation date</th><th>Termination date</th><th>Commercial impact date</th><th>Status</th><th class="noprint">Download SOF</th><th class="noprint"></th></tr></thead><tbody>
     {% for s, f in sof %}<tr class="r"><td><b>{{ s['sof_number'] }}</b></td><td>{{ s['service'] }}</td><td>{{ s['service_description'] or '—' }}</td>{% if 'sof_details' in fmap %}<td style="white-space:pre-wrap">{{ s['details'] or '' }}</td>{% endif %}
-      {% for fld in fields[3] %}{% if not fld.is_default %}<td>{{ custom.get(('service', s['id'], fld.id), '') }}</td>{% endif %}{% endfor %}
+      {% for fld in fields[2] %}{% if not fld.is_default %}<td>{{ custom.get(('service', s['id'], fld.id), '') }}</td>{% endif %}{% endfor %}
       <td>{% if edit_stage.get(s['id']) %}{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}{% elif perm.dates_admin %}<span class="print-only">{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}</span><form id="df{{ s['id'] }}" class="noprint" method="post" action="{{ url_for('clients.sof_dates', cid=c['id'], sid=s['id']) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="activation_date" type="date" value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" style="max-width:150px" title="Activation date"></form>{% elif perm.sof_activation %}<span class="print-only">{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}</span><form class="noprint" method="post" action="{{ url_for('clients.sof_activation', cid=c['id'], sid=s['id']) }}" style="display:flex;gap:4px"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="activation_date" type="date" required value="{{ (s['activation_date']|string)[:10] if s['activation_date'] else '' }}" style="max-width:150px"><button class="b sm" type="submit">Save</button></form>{% else %}{{ (s['activation_date']|string)[:10] if s['activation_date'] else '—' }}{% endif %}</td>
       <td>{% if edit_stage.get(s['id']) %}{{ (s['termination_date']|string)[:10] if s['termination_date'] else '—' }}{% elif perm.dates_admin %}<span class="print-only">{{ (s['termination_date']|string)[:10] if s['termination_date'] else '—' }}</span><input class="noprint" name="termination_date" type="date" form="df{{ s['id'] }}" value="{{ (s['termination_date']|string)[:10] if s['termination_date'] else '' }}" style="max-width:150px" title="Termination date">{% else %}{{ (s['termination_date']|string)[:10] if s['termination_date'] else '—' }}{% endif %}</td>
       <td>{% if edit_stage.get(s['id']) %}{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '—' }}{% elif perm.dates_admin %}<span class="print-only">{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '—' }}</span><input class="noprint" name="commercial_impact_date" type="date" form="df{{ s['id'] }}" value="{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '' }}" style="max-width:150px" title="Commercial impact date"> <button class="b sm noprint" type="submit" form="df{{ s['id'] }}">Save dates</button>{% else %}{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '—' }}{% endif %}</td>

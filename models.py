@@ -839,6 +839,9 @@ CREATE TABLE IF NOT EXISTS client_onboardings (
     phone              VARCHAR(255),
     email              VARCHAR(255),
     notes              TEXT,
+    bin                VARCHAR(255),
+    bin_address        TEXT,
+    tin                VARCHAR(255),
     account_manager_id INT,
     am_full_name       VARCHAR(255),
     am_designation     VARCHAR(255),
@@ -879,7 +882,19 @@ CREATE TABLE IF NOT EXISTS client_contacts (
     designation VARCHAR(255),
     phone       VARCHAR(255),
     email       VARCHAR(255),
-    FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE
+    -- Build 118: the six fixed contact slots — which side of the form
+    -- the contact sits on ('client' or 'hrc') and which kind it is
+    -- ('account_manager', 'technical' or 'billing'). An HRC contact also
+    -- keeps the portal department and user it was picked from; the four
+    -- fields stay editable per client and never touch that user's profile.
+    -- Old rows (before build 118) have no side or kind and are not shown.
+    side          VARCHAR(20),
+    ctype         VARCHAR(20),
+    department_id INT,
+    user_id       INT,
+    FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE,
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- The services of a client: one row per SOF (Service Order Form), several allowed.
@@ -1004,8 +1019,9 @@ CREATE TABLE IF NOT EXISTS client_form_fields (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- The values of the admin's custom fields. target_type is 'client'
--- (a page-1 field, target_id = the client), 'contact' (a page-2 field,
--- target_id = the contact row) or 'service' (a page-3 field, target_id =
+-- (a page-1 field, target_id = the client), 'contact' (an old page-2
+-- field, target_id = the contact row — the contact rows are gone in
+-- build 118) or 'service' (a page-2 field, target_id =
 -- the service row). Default fields keep their fixed columns.
 CREATE TABLE IF NOT EXISTS client_field_values (
     id          INT AUTO_INCREMENT PRIMARY KEY,
@@ -1183,18 +1199,17 @@ def _seed_client_form_fields(conn):
         ("phone", 1, "Phone", "text", 0, 3),
         ("email", 1, "Email", "text", 0, 4),
         ("notes", 1, "Notes", "longtext", 0, 5),
-        ("contact_name", 2, "Contact name", "text", 1, 0),
-        ("contact_designation", 2, "Designation", "text", 0, 1),
-        ("contact_phone", 2, "Phone", "text", 0, 2),
-        ("contact_email", 2, "Email", "text", 0, 3),
-        ("sof_number", 3, "SOF number", "text", 1, 0),
-        ("sof_service", 3, "Service", "text", 1, 1),
-        ("sof_details", 3, "Details", "longtext", 0, 2),
-        ("sof_activation_date", 3, "Activation date", "date", 1, 3),
+        # Build 118: the contacts live on the Client page now, as six fixed
+        # slots — the old page-2 contact fields are gone. The services are
+        # page 2 now (they were page 3).
+        ("sof_number", 2, "SOF number", "text", 1, 0),
+        ("sof_service", 2, "Service", "text", 1, 1),
+        ("sof_details", 2, "Details", "longtext", 0, 2),
+        ("sof_activation_date", 2, "Activation date", "date", 1, 3),
         # Build 102: the service description — it must be filled. The
         # Service type box is gone in build 109 (Service and Service type
         # meant the same thing); the short name is the Service itself.
-        ("sof_service_description", 3, "Service description", "longtext", 1, 5),
+        ("sof_service_description", 2, "Service description", "longtext", 1, 5),
     ]
     for _key, _page, _name, _type, _req, _pos in _defaults:
         conn.execute("INSERT INTO client_form_fields(page,field_key,name,field_type,required,position,is_default)"
@@ -1213,9 +1228,42 @@ def _upgrade_sof_type_fields(conn):
     have = {r[0] for r in conn.execute("SELECT field_key FROM client_form_fields").fetchall()}
     if "sof_service_description" not in have:
         conn.execute("INSERT INTO client_form_fields(page,field_key,name,field_type,required,position,is_default)"
-                     " VALUES (3,'sof_service_description','Service description','longtext',1,5,1)")
+                     " VALUES (2,'sof_service_description','Service description','longtext',1,5,1)")
     if "sof_service_type" in have:
         conn.execute("DELETE FROM client_form_fields WHERE field_key='sof_service_type'")
+
+
+def _upgrade_client_contacts_118(conn):
+    """Build 118: the Add Client form has two pages now — the contacts
+    moved into the Client page as six fixed slots (client / HRC, each
+    account manager / technical / billing) and the Services page is page
+    2. The new columns hold the BIN and TIN details and the contact
+    slots; the old page-2 contact fields (and any custom fields the
+    admin added on that page) are gone with the contact rows, so their
+    rows and their entered values are deleted, and the service fields
+    move from page 3 to page 2. Runs once: after it, no page-3 field
+    and no contact default remains, so the guard below skips it on
+    every later startup."""
+    for _col, _ddl in (("bin", "VARCHAR(255)"), ("bin_address", "TEXT"), ("tin", "VARCHAR(255)")):
+        _ensure_column(conn, "client_onboardings", _col, _ddl)
+    for _col, _ddl in (("side", "VARCHAR(20)"), ("ctype", "VARCHAR(20)"),
+                       ("department_id", "INT"), ("user_id", "INT")):
+        _ensure_column(conn, "client_contacts", _col, _ddl)
+    have3 = conn.execute("SELECT COUNT(*) FROM client_form_fields WHERE page=3").fetchone()[0]
+    have_contact = conn.execute(
+        "SELECT COUNT(*) FROM client_form_fields WHERE field_key IN "
+        "('contact_name','contact_designation','contact_phone','contact_email')").fetchone()[0]
+    if not have3 and not have_contact:
+        return
+    # Only the contact fields go: the four defaults and any custom field
+    # the admin added on the old contacts page. The Service description
+    # field is already on page 2 by now (_upgrade_sof_type_fields puts
+    # it there when it is missing), so it is kept out of the delete.
+    _gone = "(field_key IS NULL OR field_key IN ('contact_name','contact_designation','contact_phone','contact_email'))"
+    conn.execute("DELETE FROM client_field_values WHERE field_id IN "
+                 "(SELECT id FROM client_form_fields WHERE page=2 AND " + _gone + ")")
+    conn.execute("DELETE FROM client_form_fields WHERE page=2 AND " + _gone)
+    conn.execute("UPDATE client_form_fields SET page=2 WHERE page=3")
 
 
 def _upgrade_sof_status(conn):
@@ -1608,6 +1656,7 @@ def init_db():
         _upgrade_client_serial(conn)
         _upgrade_sof_san_history(conn)
         _upgrade_sof_file_history(conn)
+        _upgrade_client_contacts_118(conn)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")
