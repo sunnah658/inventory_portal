@@ -1,4 +1,35 @@
 ==============================================================================
+ THE CONTACTS ARE TWO TABLES, AND A SOF EDIT CAN CHANGE THEM (2026-11-25)
+==============================================================================
+ The side-by-side contact blocks are now two tables, one under the other:
+ Client contacts, then HRC Technologies Ltd contacts. Each table has the
+ columns Type, Name, Department, Designation, Phone, Email, and a Save
+ button at the right of each row. A row is one person: pick the Type, fill
+ the row, press Save — a new blank row appears below it. A Type can be
+ used once in each table, Others included. The Account manager, Technical
+ contact and Billing contact must all be filled in both tables; Others is
+ optional. On the HRC side the Department list follows the Type, then the
+ Name list holds that department's users, and picking a user fills their
+ designation, phone and email from the portal account.
+
+ After the Sales admin approves the client the contacts are locked on the
+ client form. They change only from a SOF's Edit page, which now carries
+ the same two tables for every contact except the account manager. A
+ contact change there is staged with the SOF and lands only when the
+ Sales admin approves it. The portal admin can still change the contacts
+ directly from Add services.
+
+==============================================================================
+ THE HRC DEPARTMENT MATCH IGNORES CAPITAL LETTERS (2026-11-25)
+==============================================================================
+ The Technical contact's Department dropdown was missing the Technical
+ support department on the live server, because the live department is
+ spelled "Technical Support" with a capital S and the match was exact.
+ The match now ignores capital letters and stray spaces, on the form
+ and on save, so the department shows up however it was typed. Nothing
+ else changes.
+
+==============================================================================
  THE NEW CLIENT FORM FILLS THE WIDTH, AND EACH HRC CONTACT TAKES ONLY
  ITS OWN DEPARTMENTS (2026-11-25)
 ==============================================================================

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_design6.html" import quick_card with context %}
+{% from "_contacts_tables.html" import contacts_table, contacts_script with context %}
 {% block title %}{{ 'Change client' if cid else 'New client' }}{% endblock %}
 {% block head %}<style>
 .steps{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
@@ -14,25 +15,6 @@
 .rowhead{display:flex;justify-content:flex-end;margin-bottom:10px}
 .js-only,.rm{display:none}.js .js-only,.js .rm{display:inline-block}
 .stepnav{display:flex;gap:8px;justify-content:space-between;margin-top:14px;flex-wrap:wrap}
-/* Build 118: the contacts sit side by side — Client contact on the left,
-   HRC Technologies Ltd contacts on the right — each with its three blocks.
-   Build 119: one grid row per kind instead of one column per side, so the
-   Client and HRC boxes for the same kind share a row and are always the
-   same height. Inside a box the field rows spread top to bottom, so the
-   first and last rows sit on the same lines on both sides. */
-.contacts2{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
-@media (max-width:980px){.contacts2{grid-template-columns:1fr}.align-gap{display:none}}
-.contacts2 h4{margin:14px 0 8px}
-.contacts2 .cbox{display:flex;flex-direction:column}
-.contacts2 .cbox .fm{flex:1;align-content:space-between}
-/* Build 119: the Client box has one field row fewer than the HRC box
-   (no Department/User picker). This blank row is exactly one field row
-   tall — a label plus an input-height blank — so the Client Name row
-   sits on the same line as the HRC Name row, and Phone/Email likewise.
-   It is empty on purpose; nothing is missing. On a narrow screen the
-   boxes stack, so the gap is hidden there. */
-.align-gap{margin-bottom:15px}
-.align-gap .blank{height:44px}
 .rowbox p{margin:0 0 8px}
 </style>{% endblock %}
 {# One input for an admin-set field: name is the form name, value the current value. #}
@@ -51,7 +33,7 @@
 <div class="tw"><div>
 <div class="card">
   <h1>{{ 'Change client ' ~ (c|client_no) if cid else 'New client' }}</h1>
-  <p class="hint" style="margin-bottom:14px">{% if am_mode %}Change the contacts and the services of this finished client. Contact changes apply at once; every service change goes to the Sales admin for approval.{% else %}Two pages: the client with its contacts, and its services. When you click Save, the request goes to the Sales admin for approval.{% endif %} <span class="req">*</span> means required.</p>
+  <p class="hint" style="margin-bottom:14px">{% if am_mode %}Add services to this finished client. The client and its contacts stay as they are — after approval the contacts change only from a SOF's Edit page. Every service change goes to the Sales admin for approval.{% else %}Two pages: the client with its contacts, and its services. When you click Save, the request goes to the Sales admin for approval.{% endif %} <span class="req">*</span> means required.</p>
   {% if c and c['reject_reason'] %}<div class="alert"><b>Rejected:</b> {{ c['reject_reason'] }}</div>{% endif %}
   {% if errors %}<div class="msg error"><ul style="margin:0;padding-left:18px">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
   <div class="steps" id="steps" hidden>
@@ -75,38 +57,10 @@
       </div>
 
       <h3 style="margin:18px 0 4px">Contacts</h3>
-      <p class="hint">All six are required. On the HRC side, pick a department and a user — their name, designation, phone and email fill in from the portal account, and you can still change them; a change here never touches the person's own profile. The HRC account manager is the client's account manager in the portal.</p>
-      <div class="contacts2">
-      {% for side, side_label in contact_sides %}<h4>{{ side_label }}</h4>{% endfor %}
-      {% for kind, kind_label in contact_kinds %}
-      {% for side, side_label in contact_sides %}
-          {% set slot = form.contacts[side][kind] %}
-          {% set key = 'c_' ~ side ~ '_' ~ kind %}
-          <div class="rowbox cbox"{% if side == 'hrc' %} data-hrc{% endif %}>
-            <p><b>{{ kind_label }}</b></p>
-            {% if side == 'client' %}<div class="align-gap" aria-hidden="true"><label>&nbsp;</label><div class="blank"></div></div>{% endif %}
-            <div class="fm">
-            {% if side == 'hrc' %}
-              <div class="fd"><label>Department <span class="req">*</span></label>
-                <select name="{{ key }}_dept" data-dept required{% if page1_locked and kind == 'account_manager' %} disabled{% endif %}>
-                  <option value="">Pick a department…</option>
-                  {% for d in contact_depts[kind] %}<option value="{{ d['id'] }}"{{ ' selected' if slot.department_id == d['id'] }}>{{ d['name'] }}</option>{% endfor %}
-                </select></div>
-              <div class="fd"><label>User <span class="req">*</span></label>
-                <select name="{{ key }}_user" data-user required{% if page1_locked and kind == 'account_manager' %} disabled{% endif %}>
-                  <option value="">Pick a user…</option>
-                  {% for uid, u in users_info.items() if u.department_id == slot.department_id %}<option value="{{ uid }}"{{ ' selected' if slot.user_id == uid }}>{{ u.full_name }}{% if u.designation %} · {{ u.designation }}{% endif %}</option>{% endfor %}
-                </select></div>
-            {% endif %}
-              <div class="fd"><label>Name <span class="req">*</span></label><input name="{{ key }}_name" type="text" maxlength="255" value="{{ slot.name }}" data-f="name" required></div>
-              <div class="fd"><label>Designation <span class="req">*</span></label><input name="{{ key }}_designation" type="text" maxlength="255" value="{{ slot.designation }}" data-f="designation" required></div>
-              <div class="fd"><label>Phone <span class="req">*</span></label><input name="{{ key }}_phone" type="text" maxlength="255" value="{{ slot.phone }}" data-f="phone" required></div>
-              <div class="fd"><label>Email <span class="req">*</span></label><input name="{{ key }}_email" type="text" maxlength="255" value="{{ slot.email }}" data-f="email" required></div>
-            </div>
-          </div>
-      {% endfor %}
-      {% endfor %}
-      </div>
+      {% if page1_locked %}<p class="hint">The contacts can't be changed here after approval — change them from a SOF's Edit page.</p>
+      {% else %}<p class="hint">One table for the client's contacts, one for HRC's. Each row is one person: pick the Type, fill the row, press Save — a new row appears below it. A Type can be used once in each table; Account manager, Technical contact and Billing contact must all be filled in both tables, Others is optional. On the HRC side, the Department list follows the Type and the Name list follows the Department — picking a user fills their designation, phone and email from the portal account, and you can still change them; a change here never touches the person's own profile. The HRC account manager is the client's account manager in the portal.</p>{% endif %}
+      {{ contacts_table('client', form.contacts['client'], form.contact_partial['client'], page1_locked, True) }}
+      {{ contacts_table('hrc', form.contacts['hrc'], form.contact_partial['hrc'], page1_locked, True) }}
       <div class="stepnav"><span></span><button class="b p" type="button" data-go="2">Next: services</button></div>
     </section>
 
@@ -137,7 +91,7 @@
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens next</h2>
-    {% if am_mode %}<p class="hint">The client itself stays finished. Contact changes apply at once; every service change goes to the Sales admin for approval, and the SOF goes to pending as soon as you save. After the Sales admin approves, Revenue Assurance forwards it for a new SAN report, may change its dates, and forwards it to Finance.</p>
+    {% if am_mode %}<p class="hint">The client itself stays finished. Every service change goes to the Sales admin for approval, and the SOF goes to pending as soon as you save. After the Sales admin approves, Revenue Assurance forwards it for a new SAN report, may change its dates, and forwards it to Finance. The contacts change only from a SOF's Edit page.</p>
     {% else %}<p class="hint">The Sales admin approves or rejects the client. A rejected client comes back to you with the reason; fix it here and save again.</p>{% endif %}</div>
   {{ quick_card([('Back to Client onboarding', back, True)]) }}
 </div></div>
@@ -173,50 +127,10 @@
     var box=t.closest('.rowbox'), list=box.parentNode;
     if(list.children.length>1)box.remove();
   });
-  // the HRC contacts fill in from the portal account when a department
-  // and a user are picked; the details stay editable and change only
-  // this client, never the person's own profile
-  var USERS = {{ users_info|tojson }};
-  document.querySelectorAll('[data-hrc]').forEach(function(block){
-    var deptSel = block.querySelector('[data-dept]'), userSel = block.querySelector('[data-user]');
-    function fillUsers(){
-      var d = deptSel.value, keep = userSel.value;
-      userSel.innerHTML = '<option value="">Pick a user…</option>';
-      Object.keys(USERS).forEach(function(id){
-        var u = USERS[id];
-        if(String(u.department_id) !== String(d)) return;
-        var o = document.createElement('option');
-        o.value = id;
-        o.textContent = u.full_name + (u.designation ? ' · ' + u.designation : '');
-        userSel.appendChild(o);
-      });
-      if(keep && userSel.querySelector('option[value="' + keep + '"]')) userSel.value = keep;
-    }
-    function fillDetails(){
-      var u = USERS[userSel.value]; if(!u) return;
-      var set = function(name, val){ var el = block.querySelector('[data-f="' + name + '"]'); if(el) el.value = val; };
-      set('name', u.full_name); set('designation', u.designation);
-      set('phone', u.phone); set('email', u.email);
-    }
-    function clearDetails(){
-      var set = function(name){ var el = block.querySelector('[data-f="' + name + '"]'); if(el) el.value = ''; };
-      ['name','designation','phone','email'].forEach(set);
-    }
-    deptSel.addEventListener('change', function(){
-      fillUsers();
-      if(userSel.value) fillDetails(); else clearDetails();
-    });
-    userSel.addEventListener('change', fillDetails);
-    fillUsers();
-    (function(){
-      var ids = ['name','designation','phone','email'];
-      var empty = ids.every(function(n){ var el = block.querySelector('[data-f="' + n + '"]'); return el && !el.value; });
-      if(empty && userSel.value) fillDetails();
-    })();
-  });
   // show the page of the first field that fails the browser's own check
   form.addEventListener('invalid',function(e){var s=e.target.closest('.step'); if(s)show(s.getAttribute('data-step'));},true);
   {% if errors %}show(1);{% endif %}
 })();
 </script>
+{{ contacts_script() }}
 {% endblock %}

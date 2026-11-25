@@ -79,7 +79,7 @@ STATUS_LABEL = {
 ALL_STATUSES = tuple(STATUS_LABEL)
 APPROVED_STATES = ("approved", "forwarded", "san_uploaded", "completed")
 FORWARDED_STATES = ("forwarded", "san_uploaded", "completed")  # Transmission, Core, Technical see it from here on
-MAX_ROWS = 30   # contacts and services per client
+MAX_ROWS = 30   # services per client (the contact tables cap themselves: one row per Type)
 
 # Build 102: every SOF has its own state. Pending (yellow) while its
 # change is going through the flow again, Activated (green) once it is
@@ -773,7 +773,15 @@ def _timeline(db, c):
 @login_required
 def detail(cid):
     db, c, roles = _load(cid)
-    contacts = db.execute("SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()
+    contacts = [dict(r) for r in db.execute(
+        "SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()]
+    # Build 121: the tables show the department — for an HRC row the
+    # portal department's name, for a client row the department that
+    # was typed on the form.
+    _dept_names = {d["id"]: d["name"] for d in db.execute("SELECT id, name FROM departments").fetchall()}
+    for _r in contacts:
+        _r["department_name"] = (_dept_names.get(_r["department_id"]) if _r["side"] == "hrc"
+                                 else (_r.get("department_name") or ""))
     services = db.execute("SELECT * FROM client_services WHERE client_id=? ORDER BY position, id", (cid,)).fetchall()
     history = db.execute("SELECT * FROM client_history WHERE client_id=? ORDER BY id DESC", (cid,)).fetchall()
     # One SAN report per SOF (build 105): each SOF's file, who uploaded it,
@@ -808,6 +816,12 @@ def detail(cid):
                         "ORDER BY e.id", (cid,)).fetchall():
         new = json.loads(e["new_values"])
         old = json.loads(e["old_values"]) if e["old_values"] else {}
+        _change = _sof_new_text(new) if not e["service_id"] else _sof_change_text(old, new)
+        # Build 121: a change may carry contact rows too — they read
+        # the same way, next to the SOF fields.
+        _cdiff = _contacts_change_text((old or {}).get("contacts"), (new or {}).get("contacts"))
+        if _cdiff:
+            _change = (_change + "; " + _cdiff) if _change != "No fields changed." else _cdiff
         _srow = None
         if e["service_id"]:
             _srow = db.execute("SELECT * FROM client_services WHERE id=?", (e["service_id"],)).fetchone()
@@ -825,11 +839,11 @@ def detail(cid):
                       "has_term_dates": bool((new.get("termination_date") or "")
                                              or (new.get("commercial_impact_date") or "")),
                       "num": old.get("sof_number") or new.get("sof_number") or "",
-                      "change": _sof_new_text(new) if not e["service_id"] else _sof_change_text(old, new)})
+                      "change": _change})
     edit_stage = {e["service_id"]: e["stage"] for e in edits if e["service_id"]}
     return render_template(
         "client_detail.html", c=c, contacts=contacts, services=services, history=history,
-        contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
+        contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS, contact_kind_label=CONTACT_KIND_LABEL,
         sof=[(s, _file_info(s["sof_file"])) for s in services], san_perm=san_perm, san_uploads=san_uploads,
         sof_files={s["id"]: _sof_file_uploads(db, s["id"]) for s in services},
         perm=_perms(db, g.user, roles, c), timeline=_timeline(db, c),
@@ -863,30 +877,220 @@ def _account_managers(db):
                       "ORDER BY full_name").fetchall()
 
 
-# Build 118: the six fixed contact slots — two sides (client / HRC), three
-# kinds each (account manager / technical / billing). An HRC slot also
-# carries the portal department and user it was picked from.
-CONTACT_SIDES = (("client", "Client contact"), ("hrc", "HRC Technologies Ltd contacts"))
+# Build 118: the two contact tables — two sides (client / HRC). Build
+# 121: one row per person, and a fourth kind, 'other', which may be used
+# once per table like the rest. An HRC row also carries the portal
+# department and user it was picked from.
+CONTACT_SIDES = (("client", "Client contacts"), ("hrc", "HRC Technologies Ltd contacts"))
 CONTACT_KINDS = (("account_manager", "Account manager"), ("technical", "Technical contact"),
-                 ("billing", "Billing contact"))
+                 ("billing", "Billing contact"), ("other", "Others"))
+CONTACT_KIND_LABEL = dict(CONTACT_KINDS)
+# The three kinds that must be filled in each table (build 121): Others
+# is optional, in both tables.
+CONTACT_REQUIRED_KINDS = ("account_manager", "technical", "billing")
 
 # Build 119: the HRC Department dropdown holds only the departments that
 # do that job — the account manager comes from Sales & Marketing, the
 # technical contact from Core, IT, Transmission or Technical support,
 # the billing contact from Revenue Assurance. Names, not ids: the ids
 # differ between databases, and a department that does not exist here
-# simply offers nothing.
+# simply offers nothing. Build 121: an Others row may pick any
+# department, so 'other' holds no list at all.
 CONTACT_HRC_DEPTS = {"account_manager": ("Sales & Marketing",),
                      "technical": ("Core", "IT", "Transmission", "Technical support"),
-                     "billing": ("Revenue Assurance",)}
+                     "billing": ("Revenue Assurance",),
+                     "other": ()}
+
+# Build 120: the match ignores capital letters and stray spaces — the
+# live departments were typed by hand, so "Technical Support" must
+# match "Technical support".
+CONTACT_HRC_DEPTS_LOWER = {k: tuple(n.strip().casefold() for n in v)
+                           for k, v in CONTACT_HRC_DEPTS.items()}
 
 
 def _blank_contact():
-    return {"department_id": None, "user_id": None, "name": "", "designation": "", "phone": "", "email": ""}
+    return {"ctype": "", "department_id": None, "user_id": None, "department_name": "",
+            "name": "", "designation": "", "phone": "", "email": ""}
 
 
 def _blank_contacts():
-    return {side: {kind: _blank_contact() for kind, _l in CONTACT_KINDS} for side, _l in CONTACT_SIDES}
+    return {side: [] for side, _l in CONTACT_SIDES}
+
+
+def _contacts_from_db(db, cid):
+    """The client's contact rows, grouped by side in position order
+    (build 121). A row with no side or kind predates the tables and is
+    not shown."""
+    out = {side: [] for side, _l in CONTACT_SIDES}
+    for r in db.execute("SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id",
+                        (cid,)).fetchall():
+        if r["side"] in out and r["ctype"] in CONTACT_KIND_LABEL:
+            out[r["side"]].append({"ctype": r["ctype"], "department_id": r["department_id"],
+                                   "user_id": r["user_id"],
+                                   "department_name": r.get("department_name") or "",
+                                   "name": r["name"] or "", "designation": r["designation"] or "",
+                                   "phone": r["phone"] or "", "email": r["email"] or ""})
+    return out
+
+
+def _read_contact_tables(db, f, label, require_kinds, allow_am=True):
+    """Read the two contact tables from a posted form (build 121).
+    Each side posts one row per person as parallel lists — the Type,
+    then the person's details. The client side types its department;
+    the HRC side picks a department and a user, and the name comes from
+    that user's account (the designation, phone and email are typed,
+    filled in from the account by the form). A row with nothing in it
+    is the blank row and is ignored; a row with some fields filled and
+    some empty, or with a value the form refuses, is kept in `edit` so
+    the form can show it again as an editable row. Returns (contacts,
+    edit, errors): contacts is {side: [row]} of filled rows with no
+    error, edit is {side: [row]} of rows to fix. `require_kinds` are
+    the Types each table must hold — Others is never required. With
+    `allow_am=False` (the SOF edit) the Account manager type is not
+    offered at all, and a posted one is refused."""
+    contacts = {side: [] for side, _l in CONTACT_SIDES}
+    edit = {side: [] for side, _l in CONTACT_SIDES}
+    errors = []
+    for side, side_label in CONTACT_SIDES:
+        _types = f.getlist(f"c_{side}_type")
+        _names = f.getlist(f"c_{side}_name") if side == "client" else []
+        _depts = f.getlist(f"c_{side}_dept")
+        _users = f.getlist(f"c_{side}_user") if side == "hrc" else []
+        _desigs = f.getlist(f"c_{side}_designation")
+        _phones = f.getlist(f"c_{side}_phone")
+        _emails = f.getlist(f"c_{side}_email")
+        _seen = set()
+        _n = max(len(_types), len(_names), len(_depts), len(_users),
+                 len(_desigs), len(_phones), len(_emails))
+        for i in range(_n):
+            _kind = _clean(_pick(_types, i))
+            _name = _clean(_pick(_names, i)) if side == "client" else ""
+            _dept_raw = _pick(_depts, i)
+            _user_raw = _pick(_users, i) if side == "hrc" else ""
+            _desig = _clean(_pick(_desigs, i))
+            _phone = _clean(_pick(_phones, i))
+            _email = _clean(_pick(_emails, i))
+            _dept_txt = _clean(_dept_raw) if side == "client" else ""
+            _dept = int(_dept_raw) if side == "hrc" and str(_dept_raw).isdigit() else None
+            _user = int(_user_raw) if side == "hrc" and str(_user_raw).isdigit() else None
+            _row = {"ctype": _kind, "department_id": _dept, "user_id": _user,
+                    "department_name": _dept_txt, "name": _name,
+                    "designation": _desig, "phone": _phone, "email": _email}
+            _fields = [_kind, _name, _dept_txt, _desig, _phone, _email] if side == "client" \
+                else [_kind, _dept_raw, _user_raw, _desig, _phone, _email]
+            if not any(_fields):
+                continue
+            _lab = (f"{label}: {side_label} — {CONTACT_KIND_LABEL[_kind]}"
+                    if _kind in CONTACT_KIND_LABEL else f"{label}: {side_label} — row {i + 1}")
+            _bad = False
+            if _kind not in CONTACT_KIND_LABEL:
+                errors.append(f"{_lab}: pick the type.")
+                _bad = True
+            elif not allow_am and _kind == "account_manager":
+                errors.append(f"{_lab}: the account manager cannot be changed here.")
+                _bad = True
+            elif _kind in _seen:
+                errors.append(f"{_lab}: the {CONTACT_KIND_LABEL[_kind]} is already in this table.")
+                _bad = True
+            else:
+                _seen.add(_kind)
+            if side == "client":
+                for _fld, _val in (("name", _name), ("department", _dept_txt),
+                                   ("designation", _desig), ("phone", _phone), ("email", _email)):
+                    if not _val:
+                        errors.append(f"{_lab}: the {_fld} is required.")
+                        _bad = True
+            else:
+                _dept_name = None
+                if _dept is not None:
+                    _drow = db.execute("SELECT name FROM departments WHERE id=?", (_dept,)).fetchone()
+                    if _drow is None:
+                        _dept = None
+                    else:
+                        _dept_name = _drow["name"]
+                _urow = None
+                if _user is not None:
+                    _urow = db.execute("SELECT * FROM users WHERE id=? AND is_active=1 AND is_deleted=0",
+                                       (_user,)).fetchone()
+                    if _urow is None:
+                        _user = None
+                _wrong_dept = False
+                if _dept is not None and _user is not None and db.execute(
+                        "SELECT 1 FROM users WHERE id=? AND department_id=?", (_user, _dept)).fetchone() is None:
+                    _wrong_dept = True
+                    _user = None
+                # Build 119: the department must be one of this kind's own
+                # (CONTACT_HRC_DEPTS) — a posted department from another
+                # job is refused, not silently kept. Build 120: the match
+                # ignores capitals and stray spaces. Build 121: an Others
+                # row may pick any department.
+                _wrong_kind_dept = (_dept_name is not None and bool(CONTACT_HRC_DEPTS.get(_kind))
+                                    and _dept_name.strip().casefold() not in CONTACT_HRC_DEPTS_LOWER[_kind])
+                if _wrong_kind_dept:
+                    _names = CONTACT_HRC_DEPTS[_kind]
+                    _or = (" or ".join(_names) if len(_names) == 1
+                           else ", ".join(_names[:-1]) + " or " + _names[-1])
+                    errors.append(f"{_lab}: the department must be {_or}.")
+                    _bad = True
+                if _dept is None:
+                    errors.append(f"{_lab}: pick the department.")
+                    _bad = True
+                if _user is None and not _wrong_dept:
+                    errors.append(f"{_lab}: pick the user.")
+                    _bad = True
+                if _wrong_dept:
+                    errors.append(f"{_lab}: the user is not in that department.")
+                    _bad = True
+                if _urow is not None:
+                    _row["name"] = _urow["full_name"] or ""
+                for _fld in ("designation", "phone", "email"):
+                    if not _row[_fld]:
+                        errors.append(f"{_lab}: the {_fld} is required.")
+                        _bad = True
+                _row["department_id"], _row["user_id"] = _dept, _user
+            if _row["email"] and "@" not in _row["email"]:
+                errors.append(f"{_lab}: the email does not look right.")
+                _bad = True
+            (contacts if not _bad else edit)[side].append(_row)
+        _have = {r["ctype"] for r in contacts[side] + edit[side]}
+        for _kind in require_kinds:
+            if _kind not in _have:
+                errors.append(f"{label}: {side_label} — the {CONTACT_KIND_LABEL[_kind]} is required.")
+    return contacts, edit, errors
+
+
+def _contacts_change_text(old, new):
+    """'Contacts: Client Technical contact changed; HRC Billing contact
+    added' — one phrase per contact slot that differs between the two
+    tables (build 121, SOF edit). The account manager never differs
+    here: it is not staged, so it is in neither table."""
+    _short = {"client": "Client", "hrc": "HRC"}
+    parts = []
+    for side, _sl in CONTACT_SIDES:
+        _o = {r["ctype"]: r for r in (old or {}).get(side, [])}
+        _n = {r["ctype"]: r for r in (new or {}).get(side, [])}
+        for ctype, _label in CONTACT_KINDS:
+            o, n = _o.get(ctype), _n.get(ctype)
+            if o == n:
+                continue
+            if o is None:
+                parts.append(f"{_short[side]} {CONTACT_KIND_LABEL[ctype]} added")
+            elif n is None:
+                parts.append(f"{_short[side]} {CONTACT_KIND_LABEL[ctype]} removed")
+            else:
+                parts.append(f"{_short[side]} {CONTACT_KIND_LABEL[ctype]} changed")
+    return ("Contacts: " + "; ".join(parts)) if parts else ""
+
+
+def _apply_contacts(db, cid, staged):
+    """Write the staged non-AM contact rows (build 121, SOF edit): the
+    account manager rows stay exactly as they are; every other row is
+    replaced by the staged ones."""
+    cur = _contacts_from_db(db, cid)
+    merged = {}
+    for side, _sl in CONTACT_SIDES:
+        merged[side] = [r for r in cur[side] if r["ctype"] == "account_manager"] + list((staged or {}).get(side, []))
+    _write_contacts(db, cid, merged)
 
 
 def _blank_form():
@@ -895,6 +1099,7 @@ def _blank_form():
             "account_manager_id": None, "am_full_name": "", "am_designation": "", "am_phone": "", "am_email": "",
             "custom1": {},
             "contacts": _blank_contacts(),
+            "contact_partial": {side: [] for side, _l in CONTACT_SIDES},
             "services": [{"id": "", "sof_number": "", "service": "", "service_type": "",
                           "service_description": "", "details": "", "file_name": "",
                           "activation_date": "", "public_code": "", "custom": {}}]}
@@ -912,16 +1117,10 @@ def _form_from_db(db, c):
     form["am_email"] = c["am_email"] or ""
     custom = _load_custom(db, c["id"])
     form["custom1"] = {fid: v for (tt, _tid, fid), v in custom.items() if tt == "client"}
-    # Build 118: the six fixed slots, keyed by side and kind. A row with
-    # no side or kind predates the slots and is not shown.
-    form["contacts"] = _blank_contacts()
-    for r in db.execute("SELECT * FROM client_contacts WHERE client_id=? ORDER BY position, id",
-                        (c["id"],)).fetchall():
-        if r["side"] in form["contacts"] and r["ctype"] in form["contacts"][r["side"]]:
-            form["contacts"][r["side"]][r["ctype"]] = dict(
-                department_id=r["department_id"], user_id=r["user_id"],
-                name=r["name"] or "", designation=r["designation"] or "",
-                phone=r["phone"] or "", email=r["email"] or "")
+    # Build 118: the contact tables, in position order. A row with no
+    # side or kind predates the tables and is not shown.
+    form["contacts"] = _contacts_from_db(db, c["id"])
+    form["contact_partial"] = {side: [] for side, _l in CONTACT_SIDES}
     form["services"] = [dict(id=r["id"], sof_number=r["sof_number"] or "", service=r["service"] or "",
                              service_type=r.get("service_type") or "",
                              service_description=r.get("service_description") or "",
@@ -940,7 +1139,8 @@ def _pick(lst, i):
     return lst[i] if i < len(lst) else ""
 
 
-def _read_form(db, existing, am_mode=False, require_sof_file=False):
+def _read_form(db, existing, am_mode=False, require_sof_file=False, contacts_locked=False,
+               locked_contacts=None):
     """Read and check the posted form.
     Returns (form for redisplay, errors, contacts, services, new files saved, old files to delete after commit).
     `existing` is {service id: row} of the client being edited (empty for a new client).
@@ -950,12 +1150,13 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
     page 1 is not changed by the account manager, and the activation date
     of a SOF is the Revenue Assurance department's — so neither is
     required here; a new SOF may be added without a date, and Revenue
-    Assurance sets it once the change is approved. The contacts stay
-    editable in Add-services mode (build 118): the six slots are read
-    from the form and apply at once, except the HRC account manager's
-    department and user, which stay as they are — the portal account
-    manager does not change on the Add services page, only his four
-    details can.
+    Assurance sets it once the change is approved. Build 121: the
+    contacts are locked in Add-services mode for the account manager —
+    after approval they cannot be changed here, they change only from a
+    SOF edit — so with `contacts_locked` the contacts are not read from
+    the form at all and the caller passes the rows as they stand in
+    `locked_contacts` (the portal admin's Add-services form still posts
+    them, and they apply at once).
     """
 
     f = request.form
@@ -991,83 +1192,33 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
             errors.append(err)
     form["custom1"] = custom1
 
-    # ---- the contacts: six fixed slots on the Client page (build 118).
-    # Every slot must be filled — name, designation, phone and email.
-    # An HRC slot is picked from a department and a user, and the four
-    # details fill in from that user's account; they stay editable and
-    # change only this client, never the user's own profile. The HRC
-    # account manager IS the client's account manager in the portal:
-    # his user id and his four details are the account_manager_id and
-    # the am_* columns every notification and filter already uses.
-    contacts = _blank_contacts()
-    for side, side_label in CONTACT_SIDES:
-        for kind, kind_label in CONTACT_KINDS:
-            key = f"c_{side}_{kind}"
-            slot = {"department_id": None, "user_id": None,
-                    "name": _clean(f.get(key + "_name"), 255),
-                    "designation": _clean(f.get(key + "_designation"), 255),
-                    "phone": _clean(f.get(key + "_phone"), 255),
-                    "email": _clean(f.get(key + "_email"), 255)}
-            label = f"Page 1: {side_label} — {kind_label}"
-            if side == "hrc":
-                dept = f.get(key + "_dept", type=int)
-                user = f.get(key + "_user", type=int)
-                _dept_name = None
-                if dept is not None:
-                    _drow = db.execute("SELECT name FROM departments WHERE id=?", (dept,)).fetchone()
-                    if _drow is None:
-                        dept = None
-                    else:
-                        _dept_name = _drow["name"]
-                if user is not None and db.execute(
-                        "SELECT 1 FROM users WHERE id=? AND is_active=1 AND is_deleted=0",
-                        (user,)).fetchone() is None:
-                    user = None
-                _wrong_dept = False
-                if dept is not None and user is not None and db.execute(
-                        "SELECT 1 FROM users WHERE id=? AND department_id=?", (user, dept)).fetchone() is None:
-                    _wrong_dept = True
-                    user = None
-                slot["department_id"], slot["user_id"] = dept, user
-                # On the Add services page the HRC account manager's two
-                # dropdowns are disabled (the portal account manager stays
-                # as he is), so they are not posted and no error is raised
-                # for them — the caller keeps the old department and user.
-                _am_locked = am_mode and kind == "account_manager"
-                # Build 119: the department must be one of this kind's own
-                # (CONTACT_HRC_DEPTS) — a posted department from another
-                # job is refused, not silently kept.
-                _wrong_kind_dept = (_dept_name is not None
-                                    and _dept_name not in CONTACT_HRC_DEPTS[kind])
-                if _wrong_kind_dept:
-                    _names = CONTACT_HRC_DEPTS[kind]
-                    _or = (" or ".join(_names) if len(_names) == 1
-                           else ", ".join(_names[:-1]) + " or " + _names[-1])
-                    errors.append(f"{label}: the department must be {_or}.")
-                if dept is None and not _am_locked:
-                    errors.append(f"{label}: pick the department.")
-                if user is None and not _am_locked and not _wrong_dept:
-                    errors.append(f"{label}: pick the user.")
-                if _wrong_dept:
-                    errors.append(f"{label}: the user is not in that department.")
-            for _field in ("name", "designation", "phone", "email"):
-                if not slot[_field]:
-                    errors.append(f"{label}: the {_field} is required.")
-            if slot["email"] and "@" not in slot["email"]:
-                errors.append(f"{label}: the email does not look right.")
-            contacts[side][kind] = slot
+    # ---- the contacts: two tables on the Client page (build 121) —
+    # Client contacts, then HRC Technologies Ltd contacts. Each row is
+    # one person: a Type (account manager / technical / billing /
+    # others, once per table), then the person's details. The HRC side
+    # picks a department and a user and the four details fill in from
+    # that user's account; they stay editable and change only this
+    # client, never the person's own profile. The HRC account manager
+    # IS the client's account manager in the portal: his user id and
+    # his four details are the account_manager_id and the am_* columns
+    # every notification and filter already uses. In each table the
+    # account manager, technical contact and billing contact must all
+    # be filled; Others is optional.
+    if contacts_locked:
+        contacts = locked_contacts or {side: [] for side, _l in CONTACT_SIDES}
+        form["contact_partial"] = {side: [] for side, _l in CONTACT_SIDES}
+    else:
+        contacts, _edit, _cerr = _read_contact_tables(
+            db, f, "Page 1", CONTACT_REQUIRED_KINDS, allow_am=True)
+        errors.extend(_cerr)
+        form["contact_partial"] = _edit
     form["contacts"] = contacts
-    _hrc_am = contacts["hrc"]["account_manager"]
-    form["account_manager_id"] = _hrc_am["user_id"]
-    form["am_full_name"] = _hrc_am["name"]
-    form["am_designation"] = _hrc_am["designation"]
-    form["am_phone"] = _hrc_am["phone"]
-    form["am_email"] = _hrc_am["email"]
-    if am_mode:
-        # The account manager stays as he is in Add-services mode; the
-        # caller keeps the old account_manager_id (the HRC account
-        # manager's department and user were not posted).
-        form["account_manager_id"] = None
+    _hrc_am = next((r for r in contacts.get("hrc", []) if r["ctype"] == "account_manager"), None)
+    form["account_manager_id"] = _hrc_am["user_id"] if _hrc_am else None
+    form["am_full_name"] = _hrc_am["name"] if _hrc_am else ""
+    form["am_designation"] = _hrc_am["designation"] if _hrc_am else ""
+    form["am_phone"] = _hrc_am["phone"] if _hrc_am else ""
+    form["am_email"] = _hrc_am["email"] if _hrc_am else ""
 
     # ---- page 2
     fields2 = _form_fields(db, 2)
@@ -1213,38 +1364,47 @@ def _write_children(db, cid, contacts, services, custom1):
 
 
 def _write_contacts(db, cid, contacts):
-    """Rewrite the six contact slots (build 118, Add services): the
-    services and the client's own fields are untouched. `contacts` is
-    the nested {side: {kind: slot}} dict from _read_form; the slots are
-    written in a fixed order — client account manager, technical,
-    billing, then the HRC ones — so position alone orders them."""
+    """Rewrite the contact rows (build 121): the two tables, client rows
+    first then HRC rows, each in the order they were saved. The services
+    and the client's own fields are untouched. `contacts` is the
+    {side: [row]} dict from _read_contact_tables or _contacts_from_db."""
     db.execute("DELETE FROM client_contacts WHERE client_id=?", (cid,))
-    for i, (side, _sl) in enumerate(CONTACT_SIDES):
-        for j, (kind, _kl) in enumerate(CONTACT_KINDS):
-            r = contacts[side][kind]
+    pos = 0
+    for side, _sl in CONTACT_SIDES:
+        for r in contacts.get(side, []):
             db.execute("INSERT INTO client_contacts(client_id,position,name,designation,phone,email,"
-                       "side,ctype,department_id,user_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                       (cid, i * 3 + j, r["name"], r["designation"] or None, r["phone"] or None,
-                        r["email"] or None, side, kind, r.get("department_id"), r.get("user_id")))
+                       "side,ctype,department_id,user_id,department_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                       (cid, pos, r["name"], r["designation"] or None, r["phone"] or None,
+                        r["email"] or None, side, r["ctype"], r.get("department_id"), r.get("user_id"),
+                        r.get("department_name") or None))
+            pos += 1
 
 
-def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_locked=False,
-               services_blank=False):
-    # Build 118: the HRC contacts are picked from a department and a
-    # user. The page carries every active portal user (with their
-    # department) so the form can fill the four details in from the
-    # account when a user is picked — the details stay editable and
-    # change only this client.
+def _contacts_form_data(db):
+    """The data the contact tables need on a form (build 121): every
+    department, the departments each Type may pick from (build 119/120
+    — Others may pick any department), and every active portal user
+    with their department, so the form can fill the four details in
+    from the account when a user is picked."""
     departments = [dict(r) for r in db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()]
     # Build 119: each HRC kind offers only its own departments (see
-    # CONTACT_HRC_DEPTS above).
-    contact_depts = {kind: [d for d in departments if d["name"] in CONTACT_HRC_DEPTS[kind]]
+    # CONTACT_HRC_DEPTS above). Build 120: the match ignores capitals
+    # and stray spaces, so a hand-typed "Technical Support" still matches.
+    contact_depts = {kind: (departments if kind == "other" else
+                            [d for d in departments
+                             if d["name"].strip().casefold() in CONTACT_HRC_DEPTS_LOWER[kind]])
                      for kind, _kl in CONTACT_KINDS}
     users_info = {u["id"]: {"department_id": u["department_id"], "full_name": u["full_name"] or "",
                             "designation": u["designation"] or "", "phone": u["phone"] or "",
                             "email": u["email"] or ""}
                   for u in db.execute("SELECT id, department_id, full_name, designation, phone, email FROM users "
                                      "WHERE is_active=1 AND is_deleted=0 ORDER BY full_name").fetchall()}
+    return departments, contact_depts, users_info
+
+
+def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_locked=False,
+               services_blank=False):
+    departments, contact_depts, users_info = _contacts_form_data(db)
     fields = {p: _form_fields(db, p) for p in (1, 2)}
     for p in (1, 2):
         for fld in fields[p]:
@@ -1253,6 +1413,8 @@ def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_loc
     return render_template("client_form.html", form=form, cid=cid, c=c, errors=errors or [],
                            departments=departments, users_info=users_info, max_rows=MAX_ROWS,
                            contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
+                           contact_kind_label=CONTACT_KIND_LABEL,
+                           dept_names={d["id"]: d["name"] for d in departments},
                            contact_depts=contact_depts,
                            fields=fields, fmap=fmap, am_mode=am_mode, page1_locked=page1_locked,
                            services_blank=services_blank,
@@ -1286,15 +1448,16 @@ def new():
         form = _blank_form()
         # Build 118: the HRC account manager starts as the Sales user
         # himself when he is in the Sales department, as the account
-        # manager dropdown did before.
+        # manager dropdown did before. Build 121: he is the first row
+        # of the HRC table, already saved.
         if any(m["id"] == g.user["id"] for m in _account_managers(db)):
-            _am = form["contacts"]["hrc"]["account_manager"]
-            _am["department_id"] = g.user["department_id"]
-            _am["user_id"] = g.user["id"]
-            _am["name"] = g.user["full_name"] or ""
-            _am["designation"] = g.user["designation"] or ""
-            _am["phone"] = g.user["phone"] or ""
-            _am["email"] = g.user["email"] or ""
+            form["contacts"]["hrc"] = [{"ctype": "account_manager",
+                                        "department_id": g.user["department_id"],
+                                        "user_id": g.user["id"], "department_name": "",
+                                        "name": g.user["full_name"] or "",
+                                        "designation": g.user["designation"] or "",
+                                        "phone": g.user["phone"] or "",
+                                        "email": g.user["email"] or ""}]
         return _show_form(db, form)
     form, errors, contacts, services, saved_new, delete_old = _read_form(db, {})
     if errors:
@@ -1315,7 +1478,8 @@ def new():
              form["am_full_name"] or None, form["am_designation"] or None, form["am_phone"] or None,
              form["am_email"] or None, serial)).lastrowid
         _write_children(db, cid, contacts, services, form["custom1"])
-        _history(db, cid, g.user, "sent for approval", f"6 contacts, {len(services)} service(s)")
+        _ncontacts = len(contacts.get("client", [])) + len(contacts.get("hrc", []))
+        _history(db, cid, g.user, "sent for approval", f"{_ncontacts} contacts, {len(services)} service(s)")
         log(db, "client_new", f"{serial} {form['client_name']}")
         _send_for_approval_notice(db, cid, form["client_name"], False)
         db.commit()
@@ -1329,10 +1493,12 @@ def new():
 
 def _edit_services(db, c, roles):
     """Build 102: Add services on a finished client (the account manager,
-    or the portal admin). The client itself stays finished. Contact
-    changes apply at once. Every service change — a new SOF, or a changed
-    one — waits for the Sales admin to approve it; the portal admin's
-    changes apply at once. Build 110: the account manager CAN set the
+    or the portal admin). The client itself stays finished. Build 121:
+    the contacts are locked here for the account manager — after approval
+    they change only from a SOF edit, never from this page — while the
+    portal admin's contact changes still apply at once. Every service
+    change — a new SOF, or a changed one — waits for the Sales admin to
+    approve it; the portal admin's changes apply at once. Build 110: the account manager CAN set the
     activation date and upload the SOF file when he adds a SOF — the date
     stays (Revenue Assurance may change it later in the flow) and the
     file is kept with the change until the Sales admin approves it. A
@@ -1356,8 +1522,14 @@ def _edit_services(db, c, roles):
         return _show_form(db, _f, cid=cid, c=c, am_mode=True, page1_locked=not portal_admin,
                           services_blank=not portal_admin)
     existing = {r["id"]: r for r in db.execute("SELECT * FROM client_services WHERE client_id=?", (cid,)).fetchall()}
+    # Build 121: after approval the contacts cannot be changed here —
+    # the account manager changes them from a SOF edit — so for him the
+    # tables are read-only and the rows stand as they are. The portal
+    # admin's form still posts them, and they apply at once.
+    _locked_contacts = _contacts_from_db(db, cid) if not portal_admin else None
     form, errors, contacts, services, saved_new, delete_old = _read_form(
-        db, existing, am_mode=True, require_sof_file=not portal_admin)
+        db, existing, am_mode=True, require_sof_file=not portal_admin,
+        contacts_locked=not portal_admin, locked_contacts=_locked_contacts)
     if errors:
         _remove_files(saved_new)
         return _show_form(db, form, cid=cid, c=c, errors=errors, am_mode=True, page1_locked=not portal_admin,
@@ -1375,30 +1547,24 @@ def _edit_services(db, c, roles):
                         form["am_phone"] or None, form["am_email"] or None, cid))
             _save_custom(db, cid, "client", cid, form["custom1"])
         else:
-            # Build 118: the account manager's HRC account manager stays
-            # as he is — his two dropdowns were disabled on the form, so
-            # they were not posted. Keep the old department and user on
-            # the contact row; his four details (which were editable) do
-            # apply, and so does the account manager's own information.
-            _old_am = db.execute("SELECT department_id, user_id FROM client_contacts WHERE client_id=? "
-                                 "AND side='hrc' AND ctype='account_manager'", (cid,)).fetchone()
-            if _old_am:
-                contacts["hrc"]["account_manager"]["department_id"] = _old_am["department_id"]
-                contacts["hrc"]["account_manager"]["user_id"] = _old_am["user_id"]
+            # Build 121: the contacts are locked, so the account
+            # manager's own details stay as they are too — the am_*
+            # columns are written back unchanged.
             db.execute("UPDATE client_onboardings SET am_full_name=?, am_designation=?, am_phone=?, am_email=?, "
                        "updated_at=datetime('now','localtime') WHERE id=?",
-                       (form["am_full_name"] or None, form["am_designation"] or None,
-                        form["am_phone"] or None, form["am_email"] or None, cid))
+                       (c["am_full_name"] or None, c["am_designation"] or None,
+                        c["am_phone"] or None, c["am_email"] or None, cid))
         old_contacts = [(r["side"] or "", r["ctype"] or "", r["department_id"], r["user_id"],
-                         r["name"] or "", r["designation"] or "", r["phone"] or "", r["email"] or "")
+                         r["name"] or "", r["designation"] or "", r["phone"] or "",
+                         r["email"] or "", r.get("department_name") or "")
                         for r in db.execute("SELECT side, ctype, department_id, user_id, name, designation, phone, "
-                                           "email FROM client_contacts WHERE client_id=? ORDER BY position, id",
-                                           (cid,)).fetchall()]
+                                           "email, department_name FROM client_contacts WHERE client_id=? "
+                                           "ORDER BY position, id", (cid,)).fetchall()]
         _write_contacts(db, cid, contacts)
-        contacts_changed = ([(side, kind, r.get("department_id"), r.get("user_id"),
-                              r["name"], r["designation"], r["phone"], r["email"])
-                             for side, _sl in CONTACT_SIDES for kind, _kl in CONTACT_KINDS
-                             for r in [contacts[side][kind]]]
+        contacts_changed = ([(side, r["ctype"], r.get("department_id"), r.get("user_id"),
+                              r["name"], r["designation"], r["phone"], r["email"],
+                              r.get("department_name") or "")
+                             for side, _sl in CONTACT_SIDES for r in contacts.get(side, [])]
                             != old_contacts)
         added, changed, skipped = [], [], []
         for row in services:
@@ -1978,7 +2144,10 @@ def sof_edit(cid, sid):
     stays downloadable, it is not replaced. Build 113: the activation
     date is editable here too — it lands when the Sales admin approves,
     and Revenue Assurance may change it again before forwarding the
-    change to Finance."""
+    change to Finance. Build 121: the contacts change here too — every
+    contact except the account manager, which cannot change after
+    approval. The contact change is staged with the SOF and lands when
+    the Sales admin approves it (or at once for the portal admin)."""
     db, c, roles = _load(cid)
     row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?", (sid, cid)).fetchone()
     if row is None:
@@ -1988,8 +2157,17 @@ def sof_edit(cid, sid):
     if c["status"] != "completed" or not (portal_admin or (am and row["status"] in ("activated", "terminated"))):
         abort(403)
     if request.method == "GET":
+        _departments, _contact_depts, _users_info = _contacts_form_data(db)
+        _cur = _contacts_from_db(db, cid)
+        _contacts = {side: [r for r in _cur[side] if r["ctype"] != "account_manager"]
+                     for side, _l in CONTACT_SIDES}
         return render_template("sof_edit.html", c=c, s=row, f=_file_info(row["sof_file"]), back=_link(cid),
-                               portal_admin=portal_admin)
+                               portal_admin=portal_admin, contacts=_contacts,
+                               contact_partial={side: [] for side, _l in CONTACT_SIDES},
+                               departments=_departments, contact_depts=_contact_depts, users_info=_users_info,
+                               contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
+                               contact_kind_label=CONTACT_KIND_LABEL,
+                               dept_names={d["id"]: d["name"] for d in _departments})
     new = {"sof_number": _clean(request.form.get("sof_number"), 255),
            "service": _clean(request.form.get("service"), 255),
            # Build 109: no Service type box — the short name is the Service itself.
@@ -2024,6 +2202,20 @@ def sof_edit(cid, sid):
                            (new["sof_number"].lower(), sid)).fetchone()
         if clash:
             errors.append(f"SOF number {new['sof_number']} is already used on another client.")
+    # Build 121: the contacts change here too — every contact except the
+    # account manager. The technical and billing contacts must still be
+    # there in each table; Others stays optional. When no contact table
+    # is posted at all (an edit that only touches the SOF), the contacts
+    # stand as they are.
+    _cur = _contacts_from_db(db, cid)
+    _old_contacts = {side: [r for r in _cur[side] if r["ctype"] != "account_manager"]
+                     for side, _l in CONTACT_SIDES}
+    if "c_client_type" in request.form or "c_hrc_type" in request.form:
+        _contacts, _edit, _cerr = _read_contact_tables(
+            db, request.form, "Contacts", ("technical", "billing"), allow_am=False)
+        errors.extend(_cerr)
+    else:
+        _contacts, _edit = _old_contacts, {side: [] for side, _l in CONTACT_SIDES}
     # Build 112: the SOF file is uploaded here, and it is required for
     # the account manager — every edit carries a new SOF file, even a
     # date-only one. The portal admin may leave it off.
@@ -2045,10 +2237,21 @@ def sof_edit(cid, sid):
             _remove_files([(_file_info(file_json) or {}).get("stored")])
         for e in errors:
             flash(e, "error")
+        _departments, _contact_depts, _users_info = _contacts_form_data(db)
         return render_template("sof_edit.html", c=c, s={**dict(row), **new}, f=_file_info(row["sof_file"]),
-                               back=_link(cid), portal_admin=portal_admin)
+                               back=_link(cid), portal_admin=portal_admin, contacts=_contacts,
+                               contact_partial=_edit, departments=_departments,
+                               contact_depts=_contact_depts, users_info=_users_info,
+                               contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
+                               contact_kind_label=CONTACT_KIND_LABEL,
+                               dept_names={d["id"]: d["name"] for d in _departments})
     old = _sof_snapshot(row)
+    old["contacts"] = _old_contacts
+    new["contacts"] = _contacts
     diff = _sof_change_text(old, new)
+    _cdiff = _contacts_change_text(old["contacts"], new["contacts"])
+    if _cdiff:
+        diff = (diff + "; " + _cdiff) if diff != "No fields changed." else _cdiff
     new["sof_file"] = file_json
     new["file_name"] = file_name
     if has_upload and file_json != (row["sof_file"] or None):
@@ -2075,6 +2278,9 @@ def sof_edit(cid, sid):
         # file history — the old one stays downloadable.
         if has_upload and file_json != (row["sof_file"] or None):
             _record_sof_file(db, sid, file_json, None, g.user["id"])
+        # Build 121: the staged contacts apply at once too — the
+        # account manager rows stay as they are.
+        _apply_contacts(db, cid, new["contacts"])
         _history(db, cid, g.user, f"SOF {row['sof_number']} changed by the portal admin", diff)
         notify(db, {c["account_manager_id"]} | set(_sales_admin_ids(db)),
                f"The portal admin changed SOF {row['sof_number']} of '{c['client_name']}': {diff}",
@@ -2120,6 +2326,11 @@ def sof_edit_approve(cid, eid):
     new = json.loads(edit["new_values"])
     old = json.loads(edit["old_values"]) if edit["old_values"] else {}
     change = _sof_new_text(new) if not edit["service_id"] else _sof_change_text(old, new)
+    # Build 121: a change may carry contact rows too — they land with
+    # the SOF fields, the account manager rows untouched.
+    _cdiff = _contacts_change_text((old or {}).get("contacts"), (new or {}).get("contacts"))
+    if _cdiff:
+        change = (change + "; " + _cdiff) if change != "No fields changed." else _cdiff
     if edit["service_id"]:
         row = db.execute("SELECT * FROM client_services WHERE id=? AND client_id=?",
                          (edit["service_id"], cid)).fetchone()
@@ -2164,6 +2375,8 @@ def sof_edit_approve(cid, eid):
         # Build 112: the new SOF's file is the first row of its history.
         if new.get("sof_file"):
             _record_sof_file(db, nid, new["sof_file"], eid, edit["editor_id"])
+    if new.get("contacts") is not None:
+        _apply_contacts(db, cid, new["contacts"])
     db.execute("UPDATE client_sof_edits SET status='approved', decided_by=?, "
                "decided_at=datetime('now','localtime') WHERE id=?", (g.user["id"], eid))
     _history(db, cid, g.user, f"SOF {num} change approved",

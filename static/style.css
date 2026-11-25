@@ -215,6 +215,10 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--p
 /* ---------- record pages */
 .tw{display:grid;grid-template-columns:1fr 280px;gap:22px;align-items:start}.tw>*{min-width:0}.stack>*{margin-bottom:20px}
 .tb table.ctable{min-width:1080px}
+/* Build 121: the contact tables — the inputs fill their cells so a row
+   reads as one line of fields, and a saved row shows its values. */
+.ctbl td input,.ctbl td select{width:100%;box-sizing:border-box;min-width:0}
+.ctbl td{vertical-align:middle}
 .stcol .s{white-space:nowrap}
 /* ---------- Design 6: KPI row + split layout + vertical bar chart.
    KPI cards reuse .kp/.k1; the split layout reuses .tw (1fr 340px) with the

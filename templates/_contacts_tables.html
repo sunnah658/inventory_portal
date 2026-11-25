@@ -1,0 +1,250 @@
+{# Build 121: the two contact tables — one row per person — shared by the
+   client form and the SOF edit page. `contacts_table(side, rows, edit_rows,
+   locked, allow_am)` renders one table; `contacts_script()` renders the
+   JavaScript once per page. The page passes contact_sides, contact_kinds,
+   contact_kind_label, contact_depts, departments, users_info and
+   dept_names. A row is Type, Name, Department, Designation, Phone, Email,
+   and Save. A saved row shows its values with hidden inputs and a Remove
+   button; an editable row has the inputs and Save. A Type can be used
+   once per table — Save consumes it, Remove frees it. On the HRC side
+   the Department list follows the Type and the Name list follows the
+   Department, and picking a user fills the designation, phone and email
+   from the portal account. #}
+{% macro hid(name, value) %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endmacro %}
+
+{% macro ct_edit_row(side, r, used, allow_am) %}
+  <tr class="edit">
+    <td><select name="c_{{ side }}_type" data-ct-type>
+      <option value="">Pick a type…</option>
+      {% for kind, label in contact_kinds %}{% if (allow_am or kind != 'account_manager') and (kind not in used or (r and r.ctype == kind)) %}<option value="{{ kind }}"{{ ' selected' if r and r.ctype == kind }}>{{ label }}</option>{% endif %}{% endfor %}
+    </select></td>
+    {% if side == 'hrc' %}
+    <td><select name="c_{{ side }}_user" data-ct-user>
+      <option value="">Pick a user…</option>
+      {% for uid, u in users_info.items() %}<option value="{{ uid }}"{{ ' selected' if r and r.user_id == uid }}>{{ u.full_name }}{% if u.designation %} · {{ u.designation }}{% endif %}</option>{% endfor %}
+    </select></td>
+    <td><select name="c_{{ side }}_dept" data-ct-dept>
+      <option value="">Pick a department…</option>
+      {% for d in departments %}<option value="{{ d['id'] }}"{{ ' selected' if r and r.department_id == d['id'] }}>{{ d['name'] }}</option>{% endfor %}
+    </select></td>
+    {% else %}
+    <td><input name="c_{{ side }}_name" type="text" maxlength="255" value="{{ r.name if r else '' }}" data-f="name"></td>
+    <td><input name="c_{{ side }}_dept" type="text" maxlength="255" value="{{ r.department_name if r else '' }}" data-f="dept"></td>
+    {% endif %}
+    <td><input name="c_{{ side }}_designation" type="text" maxlength="255" value="{{ r.designation if r else '' }}" data-f="designation"></td>
+    <td><input name="c_{{ side }}_phone" type="text" maxlength="255" value="{{ r.phone if r else '' }}" data-f="phone"></td>
+    <td><input name="c_{{ side }}_email" type="text" maxlength="255" value="{{ r.email if r else '' }}" data-f="email"></td>
+    <td><button class="b sm p" type="button" data-ct-save>Save</button></td>
+  </tr>
+{% endmacro %}
+
+{% macro contacts_table(side, rows, edit_rows, locked, allow_am) %}
+{% set side_label = dict(contact_sides)[side] %}
+{% set used = (rows + edit_rows) | map(attribute='ctype') | list %}
+{% set available = 4 if allow_am else 3 %}
+<div class="ctbl-wrap">
+<h4>{{ side_label }}</h4>
+<div class="tb"><table class="ctbl" data-side="{{ side }}" data-allow-am="{{ 1 if allow_am else 0 }}">
+  <thead><tr><th>Type <span class="req">*</span></th><th>Name <span class="req">*</span></th><th>Department <span class="req">*</span></th><th>Designation <span class="req">*</span></th><th>Phone <span class="req">*</span></th><th>Email <span class="req">*</span></th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="saved">
+      <td>{{ contact_kind_label[r.ctype] }}{{ hid('c_' ~ side ~ '_type', r.ctype) if not locked }}</td>
+      <td>{{ r.name }}{% if side == 'hrc' %}{{ hid('c_' ~ side ~ '_user', r.user_id) if not locked }}{% else %}{{ hid('c_' ~ side ~ '_name', r.name) if not locked }}{% endif %}</td>
+      <td>{% if side == 'hrc' %}{{ dept_names.get(r.department_id, '—') }}{{ hid('c_' ~ side ~ '_dept', r.department_id) if not locked }}{% else %}{{ r.department_name }}{{ hid('c_' ~ side ~ '_dept', r.department_name) if not locked }}{% endif %}</td>
+      <td>{{ r.designation }}{{ hid('c_' ~ side ~ '_designation', r.designation) if not locked }}</td>
+      <td>{{ r.phone }}{{ hid('c_' ~ side ~ '_phone', r.phone) if not locked }}</td>
+      <td>{{ r.email }}{{ hid('c_' ~ side ~ '_email', r.email) if not locked }}</td>
+      <td>{% if not locked %}<button class="b sm dg" type="button" data-ct-remove>Remove</button>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  {% for r in edit_rows %}
+    {{ ct_edit_row(side, r, used, allow_am) }}
+  {% endfor %}
+  {% if not locked and (used | length < available) %}
+    {{ ct_edit_row(side, None, used, allow_am) }}
+  {% endif %}
+  </tbody>
+</table></div>
+<p class="hint ct-err" data-ct-err hidden></p>
+{% if not locked %}<template id="ct-tpl-{{ side }}">{{ ct_edit_row(side, None, [], allow_am) }}</template>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro contacts_script() %}
+<script>
+(function(){
+  var USERS = {{ users_info|tojson }};
+  var CONTACT_DEPTS = {{ contact_depts|tojson }};
+  var CONTACT_KINDS = {{ contact_kinds|tojson }};
+  var CONTACT_KIND_LABEL = {{ contact_kind_label|tojson }};
+  function deptName(id){
+    var list = CONTACT_DEPTS["other"] || [];
+    for(var i=0;i<list.length;i++){ if(String(list[i].id) === String(id)) return list[i].name; }
+    return "";
+  }
+  function usedTypes(tbl){
+    var used = {};
+    tbl.querySelectorAll('tr.saved input[type="hidden"][name$="_type"]').forEach(function(h){ used[h.value] = 1; });
+    tbl.querySelectorAll('tr.edit select[data-ct-type]').forEach(function(s){ if(s.value) used[s.value] = 1; });
+    return used;
+  }
+  function refreshTypes(tbl){
+    var allowAm = tbl.getAttribute('data-allow-am') === '1';
+    var used = usedTypes(tbl);
+    tbl.querySelectorAll('tr.edit select[data-ct-type]').forEach(function(sel){
+      var cur = sel.value;
+      sel.innerHTML = '';
+      var first = document.createElement('option'); first.value = ''; first.textContent = 'Pick a type…'; sel.appendChild(first);
+      CONTACT_KINDS.forEach(function(k){
+        if(!allowAm && k[0] === 'account_manager') return;
+        if(used[k[0]] && k[0] !== cur) return;
+        var o = document.createElement('option'); o.value = k[0]; o.textContent = k[1]; sel.appendChild(o);
+      });
+      if(cur) sel.value = cur;
+    });
+  }
+  function refreshDepts(row){
+    var deptSel = row.querySelector('[data-ct-dept]');
+    if(!deptSel) return;
+    var type = row.querySelector('[data-ct-type]').value;
+    var cur = deptSel.value;
+    var list = type ? (CONTACT_DEPTS[type] || []) : (CONTACT_DEPTS["other"] || []);
+    deptSel.innerHTML = '';
+    var first = document.createElement('option'); first.value = ''; first.textContent = 'Pick a department…'; deptSel.appendChild(first);
+    list.forEach(function(d){ var o = document.createElement('option'); o.value = d.id; o.textContent = d.name; deptSel.appendChild(o); });
+    if(cur){
+      if(deptSel.querySelector('option[value="' + cur + '"]')) deptSel.value = cur;
+      else { var o = document.createElement('option'); o.value = cur; o.textContent = deptName(cur); deptSel.appendChild(o); deptSel.value = cur; }
+    }
+    if(!deptSel.value && list.length === 1){ deptSel.value = String(list[0].id); }
+  }
+  function refreshUsers(row){
+    var userSel = row.querySelector('[data-ct-user]');
+    if(!userSel) return;
+    var deptSel = row.querySelector('[data-ct-dept]');
+    var d = deptSel ? deptSel.value : '';
+    var cur = userSel.value;
+    userSel.innerHTML = '';
+    var first = document.createElement('option'); first.value = ''; first.textContent = 'Pick a user…'; userSel.appendChild(first);
+    Object.keys(USERS).forEach(function(id){
+      var u = USERS[id];
+      if(d && String(u.department_id) !== String(d)) return;
+      var o = document.createElement('option'); o.value = id; o.textContent = u.full_name + (u.designation ? ' · ' + u.designation : ''); userSel.appendChild(o);
+    });
+    if(cur){
+      if(userSel.querySelector('option[value="' + cur + '"]')) userSel.value = cur;
+      else if(USERS[cur]){ var o = document.createElement('option'); o.value = cur; o.textContent = USERS[cur].full_name + (USERS[cur].designation ? ' · ' + USERS[cur].designation : ''); userSel.appendChild(o); userSel.value = cur; }
+    }
+  }
+  function fillDetails(row){
+    var userSel = row.querySelector('[data-ct-user]');
+    var u = userSel ? USERS[userSel.value] : null;
+    var set = function(name, val){ var el = row.querySelector('[data-f="' + name + '"]'); if(el) el.value = val; };
+    ['designation','phone','email'].forEach(function(n){ set(n, u ? u[n] : ''); });
+  }
+  function syncDeptFromUser(row){
+    var userSel = row.querySelector('[data-ct-user]');
+    var deptSel = row.querySelector('[data-ct-dept]');
+    var typeSel = row.querySelector('[data-ct-type]');
+    var u = userSel ? USERS[userSel.value] : null;
+    if(!u || !deptSel || !typeSel) return;
+    var list = CONTACT_DEPTS[typeSel.value] || [];
+    var ok = list.some(function(d){ return String(d.id) === String(u.department_id); });
+    if(ok && String(deptSel.value) !== String(u.department_id)){
+      deptSel.value = String(u.department_id);
+      refreshUsers(row);
+    }
+  }
+  function showErr(tbl, msg){
+    var wrap = tbl.closest('.ctbl-wrap');
+    var p = wrap ? wrap.querySelector('[data-ct-err]') : null;
+    if(!p) return;
+    if(msg){ p.textContent = msg; p.hidden = false; } else { p.hidden = true; p.textContent = ''; }
+  }
+  function saveRow(row, tbl){
+    var side = tbl.getAttribute('data-side');
+    var typeSel = row.querySelector('[data-ct-type]');
+    var err = null, focusEl = null;
+    function need(el, label){
+      if(!el || !String(el.value).trim()){ err = 'The ' + label + ' is required.'; focusEl = el; return true; }
+      return false;
+    }
+    if(!typeSel.value){ err = 'Pick a type.'; focusEl = typeSel; }
+    else {
+      var checks = side === 'hrc'
+        ? [[row.querySelector('[data-ct-dept]'), 'department'], [row.querySelector('[data-ct-user]'), 'user']]
+        : [[row.querySelector('[data-f="name"]'), 'name'], [row.querySelector('[data-f="dept"]'), 'department']];
+      checks.push([row.querySelector('[data-f="designation"]'), 'designation']);
+      checks.push([row.querySelector('[data-f="phone"]'), 'phone']);
+      checks.push([row.querySelector('[data-f="email"]'), 'email']);
+      for(var i = 0; i < checks.length && !err; i++){ need(checks[i][0], checks[i][1]); }
+    }
+    var emailEl = row.querySelector('[data-f="email"]');
+    if(!err && emailEl && emailEl.value.indexOf('@') < 0){ err = 'The email does not look right.'; focusEl = emailEl; }
+    if(err){ showErr(tbl, err); if(focusEl) focusEl.focus(); return; }
+    showErr(tbl, null);
+    lockRow(row, tbl);
+    refreshTypes(tbl);
+    ensureBlank(tbl);
+  }
+  function lockRow(row, tbl){
+    var side = tbl.getAttribute('data-side');
+    var type = row.querySelector('[data-ct-type]').value;
+    function hidden(name, val){ var h = document.createElement('input'); h.type = 'hidden'; h.name = name; h.value = val == null ? '' : val; return h; }
+    function setCell(td, text, hiddens){ td.textContent = text; hiddens.forEach(function(h){ td.appendChild(h); }); }
+    var cells = row.querySelectorAll('td');
+    setCell(cells[0], CONTACT_KIND_LABEL[type] || type, [hidden('c_' + side + '_type', type)]);
+    if(side === 'hrc'){
+      var userSel = row.querySelector('[data-ct-user]');
+      var deptSel = row.querySelector('[data-ct-dept]');
+      var u = USERS[userSel.value] || {};
+      setCell(cells[1], u.full_name || '', [hidden('c_' + side + '_user', userSel.value)]);
+      setCell(cells[2], deptSel.options[deptSel.selectedIndex] ? deptSel.options[deptSel.selectedIndex].textContent : '', [hidden('c_' + side + '_dept', deptSel.value)]);
+    } else {
+      setCell(cells[1], row.querySelector('[data-f="name"]').value, [hidden('c_' + side + '_name', row.querySelector('[data-f="name"]').value)]);
+      setCell(cells[2], row.querySelector('[data-f="dept"]').value, [hidden('c_' + side + '_dept', row.querySelector('[data-f="dept"]').value)]);
+    }
+    ['designation','phone','email'].forEach(function(n, i){
+      var el = row.querySelector('[data-f="' + n + '"]');
+      setCell(cells[3 + i], el.value, [hidden('c_' + side + '_' + n, el.value)]);
+    });
+    cells[6].innerHTML = '';
+    var rm = document.createElement('button');
+    rm.className = 'b sm dg'; rm.type = 'button'; rm.setAttribute('data-ct-remove', ''); rm.textContent = 'Remove';
+    cells[6].appendChild(rm);
+    row.className = 'saved';
+  }
+  function ensureBlank(tbl){
+    if(tbl.querySelector('tr.edit')) return;
+    var allowAm = tbl.getAttribute('data-allow-am') === '1';
+    var used = usedTypes(tbl);
+    var total = allowAm ? 4 : 3;
+    if(Object.keys(used).length >= total) return;
+    var side = tbl.getAttribute('data-side');
+    var tpl = document.getElementById('ct-tpl-' + side);
+    if(!tpl) return;
+    tbl.querySelector('tbody').appendChild(tpl.content.cloneNode(true));
+    refreshTypes(tbl);
+  }
+  document.querySelectorAll('table.ctbl').forEach(function(tbl){
+    tbl.addEventListener('change', function(e){
+      var row = e.target.closest('tr.edit'); if(!row) return;
+      if(e.target.matches('[data-ct-type]')){ refreshDepts(row); refreshUsers(row); fillDetails(row); refreshTypes(tbl); }
+      else if(e.target.matches('[data-ct-dept]')){ refreshUsers(row); fillDetails(row); }
+      else if(e.target.matches('[data-ct-user]')){ syncDeptFromUser(row); fillDetails(row); }
+    });
+    tbl.addEventListener('click', function(e){
+      var saveBtn = e.target.closest('[data-ct-save]');
+      var rmBtn = e.target.closest('[data-ct-remove]');
+      if(saveBtn){ saveRow(saveBtn.closest('tr.edit'), tbl); }
+      else if(rmBtn){ rmBtn.closest('tr').remove(); refreshTypes(tbl); ensureBlank(tbl); }
+    });
+    tbl.querySelectorAll('tr.edit').forEach(function(row){
+      refreshDepts(row); refreshUsers(row);
+    });
+    refreshTypes(tbl);
+  });
+})();
+</script>
+{% endmacro %}

@@ -7408,3 +7408,21 @@ The HRC Department dropdown now holds only the departments that do that job: the
 Tested: 349/349 client checks and 752/752 suite checks on the work copy and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors, 150 defined classes. No files added or removed (131 zip entries).
 
 OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.
+
+139. Build 120 — the HRC Department match ignores capital letters (25 November 2026)
+==============================================================================
+Build 119 limited each HRC Department dropdown to the departments that do the job, but it matched the names exactly — and on the live server the technical support department is spelled "Technical Support" with a capital S, so it never appeared in the Technical contact's dropdown (the user's photo showed Core, IT and Transmission only). The match now ignores capital letters and stray spaces, on the form and on save, so a hand-typed department name still matches. Nothing else changes.
+
+Tested: 351/351 client checks and 752/752 suite checks on the work copy and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors, 150 defined classes. No files added or removed (131 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.
+
+140. Build 121 — the contacts are two tables, and a SOF edit can change them (25 November 2026)
+==============================================================================================
+The side-by-side contact blocks are now two tables, one under the other: Client contacts, then HRC Technologies Ltd contacts. Each table has the columns Type, Name, Department, Designation, Phone, Email, and a Save button at the right of each row. A row is one person: pick the Type, fill the row, press Save — a new blank row appears below it. A Type can be used once in each table, Others included, so once a Type is saved it leaves the dropdown. The Account manager, Technical contact and Billing contact must all be filled in both tables; Others is optional. On the client side the Name and Department are typed by hand. On the HRC side the Department list follows the Type (Account manager: only Sales & Marketing; Technical contact: Core, IT, Transmission, Technical support; Billing contact: only Revenue Assurance; Others: every department), then the Name list holds that department's users, and picking a user fills their designation, phone and email from the portal account — still editable per client, never the profile. The HRC account manager is the client's portal account manager, as before. A saved row can be Removed (its Type comes back); it cannot be edited in place.
+
+After the Sales admin approves the client the contacts are locked on the client form: the account manager cannot change them from Add services any more — a change posted there is ignored. They change only from a SOF's Edit page, which now carries the same two tables for every contact except the account manager. A contact change on the SOF edit is staged with the SOF and lands only when the Sales admin approves it; the client page names the change in the SOF changes card. The portal admin can still change the contacts directly from Add services. The SOF file is still required for a SOF edit, even a contacts-only one.
+
+Tested: 366/366 client checks and 752/752 suite checks on the work copy and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors, 151 defined classes. One file added (templates/_contacts_tables.html, 132 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.

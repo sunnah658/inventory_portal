@@ -888,10 +888,16 @@ CREATE TABLE IF NOT EXISTS client_contacts (
     -- keeps the portal department and user it was picked from; the four
     -- fields stay editable per client and never touch that user's profile.
     -- Old rows (before build 118) have no side or kind and are not shown.
+    -- Build 121: the slots are two tables now — one row per person, and
+    -- a fourth kind, 'other', which may be used once per table like the
+    -- rest. A client-side row also keeps the department the person was
+    -- typed with (department_name); an HRC row keeps the portal
+    -- department instead (department_id).
     side          VARCHAR(20),
     ctype         VARCHAR(20),
     department_id INT,
     user_id       INT,
+    department_name VARCHAR(255),
     FOREIGN KEY (client_id) REFERENCES client_onboardings(id) ON DELETE CASCADE,
     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -1264,6 +1270,15 @@ def _upgrade_client_contacts_118(conn):
                  "(SELECT id FROM client_form_fields WHERE page=2 AND " + _gone + ")")
     conn.execute("DELETE FROM client_form_fields WHERE page=2 AND " + _gone)
     conn.execute("UPDATE client_form_fields SET page=2 WHERE page=3")
+
+
+def _upgrade_client_contacts_121(conn):
+    """Build 121: the contacts are two tables now, and a client-side row
+    keeps the department it was typed with (department_name). An older
+    live database has no such column — it is added here, and the rows
+    already in it keep working: the six old slots are the same three
+    kinds, and 'other' is simply a kind no old row carries."""
+    _ensure_column(conn, "client_contacts", "department_name", "VARCHAR(255)")
 
 
 def _upgrade_sof_status(conn):
@@ -1657,6 +1672,7 @@ def init_db():
         _upgrade_sof_san_history(conn)
         _upgrade_sof_file_history(conn)
         _upgrade_client_contacts_118(conn)
+        _upgrade_client_contacts_121(conn)
         _ensure_column(conn, "users", "is_dept_admin", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_ddb_attachment", "INT NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "can_portal_admin", "INT NOT NULL DEFAULT 0")

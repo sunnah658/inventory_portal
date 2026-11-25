@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% from "_design6.html" import quick_card with context %}
+{% from "_contacts_tables.html" import contacts_table, contacts_script with context %}
 {% block title %}Edit SOF {{ s['sof_number'] }} · {{ c['client_name'] }}{% endblock %}
 {% block content %}
 <div class="tw"><div>
-<div class="card medium">
+<div class="card">
   <h1>Edit SOF {{ s['sof_number'] }} · {{ c['client_name'] }}</h1>
-  <p class="hint" style="margin-bottom:14px">Only this SOF is affected — the client itself stays as it is. <span class="req">*</span> means required. Set the activation date here if it changes — Revenue Assurance can still change it before the change goes to Finance.{% if not portal_admin %} Upload a new SOF file with this change — it is required, even when you only change a date. The old file stays downloadable.{% endif %}</p>
+  <p class="hint" style="margin-bottom:14px">Only this SOF and the client's contacts are affected — the client itself stays as it is, and the account manager cannot change here. <span class="req">*</span> means required. Set the activation date here if it changes — Revenue Assurance can still change it before the change goes to Finance.{% if not portal_admin %} Upload a new SOF file with this change — it is required, even when you only change a date. The old file stays downloadable.{% endif %}</p>
   <form method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fm">
@@ -19,10 +20,15 @@
       <div class="fd"><label>Commercial impact date</label><input name="commercial_impact_date" type="date" value="{{ (s['commercial_impact_date']|string)[:10] if s['commercial_impact_date'] else '' }}"></div>
       <div class="fd full"><label>Termination reason</label><textarea name="termination_reason" rows="2">{{ s['termination_reason'] or '' }}</textarea></div>
     </div>
+    <h2 style="margin:18px 0 4px">Contacts</h2>
+    <p class="hint">Every contact except the account manager can change here. The contact change goes through the same approval as this SOF change, and lands when the Sales admin approves it.</p>
+    {{ contacts_table('client', contacts['client'], contact_partial['client'], False, False) }}
+    {{ contacts_table('hrc', contacts['hrc'], contact_partial['hrc'], False, False) }}
     {% if portal_admin %}<p class="hint">As portal admin, this change applies at once, and a termination takes effect at once.</p>
     {% else %}<p class="hint">The Sales admin approves or rejects this change. Once approved, this SOF goes to pending and Revenue Assurance may change the dates before forwarding it to Finance. A termination takes effect only then.</p>{% endif %}
     <div class="acts"><a class="b" href="{{ back }}">Cancel</a> <button class="b p" type="submit">Save SOF change</button></div>
   </form>
+  {{ contacts_script() }}
 </div>
 </div>
 <div class="stack rail">

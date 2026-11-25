@@ -12,13 +12,6 @@
 .flow small{display:block;color:var(--soft)}
 .kv{display:flex;padding:8px 0;border-top:1px solid var(--line)}.kv:first-child{border-top:0}
 .kv b{flex:0 0 150px;color:var(--soft);font-weight:500}
-/* Build 118: the contacts sit side by side — Client contact on the left,
-   HRC Technologies Ltd contacts on the right — each with its three blocks. */
-.contacts2{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
-@media (max-width:980px){.contacts2{grid-template-columns:1fr}}
-.contacts2 .kv b{flex-basis:110px}
-.contacts2 h4{margin:14px 0 2px}
-.contacts2 h4:first-child{margin-top:0}
 </style>{% endblock %}
 {% block content %}
 <div class="hd"><div><h1>{{ c|client_no }} · {{ c['client_name'] }}</h1></div>
@@ -86,27 +79,18 @@
 </div>
 
 <div class="card"><h2>Contacts</h2>
-  {% set by_slot = {} %}
-  {% for r in contacts %}{% if r['side'] and r['ctype'] %}{% set _ = by_slot.update({(r['side'], r['ctype']): r}) %}{% endif %}{% endfor %}
-  <div class="contacts2">
   {% for side, side_label in contact_sides %}
-    <div>
-      <h3>{{ side_label }}</h3>
-      {% for kind, kind_label in contact_kinds %}
-      {% set r = by_slot.get((side, kind)) %}
-      <h4>{{ kind_label }}</h4>
-      <div class="kv"><b>Name</b><span>{{ r['name'] if r else '—' }}</span></div>
-      <div class="kv"><b>Designation</b><span>{{ r['designation'] or '—' if r else '—' }}</span></div>
-      <div class="kv"><b>Phone</b><span>{{ r['phone'] or '—' if r else '—' }}</span></div>
-      <div class="kv"><b>Email</b><span>{{ r['email'] or '—' if r else '—' }}</span></div>
-      {% endfor %}
-    </div>
+  <h3>{{ side_label }}</h3>
+  {% set rows = contacts | selectattr('side', 'equalto', side) | selectattr('ctype') | list %}
+  {% if rows %}<div class="tb"><table class="ctbl"><thead><tr><th>Type</th><th>Name</th><th>Department</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
+    {% for r in rows %}<tr><td>{{ contact_kind_label[r['ctype']] }}</td><td>{{ r['name'] }}</td><td>{{ r['department_name'] or '—' }}</td><td>{{ r['designation'] or '—' }}</td><td>{{ r['phone'] or '—' }}</td><td>{{ r['email'] or '—' }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="hint">No contacts.</p>{% endif %}
   {% endfor %}
-  </div>
 </div>
 
 {% if edits %}<div class="card"><h2>SOF changes</h2>
-  <p class="hint">Only the SOF named here is affected — the client itself stays as it is.</p>
+  <p class="hint">Only the SOF named here is affected — the client itself stays as it is, except for a contact change the edit carries.</p>
   {% for e in edits %}<div style="border-top:1px solid var(--line);padding:10px 0">
     <p style="margin:0 0 4px"><b>SOF {{ e.num }}</b>{% if e.is_new %} (new SOF){% endif %} · {{ e.editor_name }} · {{ e.created_at|showdttz }}</p>
     <p class="hint" style="margin:0 0 8px">{{ e.change }}</p>
