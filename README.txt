@@ -7321,3 +7321,23 @@ files added or removed (131 zip entries).
 OPEN: (h) DeptDB All-rows column picker, narrow centred forms,
 one-by-one delete password question, 07:00 reminder + accounts_user
 confirmations still unanswered.
+
+==============================================================================
+136. Build 117 — calm button hover, no more lift (25 November 2026)
+==============================================================================
+The white buttons all over the project jumped up 2px and threw a big
+shadow on hover (transform:translateY(-2px) plus a 10px 22px shadow on
+.b:hover), which did not look professional. Fix, in static/style.css only:
+the lift and the shadow are gone from every button, and hovering now fades
+a white button a little transparent instead (opacity:.85) with a smooth
+0.2s fade, so the change is gentle rather than a jump. The blue primary
+buttons keep their own slight dim on hover (brightness(.95)) and stay
+fully opaque; the red danger buttons fade like the white ones. Nothing
+else changes: button sizes, colours, borders and positions are untouched,
+and the buttons look exactly as before until the mouse is over them. No
+template, route or database change; no files added or removed
+(131 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms,
+one-by-one delete password question, 07:00 reminder + accounts_user
+confirmations still unanswered.

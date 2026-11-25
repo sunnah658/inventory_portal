@@ -1,4 +1,13 @@
 ==============================================================================
+ CALMER BUTTON HOVER — NO MORE JUMP ON HOVER (2026-11-25)
+==============================================================================
+ The white buttons used to jump up and throw a big shadow when the mouse
+ went over them. That lift and shadow are gone: hovering now just fades
+ a button a little transparent, with a smooth 0.2 second fade. The blue
+ buttons keep their own slight dim. Nothing else about the buttons
+ changes.
+
+==============================================================================
  THE RIGHT GAP NOW MATCHES THE LEFT — THE MIDDLE IS A BIT WIDER (2026-11-24)
 ==============================================================================
  After build 115 the middle still had more empty space on its right
