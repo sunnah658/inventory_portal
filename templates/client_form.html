@@ -15,10 +15,24 @@
 .js-only,.rm{display:none}.js .js-only,.js .rm{display:inline-block}
 .stepnav{display:flex;gap:8px;justify-content:space-between;margin-top:14px;flex-wrap:wrap}
 /* Build 118: the contacts sit side by side — Client contact on the left,
-   HRC Technologies Ltd contacts on the right — each with its three blocks. */
+   HRC Technologies Ltd contacts on the right — each with its three blocks.
+   Build 119: one grid row per kind instead of one column per side, so the
+   Client and HRC boxes for the same kind share a row and are always the
+   same height. Inside a box the field rows spread top to bottom, so the
+   first and last rows sit on the same lines on both sides. */
 .contacts2{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
-@media (max-width:980px){.contacts2{grid-template-columns:1fr}}
+@media (max-width:980px){.contacts2{grid-template-columns:1fr}.align-gap{display:none}}
 .contacts2 h4{margin:14px 0 8px}
+.contacts2 .cbox{display:flex;flex-direction:column}
+.contacts2 .cbox .fm{flex:1;align-content:space-between}
+/* Build 119: the Client box has one field row fewer than the HRC box
+   (no Department/User picker). This blank row is exactly one field row
+   tall — a label plus an input-height blank — so the Client Name row
+   sits on the same line as the HRC Name row, and Phone/Email likewise.
+   It is empty on purpose; nothing is missing. On a narrow screen the
+   boxes stack, so the gap is hidden there. */
+.align-gap{margin-bottom:15px}
+.align-gap .blank{height:44px}
 .rowbox p{margin:0 0 8px}
 </style>{% endblock %}
 {# One input for an admin-set field: name is the form name, value the current value. #}
@@ -35,7 +49,7 @@
 {% set lock = 'disabled' if page1_locked else '' %}
 {% block content %}
 <div class="tw"><div>
-<div class="card medium">
+<div class="card">
   <h1>{{ 'Change client ' ~ (c|client_no) if cid else 'New client' }}</h1>
   <p class="hint" style="margin-bottom:14px">{% if am_mode %}Change the contacts and the services of this finished client. Contact changes apply at once; every service change goes to the Sales admin for approval.{% else %}Two pages: the client with its contacts, and its services. When you click Save, the request goes to the Sales admin for approval.{% endif %} <span class="req">*</span> means required.</p>
   {% if c and c['reject_reason'] %}<div class="alert"><b>Rejected:</b> {{ c['reject_reason'] }}</div>{% endif %}
@@ -54,7 +68,6 @@
         {% if 'phone' in fmap %}<div class="fd"><label for="phone">{{ fmap['phone'].name }}{% if fmap['phone'].required %} <span class="req">*</span>{% endif %}</label><input id="phone" name="phone" type="text" maxlength="255" value="{{ form.phone }}"{% if fmap['phone'].required %} required{% endif %} {{ lock }}></div>{% endif %}
         {% if 'email' in fmap %}<div class="fd"><label for="email">{{ fmap['email'].name }}{% if fmap['email'].required %} <span class="req">*</span>{% endif %}</label><input id="email" name="email" type="text" maxlength="255" value="{{ form.email }}"{% if fmap['email'].required %} required{% endif %} {{ lock }}></div>{% endif %}
         {% if 'address' in fmap %}<div class="fd full"><label for="address">{{ fmap['address'].name }}{% if fmap['address'].required %} <span class="req">*</span>{% endif %}</label><textarea id="address" name="address" rows="2" {{ lock }}>{{ form.address }}</textarea></div>{% endif %}
-        {% if 'notes' in fmap %}<div class="fd full"><label for="notes">{{ fmap['notes'].name }}{% if fmap['notes'].required %} <span class="req">*</span>{% endif %}</label><textarea id="notes" name="notes" rows="2" {{ lock }}>{{ form.notes }}</textarea></div>{% endif %}
         <div class="fd"><label for="bin">BIN</label><input id="bin" name="bin" type="text" maxlength="255" value="{{ form.bin }}" {{ lock }}></div>
         <div class="fd"><label for="tin">TIN</label><input id="tin" name="tin" type="text" maxlength="255" value="{{ form.tin }}" {{ lock }}></div>
         <div class="fd full"><label for="bin_address">BIN address</label><textarea id="bin_address" name="bin_address" rows="2" {{ lock }}>{{ form.bin_address }}</textarea></div>
@@ -64,20 +77,20 @@
       <h3 style="margin:18px 0 4px">Contacts</h3>
       <p class="hint">All six are required. On the HRC side, pick a department and a user — their name, designation, phone and email fill in from the portal account, and you can still change them; a change here never touches the person's own profile. The HRC account manager is the client's account manager in the portal.</p>
       <div class="contacts2">
+      {% for side, side_label in contact_sides %}<h4>{{ side_label }}</h4>{% endfor %}
+      {% for kind, kind_label in contact_kinds %}
       {% for side, side_label in contact_sides %}
-        <div>
-          <h4>{{ side_label }}</h4>
-          {% for kind, kind_label in contact_kinds %}
           {% set slot = form.contacts[side][kind] %}
           {% set key = 'c_' ~ side ~ '_' ~ kind %}
-          <div class="rowbox"{% if side == 'hrc' %} data-hrc{% endif %}>
+          <div class="rowbox cbox"{% if side == 'hrc' %} data-hrc{% endif %}>
             <p><b>{{ kind_label }}</b></p>
+            {% if side == 'client' %}<div class="align-gap" aria-hidden="true"><label>&nbsp;</label><div class="blank"></div></div>{% endif %}
             <div class="fm">
             {% if side == 'hrc' %}
               <div class="fd"><label>Department <span class="req">*</span></label>
                 <select name="{{ key }}_dept" data-dept required{% if page1_locked and kind == 'account_manager' %} disabled{% endif %}>
                   <option value="">Pick a department…</option>
-                  {% for d in departments %}<option value="{{ d['id'] }}"{{ ' selected' if slot.department_id == d['id'] }}>{{ d['name'] }}</option>{% endfor %}
+                  {% for d in contact_depts[kind] %}<option value="{{ d['id'] }}"{{ ' selected' if slot.department_id == d['id'] }}>{{ d['name'] }}</option>{% endfor %}
                 </select></div>
               <div class="fd"><label>User <span class="req">*</span></label>
                 <select name="{{ key }}_user" data-user required{% if page1_locked and kind == 'account_manager' %} disabled{% endif %}>
@@ -91,8 +104,7 @@
               <div class="fd"><label>Email <span class="req">*</span></label><input name="{{ key }}_email" type="text" maxlength="255" value="{{ slot.email }}" data-f="email" required></div>
             </div>
           </div>
-          {% endfor %}
-        </div>
+      {% endfor %}
       {% endfor %}
       </div>
       <div class="stepnav"><span></span><button class="b p" type="button" data-go="2">Next: services</button></div>
@@ -121,6 +133,7 @@
         <span><a class="b" href="{{ url_for('clients.detail', cid=cid) if cid else back }}">Cancel</a> <button class="b p" type="submit">{% if am_mode %}Save services{% else %}Save and send for approval{% endif %}</button></span></div>
     </section>
   </form>
+</div>
 </div>
 <div class="stack rail">
   <div class="card"><h2>What happens next</h2>

@@ -7398,3 +7398,13 @@ and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors,
 OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one
 delete password question, 07:00 reminder + accounts_user confirmations
 still unanswered. BIN/TIN on the SOF PDF: unanswered.
+
+138. Build 119 — the New client form fills the width, and each HRC contact takes only its own departments (25 November 2026)
+==============================================================================
+The New client form was a narrow 820px card with the "What happens next" and "Quick actions" cards tucked underneath it, even on a wide screen with empty space on the right. The form card now fills the full width of the page, and the two rail cards sit in the right-hand rail beside it, as on the other pages. The Notes field is off the form: it stays configured, and it still shows on the client page and on the SOF PDF — see OPEN. The three contact blocks on each side are the same height, and the fields now sit on the same lines on both sides: the Client side has no Department/User row, so each Client block has one blank row at the top, exactly one field tall, and Name sits on the same line as Name, Designation with Designation, Phone with Phone and Email with Email. On a narrow screen the blocks stack and the blank row is hidden.
+
+The HRC Department dropdown now holds only the departments that do that job: the Account manager takes only Sales & Marketing, the Technical contact takes Core, IT, Transmission or Technical support, and the Billing contact takes only Revenue Assurance. A department from another job is refused on save, with a message naming the departments that kind takes. The User dropdown still follows the department picked, and the HRC Account manager picked is still the client's account manager in the portal. Nothing else about the client flow changes.
+
+Tested: 349/349 client checks and 752/752 suite checks on the work copy and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors, 150 defined classes. No files added or removed (131 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.

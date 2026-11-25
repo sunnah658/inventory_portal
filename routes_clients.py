@@ -870,6 +870,16 @@ CONTACT_SIDES = (("client", "Client contact"), ("hrc", "HRC Technologies Ltd con
 CONTACT_KINDS = (("account_manager", "Account manager"), ("technical", "Technical contact"),
                  ("billing", "Billing contact"))
 
+# Build 119: the HRC Department dropdown holds only the departments that
+# do that job — the account manager comes from Sales & Marketing, the
+# technical contact from Core, IT, Transmission or Technical support,
+# the billing contact from Revenue Assurance. Names, not ids: the ids
+# differ between databases, and a department that does not exist here
+# simply offers nothing.
+CONTACT_HRC_DEPTS = {"account_manager": ("Sales & Marketing",),
+                     "technical": ("Core", "IT", "Transmission", "Technical support"),
+                     "billing": ("Revenue Assurance",)}
+
 
 def _blank_contact():
     return {"department_id": None, "user_id": None, "name": "", "designation": "", "phone": "", "email": ""}
@@ -1002,9 +1012,13 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
             if side == "hrc":
                 dept = f.get(key + "_dept", type=int)
                 user = f.get(key + "_user", type=int)
-                if dept is not None and db.execute(
-                        "SELECT 1 FROM departments WHERE id=?", (dept,)).fetchone() is None:
-                    dept = None
+                _dept_name = None
+                if dept is not None:
+                    _drow = db.execute("SELECT name FROM departments WHERE id=?", (dept,)).fetchone()
+                    if _drow is None:
+                        dept = None
+                    else:
+                        _dept_name = _drow["name"]
                 if user is not None and db.execute(
                         "SELECT 1 FROM users WHERE id=? AND is_active=1 AND is_deleted=0",
                         (user,)).fetchone() is None:
@@ -1020,6 +1034,16 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False):
                 # as he is), so they are not posted and no error is raised
                 # for them — the caller keeps the old department and user.
                 _am_locked = am_mode and kind == "account_manager"
+                # Build 119: the department must be one of this kind's own
+                # (CONTACT_HRC_DEPTS) — a posted department from another
+                # job is refused, not silently kept.
+                _wrong_kind_dept = (_dept_name is not None
+                                    and _dept_name not in CONTACT_HRC_DEPTS[kind])
+                if _wrong_kind_dept:
+                    _names = CONTACT_HRC_DEPTS[kind]
+                    _or = (" or ".join(_names) if len(_names) == 1
+                           else ", ".join(_names[:-1]) + " or " + _names[-1])
+                    errors.append(f"{label}: the department must be {_or}.")
                 if dept is None and not _am_locked:
                     errors.append(f"{label}: pick the department.")
                 if user is None and not _am_locked and not _wrong_dept:
@@ -1212,6 +1236,10 @@ def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_loc
     # account when a user is picked — the details stay editable and
     # change only this client.
     departments = [dict(r) for r in db.execute("SELECT id, name FROM departments ORDER BY name").fetchall()]
+    # Build 119: each HRC kind offers only its own departments (see
+    # CONTACT_HRC_DEPTS above).
+    contact_depts = {kind: [d for d in departments if d["name"] in CONTACT_HRC_DEPTS[kind]]
+                     for kind, _kl in CONTACT_KINDS}
     users_info = {u["id"]: {"department_id": u["department_id"], "full_name": u["full_name"] or "",
                             "designation": u["designation"] or "", "phone": u["phone"] or "",
                             "email": u["email"] or ""}
@@ -1225,6 +1253,7 @@ def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_loc
     return render_template("client_form.html", form=form, cid=cid, c=c, errors=errors or [],
                            departments=departments, users_info=users_info, max_rows=MAX_ROWS,
                            contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
+                           contact_depts=contact_depts,
                            fields=fields, fmap=fmap, am_mode=am_mode, page1_locked=page1_locked,
                            services_blank=services_blank,
                            back=url_for("ddb.index", tab="clients"))

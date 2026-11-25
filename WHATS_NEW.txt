@@ -1,4 +1,23 @@
 ==============================================================================
+ THE NEW CLIENT FORM FILLS THE WIDTH, AND EACH HRC CONTACT TAKES ONLY
+ ITS OWN DEPARTMENTS (2026-11-25)
+==============================================================================
+ The New client form was a narrow card with "What happens next" and
+ "Quick actions" tucked underneath it, even though there was empty space
+ on the right. The form now fills the full width of the page, and those
+ two cards sit in the right-hand rail beside it. The Notes field is off
+ the form. The contact blocks on the two sides are the same height, and
+ the fields sit on the same lines on both sides — Name with Name, Phone
+ with Phone — in all three parts.
+
+ The HRC Department dropdown now holds only the departments that do
+ that job: the Account manager takes only Sales & Marketing, the
+ Technical contact takes Core, IT, Transmission or Technical support,
+ and the Billing contact takes only Revenue Assurance. A department from
+ another job is refused on save. Nothing else about the client flow
+ changes.
+
+==============================================================================
  THE NEW CLIENT FORM IS TWO PAGES — CONTACTS MOVE INTO THE CLIENT PAGE,
  WITH BIN, BIN ADDRESS AND TIN (2026-11-25)
 ==============================================================================
