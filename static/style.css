@@ -228,6 +228,9 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--p
 .fmt-banner{background:#1f497d;color:#fff;font-weight:700;text-align:center;padding:8px 10px;font-size:15px;margin-top:26px}
 .fmt-del{display:inline-block;width:22px;height:22px;line-height:19px;text-align:center;border:1.5px solid #b3261e;color:#b3261e;border-radius:6px;font-weight:700;font-size:16px;background:#fff;cursor:pointer;padding:0}
 .fmt-fixed{background:#e8eef4;font-weight:700}
+.fmt-static{font-weight:700}
+.fmt-comment{margin:8px 0 14px}
+.fmt-comment>label{font-weight:700;font-size:12px;display:block;margin-bottom:4px}
 .fmt-bar{background:#4f81bd;color:#fff;font-weight:700;padding:6px 10px;font-size:13px}
 .fmt-sub{background:#95b3d7;font-weight:700;padding:6px 10px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .fmt-tbl{width:100%;border-collapse:collapse;margin-bottom:10px}

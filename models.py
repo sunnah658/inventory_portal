@@ -1070,7 +1070,11 @@ CREATE TABLE IF NOT EXISTS client_sof_service_locations (
 -- tables under the Internet part, each with the same columns as the
 -- service locations (SL, name, bandwidth, remarks). GGC and FNA have
 -- one row each and their name is fixed (GGC / FNA); Data Connectivity
--- takes as many rows as the user adds.
+-- takes as many rows as the user adds. Build 125: Data Connectivity
+-- has two location columns instead of one name — Location A and
+-- Location B, each picked from the locations table's Name column.
+-- The old `name` column is kept (a build 124 row's name reads as its
+-- Location A) and new rows store it as their Location A.
 CREATE TABLE IF NOT EXISTS client_sof_ggc (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     sof_id      INT NOT NULL,
@@ -1096,8 +1100,34 @@ CREATE TABLE IF NOT EXISTS client_sof_data_connectivity (
     sof_id      INT NOT NULL,
     position    INT NOT NULL DEFAULT 0,
     name        VARCHAR(255),
+    location_a  VARCHAR(255),  -- build 125: the first end of the link
+    location_b  VARCHAR(255),  -- build 125: the second end of the link
     bandwidth   VARCHAR(255),
     remarks     TEXT,
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The Others table (build 125): the catch-all rows under Data
+-- Connectivity — one row per other service, with its details.
+CREATE TABLE IF NOT EXISTS client_sof_others (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id          INT NOT NULL,
+    position        INT NOT NULL DEFAULT 0,
+    service         VARCHAR(255),
+    service_details TEXT,
+    remarks         TEXT,
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The section comments (build 125): one Technical details comment per
+-- sub-heading of the Internet part — locations, service locations,
+-- GGC, FNA, data connectivity and others. Only a filled comment is
+-- stored; a blank one leaves no row.
+CREATE TABLE IF NOT EXISTS client_sof_section_comments (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    section_key VARCHAR(32) NOT NULL,
+    comment     TEXT,
     FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1774,6 +1804,8 @@ def init_db():
         _ensure_column(conn, "client_services", "activation_date", "DATE")  # the activation date of THIS SOF (2026-11-19)
         _ensure_column(conn, "client_services", "billing_type", "VARCHAR(16)")  # Prepaid or Postpaid (2026-11-26)
         _ensure_column(conn, "client_sof_service_locations", "remarks", "TEXT")  # the Remarks column (2026-11-26)
+        _ensure_column(conn, "client_sof_data_connectivity", "location_a", "VARCHAR(255)")  # Location A (2026-11-26)
+        _ensure_column(conn, "client_sof_data_connectivity", "location_b", "VARCHAR(255)")  # Location B (2026-11-26)
         _ensure_column(conn, "client_services", "public_code", "VARCHAR(255)")  # the SOF's own share code HRC-##### for the QR on its PDF
         _ensure_column(conn, "client_services", "public_enabled", "INT NOT NULL DEFAULT 1")
         _ensure_column(conn, "client_services", "public_views", "INT NOT NULL DEFAULT 0")

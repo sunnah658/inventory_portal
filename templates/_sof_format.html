@@ -3,18 +3,24 @@
    `i` is the service's index, so the format fields are named
    fmt_*_<i> and each section posts its own rows. Build 124: the SOF
    row is the SOF number only — the SOF file field is gone, and the
-   activation date moved into the Dates block under it (Type,
-   activation date, commercial impact date, service end date), which
-   every service type has. The format tables show only for an
+   activation date moved into the Dates block under it (Billing Mode,
+   activation date, commercial impact date, service end date — the
+   "Type" label became "Billing Mode" in build 125), which every
+   service type has. The format tables show only for an
    Internet/Data SOF (a legacy "Internet" SOF too); the SOF row and
    the Dates show for any picked type. The two Add tables start with
    their stored rows plus one blank row; + Add appends another, and
-   the (-) on the left of every row deletes it. A service location's
-   Name is a dropdown fed from the locations table above it. The
-   last-mile table has the format's two rows and no Add button. The
-   Yes/No answers and the route type are radio groups styled as the
-   format's squares (see .fmtpick in style.css), so only one of each
-   pair can be picked. #}
+   the (-) on the left of every row deletes it. Build 125: a picked
+   name in the service locations and in Data Connectivity freezes to
+   static text once + Add is clicked (the value still posts through a
+   hidden input), Data Connectivity has Location A and Location B
+   dropdowns instead of one Name, an Others table follows it, and a
+   Technical details comment sits under every sub-heading's table. A
+   service location's Name is a dropdown fed from the locations table
+   above it. The last-mile table has the format's two rows and no Add
+   button. The Yes/No answers and the route type are radio groups
+   styled as the format's squares (see .fmtpick in style.css), so only
+   one of each pair can be picked. #}
 {% macro svc_name_options(locations, selected) %}
   <option value=""></option>
   {% for loc in locations %}{% if loc.name %}<option value="{{ loc.name }}"{{ ' selected' if loc.name == selected }}>{{ loc.name }}</option>{% endif %}{% endfor %}
@@ -29,7 +35,7 @@
   </div>
   <div class="fmt-sub"><span>Dates</span></div>
   <div class="sofrow">
-    <div class="soffield"><label>Type</label><select class="fmt-in" name="sof_billing_type"><option value=""></option><option value="Prepaid"{{ ' selected' if r.billing_type == 'Prepaid' }}>Prepaid</option><option value="Postpaid"{{ ' selected' if r.billing_type == 'Postpaid' }}>Postpaid</option></select></div>
+    <div class="soffield"><label>Billing Mode</label><select class="fmt-in" name="sof_billing_type"><option value=""></option><option value="Prepaid"{{ ' selected' if r.billing_type == 'Prepaid' }}>Prepaid</option><option value="Postpaid"{{ ' selected' if r.billing_type == 'Postpaid' }}>Postpaid</option></select></div>
     <div class="soffield"><label>{{ fmap['sof_activation_date'].name }}{% if not am_mode %} <span class="req">*</span>{% endif %}</label><input class="fmt-in" name="sof_activation_date" type="date" value="{{ r.activation_date }}"{% if not am_mode %} required{% endif %}></div>
     <div class="soffield"><label>Commercial impact date</label><input class="fmt-in" name="sof_commercial_impact_date" type="date" value="{{ r.commercial_impact_date }}"></div>
     <div class="soffield"><label>Service end date</label><input class="fmt-in" name="sof_service_end_date" type="date" value="{{ r.termination_date }}"></div>
@@ -52,6 +58,7 @@
         <td><input class="fmt-in" name="fmt_loc_coords_{{ i }}" type="text" maxlength="255"></td></tr>
       </tbody>
     </table>
+    <div class="fmt-comment"><label>Technical details comment</label><textarea class="fmt-ta" name="fmt_comment_locations_{{ i }}" rows="2">{{ r.format.comments.locations }}</textarea></div>
     <div class="fmt-bar">INTERNET</div>
     <div class="fmt-sub"><span>SERVICE LOCATIONS</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
     <table class="fmt-tbl">
@@ -59,7 +66,11 @@
       <tbody>
       {% for s in r.format.service_locations %}
         <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-sl>{{ loop.index }}</td>
+        {% if s.name %}
+        <td><span class="fmt-static">{{ s.name }}</span><input type="hidden" name="fmt_svc_name_{{ i }}" value="{{ s.name }}"></td>
+        {% else %}
         <td><select class="fmt-in" name="fmt_svc_name_{{ i }}" data-svc-name>{{ svc_name_options(r.format.locations, s.name) }}</select></td>
+        {% endif %}
         <td><input class="fmt-in" name="fmt_svc_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ s.bandwidth }}"></td>
         <td><input class="fmt-in" name="fmt_svc_remarks_{{ i }}" type="text" maxlength="255" value="{{ s.remarks }}"></td></tr>
       {% endfor %}
@@ -69,6 +80,7 @@
         <td><input class="fmt-in" name="fmt_svc_remarks_{{ i }}" type="text" maxlength="255"></td></tr>
       </tbody>
     </table>
+    <div class="fmt-comment"><label>Technical details comment</label><textarea class="fmt-ta" name="fmt_comment_service_locations_{{ i }}" rows="2">{{ r.format.comments.service_locations }}</textarea></div>
     <div class="fmt-sub"><span>GGC</span></div>
     <table class="fmt-tbl">
       <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>NAME</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
@@ -79,6 +91,7 @@
         <td><input class="fmt-in" name="fmt_ggc_remarks_{{ i }}" type="text" maxlength="255" value="{{ r.format.ggc.remarks }}"></td></tr>
       </tbody>
     </table>
+    <div class="fmt-comment"><label>Technical details comment</label><textarea class="fmt-ta" name="fmt_comment_ggc_{{ i }}" rows="2">{{ r.format.comments.ggc }}</textarea></div>
     <div class="fmt-sub"><span>FNA</span></div>
     <table class="fmt-tbl">
       <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>NAME</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
@@ -89,22 +102,51 @@
         <td><input class="fmt-in" name="fmt_fna_remarks_{{ i }}" type="text" maxlength="255" value="{{ r.format.fna.remarks }}"></td></tr>
       </tbody>
     </table>
+    <div class="fmt-comment"><label>Technical details comment</label><textarea class="fmt-ta" name="fmt_comment_fna_{{ i }}" rows="2">{{ r.format.comments.fna }}</textarea></div>
     <div class="fmt-sub"><span>DATA CONNECTIVITY</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
     <table class="fmt-tbl">
-      <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>NAME</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
+      <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>LOCATION A</th><th>LOCATION B</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
       <tbody>
       {% for d in r.format.data_connectivity %}
-        <tr><td></td><td data-sl>{{ loop.index }}</td>
-        <td><input class="fmt-in" name="fmt_dc_name_{{ i }}" type="text" maxlength="255" value="{{ d.name }}"></td>
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-sl>{{ loop.index }}</td>
+        {% if d.location_a %}
+        <td><span class="fmt-static">{{ d.location_a }}</span><input type="hidden" name="fmt_dc_location_a_{{ i }}" value="{{ d.location_a }}"></td>
+        {% else %}
+        <td><select class="fmt-in" name="fmt_dc_location_a_{{ i }}" data-dc-loc>{{ svc_name_options(r.format.locations, d.location_a) }}</select></td>
+        {% endif %}
+        {% if d.location_b %}
+        <td><span class="fmt-static">{{ d.location_b }}</span><input type="hidden" name="fmt_dc_location_b_{{ i }}" value="{{ d.location_b }}"></td>
+        {% else %}
+        <td><select class="fmt-in" name="fmt_dc_location_b_{{ i }}" data-dc-loc>{{ svc_name_options(r.format.locations, d.location_b) }}</select></td>
+        {% endif %}
         <td><input class="fmt-in" name="fmt_dc_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ d.bandwidth }}"></td>
         <td><input class="fmt-in" name="fmt_dc_remarks_{{ i }}" type="text" maxlength="255" value="{{ d.remarks }}"></td></tr>
       {% endfor %}
-        <tr><td></td><td data-sl>{{ r.format.data_connectivity|length + 1 }}</td>
-        <td><input class="fmt-in" name="fmt_dc_name_{{ i }}" type="text" maxlength="255"></td>
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-sl>{{ r.format.data_connectivity|length + 1 }}</td>
+        <td><select class="fmt-in" name="fmt_dc_location_a_{{ i }}" data-dc-loc>{{ svc_name_options(r.format.locations, '') }}</select></td>
+        <td><select class="fmt-in" name="fmt_dc_location_b_{{ i }}" data-dc-loc>{{ svc_name_options(r.format.locations, '') }}</select></td>
         <td><input class="fmt-in" name="fmt_dc_bandwidth_{{ i }}" type="text" maxlength="255"></td>
         <td><input class="fmt-in" name="fmt_dc_remarks_{{ i }}" type="text" maxlength="255"></td></tr>
       </tbody>
     </table>
+    <div class="fmt-comment"><label>Technical details comment</label><textarea class="fmt-ta" name="fmt_comment_data_connectivity_{{ i }}" rows="2">{{ r.format.comments.data_connectivity }}</textarea></div>
+    <div class="fmt-sub"><span>OTHERS</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
+    <table class="fmt-tbl">
+      <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>SERVICE</th><th>SERVICE DETAILS</th><th>REMARKS</th></tr></thead>
+      <tbody>
+      {% for o in r.format.others %}
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-sl>{{ loop.index }}</td>
+        <td><input class="fmt-in" name="fmt_oth_service_{{ i }}" type="text" maxlength="255" value="{{ o.service }}"></td>
+        <td><input class="fmt-in" name="fmt_oth_details_{{ i }}" type="text" maxlength="2000" value="{{ o.service_details }}"></td>
+        <td><input class="fmt-in" name="fmt_oth_remarks_{{ i }}" type="text" maxlength="255" value="{{ o.remarks }}"></td></tr>
+      {% endfor %}
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-sl>{{ r.format.others|length + 1 }}</td>
+        <td><input class="fmt-in" name="fmt_oth_service_{{ i }}" type="text" maxlength="255"></td>
+        <td><input class="fmt-in" name="fmt_oth_details_{{ i }}" type="text" maxlength="2000"></td>
+        <td><input class="fmt-in" name="fmt_oth_remarks_{{ i }}" type="text" maxlength="255"></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-comment"><label>Technical details comment</label><textarea class="fmt-ta" name="fmt_comment_others_{{ i }}" rows="2">{{ r.format.comments.others }}</textarea></div>
     <div class="fmt-bar">TECHNICAL DETAILS</div>
     <table class="fmt-tbl">
       <tbody>
@@ -165,7 +207,7 @@
     <div class="fmt-bar">OFFNET SUPPORT</div>
     <table class="fmt-tbl">
       <tbody>
-        <tr><td class="fmt-lab" colspan="2">**ANY SUPPORT BEYOND INTERCLOUD DEMARC IS OFFNET SUPPORT**</td></tr>
+        <tr><td class="fmt-lab" colspan="2">**ANY SUPPORT BEYOND HRC TECHNOLOGIES LTD DEMARC IS OFFNET SUPPORT**</td></tr>
         <tr><td class="fmt-lab">CONFIGURING GATEWAY DURING SERVICE DELIVERY</td>
         <td><label><input class="fmtpick" type="radio" name="fmt_off_gateway_{{ i }}" value="yes"{{ ' checked' if r.format.off_gateway == 'yes' }}> YES</label>
         <label><input class="fmtpick" type="radio" name="fmt_off_gateway_{{ i }}" value="no"{{ ' checked' if r.format.off_gateway == 'no' }}> NO</label></td></tr>

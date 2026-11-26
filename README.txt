@@ -7462,3 +7462,25 @@ Tested: 379/379 client checks and 757/757 suite checks on the work copy and on a
 OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.
 
 OPEN from this build: the Data Connectivity rows have no (-) button — say if they need one; the Type is optional and blank by default — say if it should be required or default to Prepaid; a new SOF has no file until one is uploaded from its SOF Edit page; the format is still not shown on the client page or the SOF PDF, and it is still not editable from the SOF Edit page; the form setup still lists the Service / Service description / Details fields, which are no longer rendered; one service per New client form — say if two service types at once are needed; the Service description column is blank for new SOFs.
+
+144. Build 125 — Billing Mode, frozen dropdowns, Data Connectivity Location A and B, an Others table, and a Technical details comment under every sub-heading (26 November 2026)
+==============================================================================================
+In the Dates block the "Type" dropdown is now labelled "Billing Mode" — same dropdown, same options (Prepaid or Postpaid, optional and blank by default). The label is "Billing Mode" on the form, in the form setup hint, and in the SOF changes card when the value changes.
+
+A picked name now freezes. In the service locations table and in Data Connectivity, once you pick a name from the dropdown and click + Add, the new row appears below and the picked row's dropdown is replaced by the picked name as plain text. The value still posts with the form (a hidden input carries it). A stored row shows its picked name the same way — as static text, not a dropdown. To change a picked name, delete that row with the (-) button and add a new one.
+
+Data Connectivity has a (-) button on the left of every row now, like the other two tables. Its Name column is replaced by two columns, Location A and Location B, each a dropdown fed from the locations table's Name column — the same source as the service locations Name dropdown.
+
+Under Data Connectivity is a new "Others" sub-heading with a table of SL, Service, Service details and Remarks, a + Add button and a (-) on every row. Service and Service details are plain text inputs.
+
+Every sub-heading in the Internet part now has a "Technical details comment" long-text field under its table: Locations, Service Locations, GGC, FNA, Data Connectivity and Others — six in all.
+
+In the Offnet Support part the line now reads "**ANY SUPPORT BEYOND HRC TECHNOLOGIES LTD DEMARC IS OFFNET SUPPORT**" — INTERCLOUD is renamed to HRC TECHNOLOGIES LTD.
+
+Stored with the SOF: client_sof_data_connectivity gains location_a and location_b; the old name column is kept, a build 124 row's name reads as its Location A, and a new row stores its Location A there too. Two new tables (client_sof_others, client_sof_section_comments), 66 tables in all. A Data Connectivity row with anything in it needs its Location A, and a row with a Location A needs its bandwidth; Location B is optional. An Others row with anything in it needs its Service.
+
+Tested: 383/383 client checks and 760/760 suite checks on the work copy and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors, 165 defined classes. No files added or removed (133 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.
+
+OPEN from this build: the Billing Mode is optional and blank by default — say if it should be required or default to Prepaid; a new SOF has no file until one is uploaded from its SOF Edit page; the format is still not shown on the client page or the SOF PDF, and it is still not editable from the SOF Edit page; the form setup still lists the Service / Service description / Details fields, which are no longer rendered; one service per New client form — say if two service types at once are needed; the Service description column is blank for new SOFs.

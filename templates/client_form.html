@@ -151,7 +151,9 @@
   // Build 124: a service location's Name is picked from the locations
   // above — the dropdown lists the names typed in the locations table.
   // A name picked earlier stays on the list even after the location
-  // is renamed, so a save never drops it silently.
+  // is renamed, so a save never drops it silently. Build 125: the
+  // Data Connectivity Location A and Location B dropdowns list the
+  // same names.
   function syncSvcNames(){
     document.querySelectorAll('[data-svc]').forEach(function(sec){
       var names=[];
@@ -159,7 +161,7 @@
         var v=inp.value.trim();
         if(v&&names.indexOf(v)===-1)names.push(v);
       });
-      sec.querySelectorAll('select[data-svc-name]').forEach(function(sel){
+      sec.querySelectorAll('select[data-svc-name],select[data-dc-loc]').forEach(function(sel){
         var cur=sel.value;
         sel.innerHTML='';
         var blank=document.createElement('option'); blank.value=''; blank.textContent='Pick a location…';
@@ -172,6 +174,42 @@
         }
         sel.value=cur;
       });
+    });
+  }
+  // Build 125: once a name is picked in a service location or in a
+  // Data Connectivity end and + Add is clicked, the picked row's
+  // dropdown is replaced by the picked name as static text — the value
+  // still posts through a hidden input with the same name, in the same
+  // cell, so the row order is unchanged. A frozen cell remembers which
+  // kind of dropdown it was, so a cloned row can get a fresh one back.
+  function freezeRow(row){
+    row.querySelectorAll('select[data-svc-name],select[data-dc-loc]').forEach(function(sel){
+      var v=sel.value;
+      if(!v)return;
+      var td=sel.parentNode;
+      var span=document.createElement('span');
+      span.className='fmt-static';
+      span.textContent=v;
+      span.setAttribute('data-frozen', sel.hasAttribute('data-svc-name')?'svc-name':'dc-loc');
+      var hid=document.createElement('input');
+      hid.type='hidden'; hid.name=sel.name; hid.value=v;
+      td.innerHTML='';
+      td.appendChild(span);
+      td.appendChild(hid);
+    });
+  }
+  function unfreezeRow(row){
+    row.querySelectorAll('span.fmt-static[data-frozen]').forEach(function(span){
+      var td=span.parentNode;
+      var hid=td.querySelector('input[type=hidden]');
+      var kind=span.getAttribute('data-frozen');
+      var sel=document.createElement('select');
+      sel.className='fmt-in';
+      if(hid)sel.name=hid.name;
+      if(kind==='svc-name')sel.setAttribute('data-svc-name','');
+      else sel.setAttribute('data-dc-loc','');
+      td.innerHTML='';
+      td.appendChild(sel);
     });
   }
   form.addEventListener('input',function(e){
@@ -193,7 +231,8 @@
   // renumber the locations' SI and the service locations' SL column.
   // Build 124: the (-) on the left of a row of the two tables deletes
   // it, and renumbers what is left; the service-location names are
-  // re-synced after either change.
+  // re-synced after either change. Build 125: Data Connectivity and
+  // Others have the (-) too, and their names freeze on + Add.
   function renumber(tbody){
     tbody.querySelectorAll('tr').forEach(function(tr,idx){
       var si=tr.querySelector('[data-si]'); if(si)si.textContent=idx+1;
@@ -209,6 +248,9 @@
       // The last row stays — it is cleared instead, so + Add always
       // has a row to clone and the table never stands empty.
       if(tbody.querySelectorAll('tr').length<=1){
+        // A frozen last row gets its dropdowns back when it is cleared,
+        // or the picked name would still show with an empty value.
+        unfreezeRow(tr);
         tr.querySelectorAll('input,textarea,select').forEach(function(el){
           if(el.type==='checkbox'||el.type==='radio')el.checked=false; else el.value='';
         });
@@ -227,7 +269,12 @@
       if(!tbl||tbl.tagName!=='TABLE')return;
       var tbody=tbl.querySelector('tbody');
       var last=tbody.querySelector('tr:last-child');
+      // Build 125: the last row's picked dropdowns freeze before the
+      // clone is taken, so the new row starts blank and the picked
+      // names stay as static text.
+      freezeRow(last);
       var row=last.cloneNode(true);
+      unfreezeRow(row);
       row.querySelectorAll('input,textarea,select').forEach(function(el){
         if(el.type==='checkbox'||el.type==='radio')el.checked=false; else el.value='';
       });

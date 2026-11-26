@@ -429,7 +429,7 @@ def _sof_snapshot(row):
 _SOF_FIELD_LABELS = {"sof_number": "SOF number", "service": "Service",
                      "service_description": "Service description", "details": "Details",
                      "activation_date": "Activation date",
-                     "billing_type": "Type",
+                     "billing_type": "Billing Mode",
                      "termination_date": "Termination date",
                      "commercial_impact_date": "Commercial impact date",
                      "termination_reason": "Termination reason"}
@@ -927,16 +927,21 @@ FORMAT_TYPES = ("Internet/Data", "Internet")
 
 
 def _blank_format():
-    """The Internet SOF format, empty (build 123, build 124): the two Add
-    tables (locations, service locations), the GGC and FNA rows and the
-    Data Connectivity rows (build 124), the technical details, the
-    last-mile rows and the offnet support answers. A format with no
-    locations and no service locations counts as empty — no row is
-    stored for it."""
+    """The Internet SOF format, empty (build 123, build 124, build 125):
+    the two Add tables (locations, service locations), the GGC and FNA
+    rows, the Data Connectivity rows (build 124, build 125: two location
+    columns, Location A and Location B) and the Others rows (build 125),
+    one Technical details comment per sub-heading (build 125), the
+    technical details, the last-mile rows and the offnet support
+    answers. A format with no locations and no service locations counts
+    as empty — no row is stored for it."""
     return {"locations": [], "service_locations": [],
             "ggc": {"name": "GGC", "bandwidth": "", "remarks": ""},
             "fna": {"name": "FNA", "bandwidth": "", "remarks": ""},
             "data_connectivity": [],
+            "others": [],
+            "comments": {"locations": "", "service_locations": "", "ggc": "",
+                         "fna": "", "data_connectivity": "", "others": ""},
             "bgp_peering": "", "as_number": "", "route_type": "", "prefix": "",
             "additional_ip": "", "tech_other_details": "",
             "last_mile": [{"name": "", "fiber": 0, "radio": 0, "protection": 0, "dual_pop": 0,
@@ -955,7 +960,10 @@ def _blank_format():
 def _format_has_data(fmt):
     if not fmt:
         return False
-    if fmt.get("locations") or fmt.get("service_locations") or fmt.get("data_connectivity"):
+    if fmt.get("locations") or fmt.get("service_locations") or fmt.get("data_connectivity") \
+            or fmt.get("others"):
+        return True
+    if any((fmt.get("comments") or {}).values()):
         return True
     for _key in ("ggc", "fna"):
         _row = fmt.get(_key) or {}
@@ -1002,17 +1010,31 @@ def _format_from_db(db, sof_id):
                                 for r in db.execute("SELECT * FROM client_sof_service_locations "
                                                    "WHERE sof_id=? ORDER BY position, id", (sof_id,)).fetchall()]
     # Build 124: the GGC and FNA rows (one each, name fixed) and the
-    # Data Connectivity rows.
+    # Data Connectivity rows. Build 125: Data Connectivity has two
+    # location columns — a build 124 row's old `name` reads as its
+    # Location A, and a new row stores its Location A there too.
     for _key, _tbl, _label in (("ggc", "client_sof_ggc", "GGC"), ("fna", "client_sof_fna", "FNA")):
         _r = db.execute("SELECT * FROM " + _tbl + " WHERE sof_id=? ORDER BY position, id LIMIT 1",
                         (sof_id,)).fetchone()
         if _r:
             fmt[_key] = {"name": _r["name"] or _label, "bandwidth": _r["bandwidth"] or "",
                          "remarks": _r.get("remarks") or ""}
-    fmt["data_connectivity"] = [dict(name=r["name"] or "", bandwidth=r["bandwidth"] or "",
+    fmt["data_connectivity"] = [dict(location_a=r.get("location_a") or r["name"] or "",
+                                     location_b=r.get("location_b") or "",
+                                     bandwidth=r["bandwidth"] or "",
                                      remarks=r.get("remarks") or "")
                                 for r in db.execute("SELECT * FROM client_sof_data_connectivity "
                                                    "WHERE sof_id=? ORDER BY position, id", (sof_id,)).fetchall()]
+    # Build 125: the Others rows and the Technical details comment of
+    # each sub-heading.
+    fmt["others"] = [dict(service=r["service"] or "", service_details=r["service_details"] or "",
+                          remarks=r["remarks"] or "")
+                     for r in db.execute("SELECT * FROM client_sof_others "
+                                        "WHERE sof_id=? ORDER BY position, id", (sof_id,)).fetchall()]
+    for _r in db.execute("SELECT * FROM client_sof_section_comments WHERE sof_id=?",
+                         (sof_id,)).fetchall():
+        if _r["section_key"] in fmt["comments"]:
+            fmt["comments"][_r["section_key"]] = _r["comment"] or ""
     _lm = [dict(name=r["name"] or "", fiber=r["fiber"] or 0, radio=r["radio"] or 0,
                 protection=r["protection"] or 0, dual_pop=r["dual_pop"] or 0,
                 interface=r["interface"] or "", media=r["media"] or "",
@@ -1029,9 +1051,10 @@ def _format_from_db(db, sof_id):
 
 
 def _write_format(db, sof_id, fmt):
-    """Store one SOF's Internet format (build 123, build 124): the old
-    rows go first, then the new ones. A SOF with no format data keeps no
-    rows — a type changed away from Internet/Data drops its format with it."""
+    """Store one SOF's Internet format (build 123, build 124, build 125):
+    the old rows go first, then the new ones. A SOF with no format data
+    keeps no rows — a type changed away from Internet/Data drops its
+    format with it."""
     db.execute("DELETE FROM client_sof_format WHERE sof_id=?", (sof_id,))
     db.execute("DELETE FROM client_sof_locations WHERE sof_id=?", (sof_id,))
     db.execute("DELETE FROM client_sof_service_locations WHERE sof_id=?", (sof_id,))
@@ -1039,6 +1062,8 @@ def _write_format(db, sof_id, fmt):
     db.execute("DELETE FROM client_sof_ggc WHERE sof_id=?", (sof_id,))
     db.execute("DELETE FROM client_sof_fna WHERE sof_id=?", (sof_id,))
     db.execute("DELETE FROM client_sof_data_connectivity WHERE sof_id=?", (sof_id,))
+    db.execute("DELETE FROM client_sof_others WHERE sof_id=?", (sof_id,))
+    db.execute("DELETE FROM client_sof_section_comments WHERE sof_id=?", (sof_id,))
     if not _format_has_data(fmt):
         return
     db.execute("INSERT INTO client_sof_format(sof_id,bgp_peering,as_number,route_type,prefix,additional_ip,"
@@ -1081,9 +1106,21 @@ def _write_format(db, sof_id, fmt):
                    (sof_id, 0, _g.get("name") or "FNA", _g.get("bandwidth") or None,
                     _g.get("remarks") or None))
     for i, r in enumerate(fmt.get("data_connectivity") or []):
-        db.execute("INSERT INTO client_sof_data_connectivity(sof_id,position,name,bandwidth,remarks) "
+        db.execute("INSERT INTO client_sof_data_connectivity(sof_id,position,name,location_a,location_b,"
+                   "bandwidth,remarks) VALUES (?,?,?,?,?,?,?)",
+                   (sof_id, i, r.get("location_a") or None, r.get("location_a") or None,
+                    r.get("location_b") or None, r["bandwidth"] or None, r.get("remarks") or None))
+    # Build 125: the Others rows and the filled Technical details
+    # comments (a blank comment leaves no row).
+    for i, r in enumerate(fmt.get("others") or []):
+        db.execute("INSERT INTO client_sof_others(sof_id,position,service,service_details,remarks) "
                    "VALUES (?,?,?,?,?)",
-                   (sof_id, i, r["name"] or None, r["bandwidth"] or None, r.get("remarks") or None))
+                   (sof_id, i, r["service"] or None, r.get("service_details") or None,
+                    r.get("remarks") or None))
+    for _key, _comment in (fmt.get("comments") or {}).items():
+        if _comment:
+            db.execute("INSERT INTO client_sof_section_comments(sof_id,section_key,comment) "
+                       "VALUES (?,?,?)", (sof_id, _key, _comment))
     for i, r in enumerate(fmt["last_mile"]):
         if not any((r["name"], r["fiber"], r["radio"], r["protection"], r["dual_pop"],
                     r["interface"], r["media"], r["cstm_dvc"])):
@@ -1356,25 +1393,45 @@ def _read_sof_format(f, i, errors):
         _rm = _txt(_key + "_remarks")
         if _bw or _rm:
             fmt[_key] = {"name": _label, "bandwidth": _bw, "remarks": _rm}
-    # Build 124: Data Connectivity — the same columns as the Internet
-    # table, the name typed by hand. A row with anything in it needs
-    # its name, and a named row needs its bandwidth.
-    _dnames = _lst("dc_name")
+    # Build 125: Data Connectivity — two location columns instead of
+    # one name. A row with anything in it needs its Location A, and a
+    # row with a Location A needs its bandwidth. Location B is optional.
+    _da = _lst("dc_location_a")
+    _db = _lst("dc_location_b")
     _dbws = _lst("dc_bandwidth")
     _dremarks = _lst("dc_remarks")
-    for j in range(max(len(_dnames), len(_dbws), len(_dremarks))):
-        _nm = _clean(_pick(_dnames, j))
+    for j in range(max(len(_da), len(_db), len(_dbws), len(_dremarks))):
+        _a = _clean(_pick(_da, j))
+        _b = _clean(_pick(_db, j))
         _bw = _clean(_pick(_dbws, j))
         _rm = (_pick(_dremarks, j) or "").strip()[:2000]
-        if not any((_nm, _bw, _rm)):
+        if not any((_a, _b, _bw, _rm)):
             continue
-        if not _nm:
-            errors.append("Page 2: a data connectivity row needs its name.")
+        if not _a:
+            errors.append("Page 2: a data connectivity row needs its Location A.")
             continue
         if not _bw:
-            errors.append(f"Page 2: data connectivity {_nm} needs its bandwidth.")
+            errors.append(f"Page 2: data connectivity {_a} needs its bandwidth.")
             continue
-        fmt["data_connectivity"].append({"name": _nm, "bandwidth": _bw, "remarks": _rm})
+        fmt["data_connectivity"].append({"location_a": _a, "location_b": _b,
+                                         "bandwidth": _bw, "remarks": _rm})
+    # Build 125: Others — a row with anything in it needs its Service.
+    _osvc = _lst("oth_service")
+    _odet = _lst("oth_details")
+    _orm = _lst("oth_remarks")
+    for j in range(max(len(_osvc), len(_odet), len(_orm))):
+        _sv = _clean(_pick(_osvc, j))
+        _dt = (_pick(_odet, j) or "").strip()[:2000]
+        _rm = (_pick(_orm, j) or "").strip()[:2000]
+        if not any((_sv, _dt, _rm)):
+            continue
+        if not _sv:
+            errors.append("Page 2: an Others row needs its Service.")
+            continue
+        fmt["others"].append({"service": _sv, "service_details": _dt, "remarks": _rm})
+    # Build 125: one Technical details comment per sub-heading.
+    for _key in ("locations", "service_locations", "ggc", "fna", "data_connectivity", "others"):
+        fmt["comments"][_key] = _txt("comment_" + _key)
     fmt["bgp_peering"] = _pick1("bgp", ("yes", "no"), "BGP peering")
     fmt["as_number"] = _clean(_one("as_number"))
     fmt["route_type"] = _pick1("route", ("default", "partial", "full"), "route type")

@@ -1,4 +1,25 @@
 ==============================================================================
+ BILLING MODE, FROZEN DROPDOWNS, DATA CONNECTIVITY LOCATION A AND B, AN
+ OTHERS TABLE, AND A TECHNICAL DETAILS COMMENT UNDER EVERY SUB-HEADING
+ (2026-11-26)
+==============================================================================
+ In the Dates block the "Type" dropdown is now labelled "Billing Mode"
+ — same dropdown, same options (Prepaid or Postpaid). A picked name
+ now freezes: in the service locations table and in Data Connectivity,
+ once you pick a name and click + Add, the new row appears below and
+ the picked row's dropdown is replaced by the picked name as plain
+ text. Data Connectivity has a (-) button on every row now, and its
+ Name column is replaced by two columns, Location A and Location B,
+ each a dropdown fed from the locations table's Name column. Under
+ Data Connectivity is a new "Others" sub-heading with a table of SL,
+ Service, Service details and Remarks, a + Add button and a (-) on
+ every row. Every sub-heading in the Internet part now has a
+ "Technical details comment" long-text field under its table:
+ Locations, Service Locations, GGC, FNA, Data Connectivity and
+ Others. In the Offnet Support part the line now reads "**ANY SUPPORT
+ BEYOND HRC TECHNOLOGIES LTD DEMARC IS OFFNET SUPPORT**".
+
+==============================================================================
  THE SERVICES PAGE: INTERNET/DATA, A DATES BLOCK, NO SOF FILE, AND THE
  INTERNET FORMAT GAINS SL NUMBERS, REMARKS, GGC, FNA AND DATA
  CONNECTIVITY (2026-11-26)
