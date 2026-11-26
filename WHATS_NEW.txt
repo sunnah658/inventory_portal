@@ -1,4 +1,28 @@
 ==============================================================================
+ THE SERVICES PAGE: INTERNET/DATA, A DATES BLOCK, NO SOF FILE, AND THE
+ INTERNET FORMAT GAINS SL NUMBERS, REMARKS, GGC, FNA AND DATA
+ CONNECTIVITY (2026-11-26)
+==============================================================================
+ The Service Type options are now Internet/Data, IPTSP, Mail, Domain
+ Hosting — Internet and Data are one option. A margin now sits between
+ the contacts tables and the SERVICE DETAILS part. The SOF row holds
+ only the SOF number: under it is a Dates block with Type (a dropdown,
+ Prepaid or Postpaid), Activation date, Commercial impact date and
+ Service end date. The Activation date lives only in the Dates block,
+ and every service type gets the SOF number and the Dates block. The
+ SOF file is not collected on the Services page any more — not on the
+ New client form and not on Add services, which opens with the Service
+ Type dropdown only. A new SOF has no file until one is uploaded from
+ its own Edit page. The two tables have a (-) button on the left of
+ every row to delete it. The service locations table now starts with
+ an SL number, its Name is a dropdown fed from the locations table's
+ Name column, and it has a Remarks column at the right. Under it a GGC
+ sub-heading with the same columns and Name fixed to GGC, then an FNA
+ sub-heading the same way with Name fixed to FNA — one row each, no
+ + Add. Under the Internet part a Data Connectivity heading with the
+ same columns, a plain-text Name, and a + Add button.
+
+==============================================================================
  THE SERVICES PAGE STARTS WITH A SERVICE TYPE, AND THE INTERNET SOF
  FORMAT IS THE SERVICE (2026-11-26)
 ==============================================================================

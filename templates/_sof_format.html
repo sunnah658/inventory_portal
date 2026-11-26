@@ -1,36 +1,52 @@
-{# Build 123: one service's SERVICE DETAILS — the SOF number,
-   activation date and SOF file in a row under the banner, then the
-   Internet SOF format as a form. `sof_body(i, r, fmap, am_mode,
-   services_blank)` renders the body of one service section; `i` is
-   the service's index, so the format fields are named fmt_*_<i> and
-   each section posts its own rows. The format tables show only for
-   an Internet service; the SOF row shows for any picked type. The
+{# Build 123: one service's SERVICE DETAILS. `sof_body(i, r, fmap,
+   am_mode, services_blank)` renders the body of one service section;
+   `i` is the service's index, so the format fields are named
+   fmt_*_<i> and each section posts its own rows. Build 124: the SOF
+   row is the SOF number only — the SOF file field is gone, and the
+   activation date moved into the Dates block under it (Type,
+   activation date, commercial impact date, service end date), which
+   every service type has. The format tables show only for an
+   Internet/Data SOF (a legacy "Internet" SOF too); the SOF row and
+   the Dates show for any picked type. The two Add tables start with
+   their stored rows plus one blank row; + Add appends another, and
+   the (-) on the left of every row deletes it. A service location's
+   Name is a dropdown fed from the locations table above it. The
+   last-mile table has the format's two rows and no Add button. The
    Yes/No answers and the route type are radio groups styled as the
    format's squares (see .fmtpick in style.css), so only one of each
-   pair can be picked. The two Add tables start with their stored
-   rows plus one blank row; + Add appends another. The last-mile
-   table has the format's two rows and no Add button. #}
+   pair can be picked. #}
+{% macro svc_name_options(locations, selected) %}
+  <option value=""></option>
+  {% for loc in locations %}{% if loc.name %}<option value="{{ loc.name }}"{{ ' selected' if loc.name == selected }}>{{ loc.name }}</option>{% endif %}{% endfor %}
+  {% if selected and selected not in locations|map(attribute='name')|list %}<option value="{{ selected }}" selected>{{ selected }}</option>{% endif %}
+{% endmacro %}
 {% macro sof_body(i, r, fmap, am_mode, services_blank) %}
   <div class="fmt-banner">SERVICE DETAILS</div>
   <div class="sofrow">
     <div class="soffield"><label>{{ fmap['sof_number'].name }} <span class="req">*</span></label><input class="fmt-in" name="sof_number" type="text" maxlength="255" value="{{ r.sof_number }}"></div>
-    <div class="soffield"><label>{{ fmap['sof_activation_date'].name }}{% if not am_mode %} <span class="req">*</span>{% endif %}</label><input class="fmt-in" name="sof_activation_date" type="date" value="{{ r.activation_date }}"{% if not am_mode %} required{% endif %}></div>
-    <div class="soffield"><label>SOF file{% if services_blank %} <span class="req">*</span>{% endif %}</label><input class="fmt-in" name="sof_file" type="file">
-      {% if r.id and r.file_name %}<div class="sub">Now: {{ r.file_name }} — choose a file to replace it. <label class="ck"><input type="checkbox" name="sof_remove" value="{{ r.id }}"> Remove this file</label></div>{% endif %}</div>
+    <div class="soffield"></div>
+    <div class="soffield"></div>
   </div>
-  <div data-svc-fmt{% if r.service_type != 'Internet' %} hidden{% endif %}>
+  <div class="fmt-sub"><span>Dates</span></div>
+  <div class="sofrow">
+    <div class="soffield"><label>Type</label><select class="fmt-in" name="sof_billing_type"><option value=""></option><option value="Prepaid"{{ ' selected' if r.billing_type == 'Prepaid' }}>Prepaid</option><option value="Postpaid"{{ ' selected' if r.billing_type == 'Postpaid' }}>Postpaid</option></select></div>
+    <div class="soffield"><label>{{ fmap['sof_activation_date'].name }}{% if not am_mode %} <span class="req">*</span>{% endif %}</label><input class="fmt-in" name="sof_activation_date" type="date" value="{{ r.activation_date }}"{% if not am_mode %} required{% endif %}></div>
+    <div class="soffield"><label>Commercial impact date</label><input class="fmt-in" name="sof_commercial_impact_date" type="date" value="{{ r.commercial_impact_date }}"></div>
+    <div class="soffield"><label>Service end date</label><input class="fmt-in" name="sof_service_end_date" type="date" value="{{ r.termination_date }}"></div>
+  </div>
+  <div data-svc-fmt{% if r.service_type not in ('Internet/Data', 'Internet') %} hidden{% endif %}>
     <div class="fmt-bar">NETWORK AND RELATED SERVICES</div>
     <div class="fmt-sub"><span>LIST OF LOCATIONS TO BE CONNECTED</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
     <table class="fmt-tbl">
-      <thead><tr><th style="width:36px">SI</th><th>NAME</th><th>ADDRESS</th><th>COORDINATES</th></tr></thead>
+      <thead><tr><th style="width:36px"></th><th style="width:36px">SI</th><th>NAME</th><th>ADDRESS</th><th>COORDINATES</th></tr></thead>
       <tbody>
       {% for loc in r.format.locations %}
-        <tr><td data-si>{{ loop.index }}</td>
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-si>{{ loop.index }}</td>
         <td><input class="fmt-in" name="fmt_loc_name_{{ i }}" type="text" maxlength="255" value="{{ loc.name }}"></td>
         <td><input class="fmt-in" name="fmt_loc_address_{{ i }}" type="text" maxlength="255" value="{{ loc.address }}"></td>
         <td><input class="fmt-in" name="fmt_loc_coords_{{ i }}" type="text" maxlength="255" value="{{ loc.coordinates }}"></td></tr>
       {% endfor %}
-        <tr><td data-si>{{ r.format.locations|length + 1 }}</td>
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-si>{{ r.format.locations|length + 1 }}</td>
         <td><input class="fmt-in" name="fmt_loc_name_{{ i }}" type="text" maxlength="255"></td>
         <td><input class="fmt-in" name="fmt_loc_address_{{ i }}" type="text" maxlength="255"></td>
         <td><input class="fmt-in" name="fmt_loc_coords_{{ i }}" type="text" maxlength="255"></td></tr>
@@ -39,14 +55,54 @@
     <div class="fmt-bar">INTERNET</div>
     <div class="fmt-sub"><span>SERVICE LOCATIONS</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
     <table class="fmt-tbl">
-      <thead><tr><th>NAME</th><th>BANDWIDTH</th></tr></thead>
+      <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>NAME</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
       <tbody>
       {% for s in r.format.service_locations %}
-        <tr><td><input class="fmt-in" name="fmt_svc_name_{{ i }}" type="text" maxlength="255" value="{{ s.name }}"></td>
-        <td><input class="fmt-in" name="fmt_svc_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ s.bandwidth }}"></td></tr>
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-sl>{{ loop.index }}</td>
+        <td><select class="fmt-in" name="fmt_svc_name_{{ i }}" data-svc-name>{{ svc_name_options(r.format.locations, s.name) }}</select></td>
+        <td><input class="fmt-in" name="fmt_svc_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ s.bandwidth }}"></td>
+        <td><input class="fmt-in" name="fmt_svc_remarks_{{ i }}" type="text" maxlength="255" value="{{ s.remarks }}"></td></tr>
       {% endfor %}
-        <tr><td><input class="fmt-in" name="fmt_svc_name_{{ i }}" type="text" maxlength="255"></td>
-        <td><input class="fmt-in" name="fmt_svc_bandwidth_{{ i }}" type="text" maxlength="255"></td></tr>
+        <tr><td><button class="fmt-del" type="button" data-fmt-del title="Delete this row">&minus;</button></td><td data-sl>{{ r.format.service_locations|length + 1 }}</td>
+        <td><select class="fmt-in" name="fmt_svc_name_{{ i }}" data-svc-name>{{ svc_name_options(r.format.locations, '') }}</select></td>
+        <td><input class="fmt-in" name="fmt_svc_bandwidth_{{ i }}" type="text" maxlength="255"></td>
+        <td><input class="fmt-in" name="fmt_svc_remarks_{{ i }}" type="text" maxlength="255"></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-sub"><span>GGC</span></div>
+    <table class="fmt-tbl">
+      <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>NAME</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
+      <tbody>
+        <tr><td></td><td data-sl>1</td>
+        <td><input class="fmt-in fmt-fixed" type="text" value="GGC" readonly></td>
+        <td><input class="fmt-in" name="fmt_ggc_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ r.format.ggc.bandwidth }}"></td>
+        <td><input class="fmt-in" name="fmt_ggc_remarks_{{ i }}" type="text" maxlength="255" value="{{ r.format.ggc.remarks }}"></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-sub"><span>FNA</span></div>
+    <table class="fmt-tbl">
+      <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>NAME</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
+      <tbody>
+        <tr><td></td><td data-sl>1</td>
+        <td><input class="fmt-in fmt-fixed" type="text" value="FNA" readonly></td>
+        <td><input class="fmt-in" name="fmt_fna_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ r.format.fna.bandwidth }}"></td>
+        <td><input class="fmt-in" name="fmt_fna_remarks_{{ i }}" type="text" maxlength="255" value="{{ r.format.fna.remarks }}"></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-sub"><span>DATA CONNECTIVITY</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
+    <table class="fmt-tbl">
+      <thead><tr><th style="width:36px"></th><th style="width:36px">SL</th><th>NAME</th><th>BANDWIDTH</th><th>REMARKS</th></tr></thead>
+      <tbody>
+      {% for d in r.format.data_connectivity %}
+        <tr><td></td><td data-sl>{{ loop.index }}</td>
+        <td><input class="fmt-in" name="fmt_dc_name_{{ i }}" type="text" maxlength="255" value="{{ d.name }}"></td>
+        <td><input class="fmt-in" name="fmt_dc_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ d.bandwidth }}"></td>
+        <td><input class="fmt-in" name="fmt_dc_remarks_{{ i }}" type="text" maxlength="255" value="{{ d.remarks }}"></td></tr>
+      {% endfor %}
+        <tr><td></td><td data-sl>{{ r.format.data_connectivity|length + 1 }}</td>
+        <td><input class="fmt-in" name="fmt_dc_name_{{ i }}" type="text" maxlength="255"></td>
+        <td><input class="fmt-in" name="fmt_dc_bandwidth_{{ i }}" type="text" maxlength="255"></td>
+        <td><input class="fmt-in" name="fmt_dc_remarks_{{ i }}" type="text" maxlength="255"></td></tr>
       </tbody>
     </table>
     <div class="fmt-bar">TECHNICAL DETAILS</div>

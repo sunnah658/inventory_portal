@@ -924,6 +924,7 @@ CREATE TABLE IF NOT EXISTS client_services (
     sof_number VARCHAR(255) NOT NULL,
     service    VARCHAR(255) NOT NULL,
     service_type VARCHAR(255) NOT NULL DEFAULT '',
+    billing_type VARCHAR(16),  -- Prepaid or Postpaid (build 124): the SOF's billing type, set on the Dates block
     service_description TEXT,
     details    TEXT,
     sof_file   TEXT,
@@ -1061,6 +1062,42 @@ CREATE TABLE IF NOT EXISTS client_sof_service_locations (
     position    INT NOT NULL DEFAULT 0,
     name        VARCHAR(255),
     bandwidth   VARCHAR(255),
+    remarks     TEXT,  -- build 124: the Remarks column at the right of the Internet table
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The GGC, FNA and Data Connectivity tables (build 124): the three
+-- tables under the Internet part, each with the same columns as the
+-- service locations (SL, name, bandwidth, remarks). GGC and FNA have
+-- one row each and their name is fixed (GGC / FNA); Data Connectivity
+-- takes as many rows as the user adds.
+CREATE TABLE IF NOT EXISTS client_sof_ggc (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    position    INT NOT NULL DEFAULT 0,
+    name        VARCHAR(255),
+    bandwidth   VARCHAR(255),
+    remarks     TEXT,
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS client_sof_fna (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    position    INT NOT NULL DEFAULT 0,
+    name        VARCHAR(255),
+    bandwidth   VARCHAR(255),
+    remarks     TEXT,
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS client_sof_data_connectivity (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    position    INT NOT NULL DEFAULT 0,
+    name        VARCHAR(255),
+    bandwidth   VARCHAR(255),
+    remarks     TEXT,
     FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1735,6 +1772,8 @@ def init_db():
         _ensure_column(conn, "client_onboardings", "deleted_by", "INT")
         _ensure_column(conn, "client_onboardings", "serial", "INT")  # the client's own serial number, from 1 (2026-11-23)
         _ensure_column(conn, "client_services", "activation_date", "DATE")  # the activation date of THIS SOF (2026-11-19)
+        _ensure_column(conn, "client_services", "billing_type", "VARCHAR(16)")  # Prepaid or Postpaid (2026-11-26)
+        _ensure_column(conn, "client_sof_service_locations", "remarks", "TEXT")  # the Remarks column (2026-11-26)
         _ensure_column(conn, "client_services", "public_code", "VARCHAR(255)")  # the SOF's own share code HRC-##### for the QR on its PDF
         _ensure_column(conn, "client_services", "public_enabled", "INT NOT NULL DEFAULT 1")
         _ensure_column(conn, "client_services", "public_views", "INT NOT NULL DEFAULT 0")

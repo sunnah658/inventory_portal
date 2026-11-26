@@ -56,7 +56,7 @@
     </section>
 
     <section class="step" data-step="2">
-      <h2>Page 2 · Services</h2><p class="hint">Pick the service type first. The contacts come next, then the service details in the SOF format. The SOF file is {% if services_blank %}required for every new SOF{% else %}optional{% endif %} (PDF, Word, Excel or an image).{% if am_mode %} A new SOF may have its activation date set here — Revenue Assurance can change it before the change goes to Finance.{% else %} Every SOF must have an activation date.{% endif %}</p>
+      <h2>Page 2 · Services</h2><p class="hint">Pick the service type first. The contacts come next, then the service details in the SOF format.{% if am_mode %} A new SOF may have its dates set here — Revenue Assurance can change them before the change goes to Finance.{% else %} Every SOF must have an activation date.{% endif %}</p>
       <div id="serviceRows">
       {% for r in form.services %}
         <div class="svc" data-svc>
@@ -131,7 +131,9 @@
   }
   document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){show(b.getAttribute('data-go'));});});
   // Build 123: the contacts and each service's SOF row appear once a
-  // Service Type is picked; the format appears only for Internet.
+  // Service Type is picked; the format appears only for Internet/Data
+  // (a legacy "Internet" SOF too).
+  function isFmtType(v){return v==='Internet/Data'||v==='Internet';}
   function syncSvc(){
     var anyType=false;
     document.querySelectorAll('[data-svc]').forEach(function(sec){
@@ -141,11 +143,40 @@
       var body=sec.querySelector('[data-svc-body]');
       if(body)body.hidden=!has;
       var fmt=sec.querySelector('[data-svc-fmt]');
-      if(fmt)fmt.hidden=!(sel&&sel.value==='Internet');
+      if(fmt)fmt.hidden=!(sel&&isFmtType(sel.value));
     });
     var cw=document.getElementById('contactsWrap');
     if(cw)cw.hidden=!anyType;
   }
+  // Build 124: a service location's Name is picked from the locations
+  // above — the dropdown lists the names typed in the locations table.
+  // A name picked earlier stays on the list even after the location
+  // is renamed, so a save never drops it silently.
+  function syncSvcNames(){
+    document.querySelectorAll('[data-svc]').forEach(function(sec){
+      var names=[];
+      sec.querySelectorAll('input[name^="fmt_loc_name_"]').forEach(function(inp){
+        var v=inp.value.trim();
+        if(v&&names.indexOf(v)===-1)names.push(v);
+      });
+      sec.querySelectorAll('select[data-svc-name]').forEach(function(sel){
+        var cur=sel.value;
+        sel.innerHTML='';
+        var blank=document.createElement('option'); blank.value=''; blank.textContent='Pick a location…';
+        sel.appendChild(blank);
+        names.forEach(function(n){
+          var o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o);
+        });
+        if(cur&&names.indexOf(cur)===-1){
+          var o=document.createElement('option'); o.value=cur; o.textContent=cur; sel.appendChild(o);
+        }
+        sel.value=cur;
+      });
+    });
+  }
+  form.addEventListener('input',function(e){
+    if(e.target.matches('input[name^="fmt_loc_name_"]'))syncSvcNames();
+  });
   form.addEventListener('change',function(e){
     if(e.target.matches('[data-svc-type]'))syncSvc();
     // A last mile is fiber or radio — picking one clears the other.
@@ -157,9 +188,38 @@
     }
   });
   syncSvc();
-  // + Add on the two format tables: clone the last row, clear it, and
-  // renumber the locations' SI column.
+  syncSvcNames();
+  // + Add on the format tables: clone the last row, clear it, and
+  // renumber the locations' SI and the service locations' SL column.
+  // Build 124: the (-) on the left of a row of the two tables deletes
+  // it, and renumbers what is left; the service-location names are
+  // re-synced after either change.
+  function renumber(tbody){
+    tbody.querySelectorAll('tr').forEach(function(tr,idx){
+      var si=tr.querySelector('[data-si]'); if(si)si.textContent=idx+1;
+      var sl=tr.querySelector('[data-sl]'); if(sl)sl.textContent=idx+1;
+    });
+  }
   form.addEventListener('click',function(e){
+    var del=e.target.closest('[data-fmt-del]');
+    if(del){
+      var tr=del.closest('tr');
+      var tbody=tr&&tr.parentNode;
+      if(!tr||!tbody)return;
+      // The last row stays — it is cleared instead, so + Add always
+      // has a row to clone and the table never stands empty.
+      if(tbody.querySelectorAll('tr').length<=1){
+        tr.querySelectorAll('input,textarea,select').forEach(function(el){
+          if(el.type==='checkbox'||el.type==='radio')el.checked=false; else el.value='';
+        });
+        syncSvcNames();
+        return;
+      }
+      tr.remove();
+      renumber(tbody);
+      syncSvcNames();
+      return;
+    }
     var add=e.target.closest('[data-fmt-add]');
     if(add){
       var sub=add.closest('.fmt-sub');
@@ -172,9 +232,8 @@
         if(el.type==='checkbox'||el.type==='radio')el.checked=false; else el.value='';
       });
       tbody.appendChild(row);
-      tbody.querySelectorAll('tr').forEach(function(tr,idx){
-        var si=tr.querySelector('[data-si]'); if(si)si.textContent=idx+1;
-      });
+      renumber(tbody);
+      syncSvcNames();
       return;
     }
     var addSvc=e.target.closest('#addService');
