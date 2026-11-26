@@ -1004,6 +1004,84 @@ CREATE TABLE IF NOT EXISTS client_sof_file_uploads (
     FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- The Internet SOF format (build 123): the SERVICE DETAILS form the
+-- Services page now collects, one row per SOF. Only an Internet SOF
+-- has one — Data, IPTSP, Mail and Domain Hosting SOFs have no format
+-- yet, so they have no row here. The Yes/No answers are 'yes'/'no'
+-- (or NULL when neither was picked); route_type is 'default',
+-- 'partial' or 'full'; lm_protection_by is 'hrc' or 'customer'.
+CREATE TABLE IF NOT EXISTS client_sof_format (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    bgp_peering VARCHAR(8),
+    as_number   VARCHAR(255),
+    route_type  VARCHAR(16),
+    prefix      VARCHAR(255),
+    additional_ip VARCHAR(255),
+    tech_other_details TEXT,
+    lm_protection_by VARCHAR(16),
+    lm_other_device TEXT,
+    other_isp   VARCHAR(8),
+    other_isp_details TEXT,
+    more_isp    VARCHAR(8),
+    more_isp_details TEXT,
+    off_gateway VARCHAR(8),
+    off_gateway_devices VARCHAR(255),
+    off_gateway_details TEXT,
+    off_wifi    VARCHAR(8),
+    off_wifi_devices VARCHAR(255),
+    off_wifi_details TEXT,
+    off_lan_delivery VARCHAR(8),
+    off_lan_support VARCHAR(8),
+    off_lan_support_devices VARCHAR(255),
+    off_lan_support_details TEXT,
+    off_pc      VARCHAR(8),
+    off_pc_devices VARCHAR(255),
+    off_pc_details TEXT,
+    off_other_details TEXT,
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The format's two Add tables (build 123): as many rows as the user
+-- added — the locations to be connected, and the Internet service
+-- locations (name + bandwidth). A row is one location.
+CREATE TABLE IF NOT EXISTS client_sof_locations (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    position    INT NOT NULL DEFAULT 0,
+    name        VARCHAR(255),
+    address     TEXT,
+    coordinates VARCHAR(255),
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS client_sof_service_locations (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    position    INT NOT NULL DEFAULT 0,
+    name        VARCHAR(255),
+    bandwidth   VARCHAR(255),
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The format's last-mile table (build 123): two rows on the form, one
+-- per location — fiber or radio, protection, dual POP, interface,
+-- media and the custom device.
+CREATE TABLE IF NOT EXISTS client_sof_last_mile (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    sof_id      INT NOT NULL,
+    position    INT NOT NULL DEFAULT 0,
+    name        VARCHAR(255),
+    fiber       INT NOT NULL DEFAULT 0,
+    radio       INT NOT NULL DEFAULT 0,
+    protection  INT NOT NULL DEFAULT 0,
+    dual_pop    INT NOT NULL DEFAULT 0,
+    interface   VARCHAR(16),
+    media       VARCHAR(16),
+    cstm_dvc    VARCHAR(255),
+    FOREIGN KEY (sof_id) REFERENCES client_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- The Sales & Marketing admin's fields for the three Add Client pages.
 -- The fields the client was built with are the defaults (is_default=1,
 -- field_key = the fixed column they map to); the admin adds his own

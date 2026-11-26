@@ -1,0 +1,149 @@
+{# Build 123: one service's SERVICE DETAILS — the SOF number,
+   activation date and SOF file in a row under the banner, then the
+   Internet SOF format as a form. `sof_body(i, r, fmap, am_mode,
+   services_blank)` renders the body of one service section; `i` is
+   the service's index, so the format fields are named fmt_*_<i> and
+   each section posts its own rows. The format tables show only for
+   an Internet service; the SOF row shows for any picked type. The
+   Yes/No answers and the route type are radio groups styled as the
+   format's squares (see .fmtpick in style.css), so only one of each
+   pair can be picked. The two Add tables start with their stored
+   rows plus one blank row; + Add appends another. The last-mile
+   table has the format's two rows and no Add button. #}
+{% macro sof_body(i, r, fmap, am_mode, services_blank) %}
+  <div class="fmt-banner">SERVICE DETAILS</div>
+  <div class="sofrow">
+    <div class="soffield"><label>{{ fmap['sof_number'].name }} <span class="req">*</span></label><input class="fmt-in" name="sof_number" type="text" maxlength="255" value="{{ r.sof_number }}"></div>
+    <div class="soffield"><label>{{ fmap['sof_activation_date'].name }}{% if not am_mode %} <span class="req">*</span>{% endif %}</label><input class="fmt-in" name="sof_activation_date" type="date" value="{{ r.activation_date }}"{% if not am_mode %} required{% endif %}></div>
+    <div class="soffield"><label>SOF file{% if services_blank %} <span class="req">*</span>{% endif %}</label><input class="fmt-in" name="sof_file" type="file">
+      {% if r.id and r.file_name %}<div class="sub">Now: {{ r.file_name }} — choose a file to replace it. <label class="ck"><input type="checkbox" name="sof_remove" value="{{ r.id }}"> Remove this file</label></div>{% endif %}</div>
+  </div>
+  <div data-svc-fmt{% if r.service_type != 'Internet' %} hidden{% endif %}>
+    <div class="fmt-bar">NETWORK AND RELATED SERVICES</div>
+    <div class="fmt-sub"><span>LIST OF LOCATIONS TO BE CONNECTED</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
+    <table class="fmt-tbl">
+      <thead><tr><th style="width:36px">SI</th><th>NAME</th><th>ADDRESS</th><th>COORDINATES</th></tr></thead>
+      <tbody>
+      {% for loc in r.format.locations %}
+        <tr><td data-si>{{ loop.index }}</td>
+        <td><input class="fmt-in" name="fmt_loc_name_{{ i }}" type="text" maxlength="255" value="{{ loc.name }}"></td>
+        <td><input class="fmt-in" name="fmt_loc_address_{{ i }}" type="text" maxlength="255" value="{{ loc.address }}"></td>
+        <td><input class="fmt-in" name="fmt_loc_coords_{{ i }}" type="text" maxlength="255" value="{{ loc.coordinates }}"></td></tr>
+      {% endfor %}
+        <tr><td data-si>{{ r.format.locations|length + 1 }}</td>
+        <td><input class="fmt-in" name="fmt_loc_name_{{ i }}" type="text" maxlength="255"></td>
+        <td><input class="fmt-in" name="fmt_loc_address_{{ i }}" type="text" maxlength="255"></td>
+        <td><input class="fmt-in" name="fmt_loc_coords_{{ i }}" type="text" maxlength="255"></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-bar">INTERNET</div>
+    <div class="fmt-sub"><span>SERVICE LOCATIONS</span><button class="b sm" type="button" data-fmt-add>+ Add</button></div>
+    <table class="fmt-tbl">
+      <thead><tr><th>NAME</th><th>BANDWIDTH</th></tr></thead>
+      <tbody>
+      {% for s in r.format.service_locations %}
+        <tr><td><input class="fmt-in" name="fmt_svc_name_{{ i }}" type="text" maxlength="255" value="{{ s.name }}"></td>
+        <td><input class="fmt-in" name="fmt_svc_bandwidth_{{ i }}" type="text" maxlength="255" value="{{ s.bandwidth }}"></td></tr>
+      {% endfor %}
+        <tr><td><input class="fmt-in" name="fmt_svc_name_{{ i }}" type="text" maxlength="255"></td>
+        <td><input class="fmt-in" name="fmt_svc_bandwidth_{{ i }}" type="text" maxlength="255"></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-bar">TECHNICAL DETAILS</div>
+    <table class="fmt-tbl">
+      <tbody>
+        <tr><td class="fmt-lab">CUSTOMER HAS OWN IP ADDRESS FOR BGP PEERING</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_bgp_{{ i }}" value="yes"{{ ' checked' if r.format.bgp_peering == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_bgp_{{ i }}" value="no"{{ ' checked' if r.format.bgp_peering == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">IF YES, CUSTOMER AS NUMBER</td>
+        <td><input class="fmt-in" name="fmt_as_number_{{ i }}" type="text" maxlength="255" value="{{ r.format.as_number }}"></td></tr>
+        <tr><td class="fmt-lab">ROUTE TYPE</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_route_{{ i }}" value="default"{{ ' checked' if r.format.route_type == 'default' }}> DEFAULT</label>
+        <label><input class="fmtpick" type="radio" name="fmt_route_{{ i }}" value="partial"{{ ' checked' if r.format.route_type == 'partial' }}> PARTIAL</label>
+        <label><input class="fmtpick" type="radio" name="fmt_route_{{ i }}" value="full"{{ ' checked' if r.format.route_type == 'full' }}> FULL</label></td></tr>
+        <tr><td class="fmt-lab">PREFIX TO BE ANNOUNCED</td>
+        <td><input class="fmt-in" name="fmt_prefix_{{ i }}" type="text" maxlength="255" value="{{ r.format.prefix }}"></td></tr>
+        <tr><td class="fmt-lab">IF ADDITIONAL IP IS NEEDED, PLEASE MENTION TOTAL NUMBER OF IP REQUIRED</td>
+        <td><input class="fmt-in" name="fmt_additional_ip_{{ i }}" type="text" maxlength="255" value="{{ r.format.additional_ip }}"></td></tr>
+        <tr><td class="fmt-lab">LIST ANY OTHER DETAILS IF REQUIRED</td>
+        <td><textarea class="fmt-ta" name="fmt_tech_other_details_{{ i }}" rows="2">{{ r.format.tech_other_details }}</textarea></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-bar">LOCATION WISE LAST MILE DETAILS</div>
+    <table class="fmt-tbl">
+      <thead><tr><th>NAME</th><th>FIBER</th><th>RADIO</th><th>PROTECTION</th><th>DUAL POP</th><th>INTERFACE</th><th>MEDIA</th><th>CSTM DVC</th></tr></thead>
+      <tbody>
+      {% for lm in r.format.last_mile %}
+        <tr>
+        <td><input class="fmt-in" name="fmt_lm_name_{{ i }}" type="text" maxlength="255" value="{{ lm.name }}"></td>
+        <td><input class="fmtpick" type="checkbox" name="fmt_lm_fiber_{{ i }}" value="{{ loop.index0 }}" data-lm-fiber{{ ' checked' if lm.fiber }}></td>
+        <td><input class="fmtpick" type="checkbox" name="fmt_lm_radio_{{ i }}" value="{{ loop.index0 }}" data-lm-radio{{ ' checked' if lm.radio }}></td>
+        <td><input class="fmtpick" type="checkbox" name="fmt_lm_protection_{{ i }}" value="{{ loop.index0 }}"{{ ' checked' if lm.protection }}></td>
+        <td><input class="fmtpick" type="checkbox" name="fmt_lm_dual_pop_{{ i }}" value="{{ loop.index0 }}"{{ ' checked' if lm.dual_pop }}></td>
+        <td><select class="fmt-in" name="fmt_lm_interface_{{ i }}"><option value=""></option><option value="FE"{{ ' selected' if lm.interface == 'FE' }}>FE</option><option value="GE"{{ ' selected' if lm.interface == 'GE' }}>GE</option><option value="OTHER"{{ ' selected' if lm.interface == 'OTHER' }}>OTHER</option></select></td>
+        <td><select class="fmt-in" name="fmt_lm_media_{{ i }}"><option value=""></option><option value="OPT"{{ ' selected' if lm.media == 'OPT' }}>OPT</option><option value="ETH"{{ ' selected' if lm.media == 'ETH' }}>ETH</option></select></td>
+        <td><input class="fmt-in" name="fmt_lm_cstm_{{ i }}" type="text" maxlength="255" value="{{ lm.cstm_dvc }}"></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <table class="fmt-tbl">
+      <tbody>
+        <tr><td class="fmt-lab">LAST MILE PROTECTION TO BE MANAGED BY</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_lm_by_{{ i }}" value="hrc"{{ ' checked' if r.format.lm_protection_by == 'hrc' }}> HRC TECHNOLOGIES LTD</label>
+        <label><input class="fmtpick" type="radio" name="fmt_lm_by_{{ i }}" value="customer"{{ ' checked' if r.format.lm_protection_by == 'customer' }}> CUSTOMER</label></td></tr>
+        <tr><td class="fmt-lab">PLEASE MENTION IF ANY OTHER DEVICE IS REQUIRED</td>
+        <td><input class="fmt-in" name="fmt_lm_other_device_{{ i }}" type="text" maxlength="255" value="{{ r.format.lm_other_device }}"></td></tr>
+        <tr><td class="fmt-lab">DO YOU USE INTERNET / DATA SERVICE FROM OTHER ISP?</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_other_isp_{{ i }}" value="yes"{{ ' checked' if r.format.other_isp == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_other_isp_{{ i }}" value="no"{{ ' checked' if r.format.other_isp == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">IF YES, PLEASE MENTION DETAILS</td>
+        <td><textarea class="fmt-ta" name="fmt_other_isp_details_{{ i }}" rows="2">{{ r.format.other_isp_details }}</textarea></td></tr>
+        <tr><td class="fmt-lab">WILL MORE ISP BE CONNECTED AT SAME G/W DEVICE?</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_more_isp_{{ i }}" value="yes"{{ ' checked' if r.format.more_isp == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_more_isp_{{ i }}" value="no"{{ ' checked' if r.format.more_isp == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">IF YES, PLEASE MENTION DETAILS</td>
+        <td><textarea class="fmt-ta" name="fmt_more_isp_details_{{ i }}" rows="2">{{ r.format.more_isp_details }}</textarea></td></tr>
+      </tbody>
+    </table>
+    <div class="fmt-bar">OFFNET SUPPORT</div>
+    <table class="fmt-tbl">
+      <tbody>
+        <tr><td class="fmt-lab" colspan="2">**ANY SUPPORT BEYOND INTERCLOUD DEMARC IS OFFNET SUPPORT**</td></tr>
+        <tr><td class="fmt-lab">CONFIGURING GATEWAY DURING SERVICE DELIVERY</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_off_gateway_{{ i }}" value="yes"{{ ' checked' if r.format.off_gateway == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_off_gateway_{{ i }}" value="no"{{ ' checked' if r.format.off_gateway == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">IF YES, PLEASE MENTION NUMBER OF DEVICES</td>
+        <td><input class="fmt-in" name="fmt_off_gateway_devices_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_gateway_devices }}"></td></tr>
+        <tr><td class="fmt-lab">PLEASE MENTION DEVICE DETAILS</td>
+        <td><input class="fmt-in" name="fmt_off_gateway_details_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_gateway_details }}"></td></tr>
+        <tr><td class="fmt-lab">CONFIGURING WIFI NETWORK DURING SERVICE DELIVERY</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_off_wifi_{{ i }}" value="yes"{{ ' checked' if r.format.off_wifi == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_off_wifi_{{ i }}" value="no"{{ ' checked' if r.format.off_wifi == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">IF YES, PLEASE MENTION NUMBER OF DEVICES</td>
+        <td><input class="fmt-in" name="fmt_off_wifi_devices_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_wifi_devices }}"></td></tr>
+        <tr><td class="fmt-lab">PLEASE MENTION DEVICE DETAILS</td>
+        <td><input class="fmt-in" name="fmt_off_wifi_details_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_wifi_details }}"></td></tr>
+        <tr><td class="fmt-lab">CONFIGURING LAN DURING SERVICE DELIVERY</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_off_lan_delivery_{{ i }}" value="yes"{{ ' checked' if r.format.off_lan_delivery == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_off_lan_delivery_{{ i }}" value="no"{{ ' checked' if r.format.off_lan_delivery == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">CONFIGURING LAN DURING SUPPORT</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_off_lan_support_{{ i }}" value="yes"{{ ' checked' if r.format.off_lan_support == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_off_lan_support_{{ i }}" value="no"{{ ' checked' if r.format.off_lan_support == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">IF YES, PLEASE MENTION NUMBER OF DEVICES</td>
+        <td><input class="fmt-in" name="fmt_off_lan_support_devices_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_lan_support_devices }}"></td></tr>
+        <tr><td class="fmt-lab">PLEASE MENTION DEVICE DETAILS</td>
+        <td><input class="fmt-in" name="fmt_off_lan_support_details_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_lan_support_details }}"></td></tr>
+        <tr><td class="fmt-lab">CONFIGURING PC / LAPTOP DURING SERVICE DELIVERY</td>
+        <td><label><input class="fmtpick" type="radio" name="fmt_off_pc_{{ i }}" value="yes"{{ ' checked' if r.format.off_pc == 'yes' }}> YES</label>
+        <label><input class="fmtpick" type="radio" name="fmt_off_pc_{{ i }}" value="no"{{ ' checked' if r.format.off_pc == 'no' }}> NO</label></td></tr>
+        <tr><td class="fmt-lab">IF YES, PLEASE MENTION NUMBER OF DEVICES</td>
+        <td><input class="fmt-in" name="fmt_off_pc_devices_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_pc_devices }}"></td></tr>
+        <tr><td class="fmt-lab">PLEASE MENTION DEVICE DETAILS</td>
+        <td><input class="fmt-in" name="fmt_off_pc_details_{{ i }}" type="text" maxlength="255" value="{{ r.format.off_pc_details }}"></td></tr>
+        <tr><td class="fmt-lab">LIST ANY OTHER DETAILS IF REQUIRED</td>
+        <td><textarea class="fmt-ta" name="fmt_off_other_details_{{ i }}" rows="2">{{ r.format.off_other_details }}</textarea></td></tr>
+      </tbody>
+    </table>
+  </div>
+{% endmacro %}

@@ -449,6 +449,12 @@ def _sof_new_text(new):
     parts = [f"{label}: {new.get(key, '')}" for key, label in _SOF_FIELD_LABELS.items() if new.get(key)]
     if new.get("file_name"):
         parts.append(f"SOF file: {new['file_name']}")
+    # Build 123: a new SOF that carries its Internet format says so —
+    # the locations and service locations are the detail.
+    if _format_has_data(new.get("format")):
+        _f = new["format"]
+        parts.append(f"Internet format: {len(_f['locations'])} location(s), "
+                     f"{len(_f['service_locations'])} service location(s)")
     return "New SOF — " + "; ".join(parts)
 
 
@@ -907,6 +913,137 @@ CONTACT_HRC_DEPTS = {"account_manager": ("Sales & Marketing",),
 CONTACT_HRC_DEPTS_LOWER = {k: tuple(n.strip().casefold() for n in v)
                            for k, v in CONTACT_HRC_DEPTS.items()}
 
+# Build 123: the Services page starts with a Service Type dropdown —
+# the five services the portal sells. Only Internet has its SOF format
+# developed so far; the other four show the contacts and the SOF row,
+# and their formats come later.
+SERVICE_TYPES = ("Internet", "Data", "IPTSP", "Mail", "Domain Hosting")
+
+
+def _blank_format():
+    """The Internet SOF format, empty (build 123): the two Add tables
+    (locations, service locations), the technical details, the
+    last-mile rows and the offnet support answers. A format with no
+    locations and no service locations counts as empty — no row is
+    stored for it."""
+    return {"locations": [], "service_locations": [],
+            "bgp_peering": "", "as_number": "", "route_type": "", "prefix": "",
+            "additional_ip": "", "tech_other_details": "",
+            "last_mile": [{"name": "", "fiber": 0, "radio": 0, "protection": 0, "dual_pop": 0,
+                           "interface": "", "media": "", "cstm_dvc": ""},
+                          {"name": "", "fiber": 0, "radio": 0, "protection": 0, "dual_pop": 0,
+                           "interface": "", "media": "", "cstm_dvc": ""}],
+            "lm_protection_by": "", "lm_other_device": "",
+            "other_isp": "", "other_isp_details": "", "more_isp": "", "more_isp_details": "",
+            "off_gateway": "", "off_gateway_devices": "", "off_gateway_details": "",
+            "off_wifi": "", "off_wifi_devices": "", "off_wifi_details": "",
+            "off_lan_delivery": "", "off_lan_support": "", "off_lan_support_devices": "",
+            "off_lan_support_details": "", "off_pc": "", "off_pc_devices": "",
+            "off_pc_details": "", "off_other_details": ""}
+
+
+def _format_has_data(fmt):
+    return bool(fmt and (fmt.get("locations") or fmt.get("service_locations")))
+
+
+def _format_norm(fmt):
+    """A format stripped of its blank last-mile rows (build 123): two
+    formats count as the same when their filled rows and answers
+    match, so a re-save that only re-renders the two blank rows is not
+    a change."""
+    f = dict(fmt or {})
+    f["last_mile"] = [r for r in (fmt or {}).get("last_mile", [])
+                      if any((r.get("name"), r.get("fiber"), r.get("radio"), r.get("protection"),
+                              r.get("dual_pop"), r.get("interface"), r.get("media"), r.get("cstm_dvc")))]
+    return f
+
+
+def _format_from_db(db, sof_id):
+    """The stored Internet format of one SOF (build 123): the scalar
+    answers, the two Add tables in position order, and the last-mile
+    rows. A SOF with no format row returns the blank format."""
+    fmt = _blank_format()
+    row = db.execute("SELECT * FROM client_sof_format WHERE sof_id=?", (sof_id,)).fetchone()
+    if row is None:
+        return fmt
+    for k in ("bgp_peering", "as_number", "route_type", "prefix", "additional_ip",
+              "tech_other_details", "lm_protection_by", "lm_other_device",
+              "other_isp", "other_isp_details", "more_isp", "more_isp_details",
+              "off_gateway", "off_gateway_devices", "off_gateway_details",
+              "off_wifi", "off_wifi_devices", "off_wifi_details",
+              "off_lan_delivery", "off_lan_support", "off_lan_support_devices",
+              "off_lan_support_details", "off_pc", "off_pc_devices",
+              "off_pc_details", "off_other_details"):
+        fmt[k] = row[k] or ""
+    fmt["locations"] = [dict(name=r["name"] or "", address=r["address"] or "",
+                             coordinates=r["coordinates"] or "")
+                        for r in db.execute("SELECT * FROM client_sof_locations "
+                                           "WHERE sof_id=? ORDER BY position, id", (sof_id,)).fetchall()]
+    fmt["service_locations"] = [dict(name=r["name"] or "", bandwidth=r["bandwidth"] or "")
+                                for r in db.execute("SELECT * FROM client_sof_service_locations "
+                                                   "WHERE sof_id=? ORDER BY position, id", (sof_id,)).fetchall()]
+    _lm = [dict(name=r["name"] or "", fiber=r["fiber"] or 0, radio=r["radio"] or 0,
+                protection=r["protection"] or 0, dual_pop=r["dual_pop"] or 0,
+                interface=r["interface"] or "", media=r["media"] or "",
+                cstm_dvc=r["cstm_dvc"] or "")
+           for r in db.execute("SELECT * FROM client_sof_last_mile "
+                              "WHERE sof_id=? ORDER BY position, id", (sof_id,)).fetchall()]
+    if _lm:
+        fmt["last_mile"] = _lm
+        # The paper format has two last-mile rows — a stored format with
+        # one filled row still shows the second, blank, row to fill.
+        while len(fmt["last_mile"]) < 2:
+            fmt["last_mile"].append(dict(_blank_format()["last_mile"][0]))
+    return fmt
+
+
+def _write_format(db, sof_id, fmt):
+    """Store one SOF's Internet format (build 123): the old rows go
+    first, then the new ones. A SOF with no format data keeps no rows
+    — a type changed away from Internet drops its format with it."""
+    db.execute("DELETE FROM client_sof_format WHERE sof_id=?", (sof_id,))
+    db.execute("DELETE FROM client_sof_locations WHERE sof_id=?", (sof_id,))
+    db.execute("DELETE FROM client_sof_service_locations WHERE sof_id=?", (sof_id,))
+    db.execute("DELETE FROM client_sof_last_mile WHERE sof_id=?", (sof_id,))
+    if not _format_has_data(fmt):
+        return
+    db.execute("INSERT INTO client_sof_format(sof_id,bgp_peering,as_number,route_type,prefix,additional_ip,"
+               "tech_other_details,lm_protection_by,lm_other_device,other_isp,other_isp_details,"
+               "more_isp,more_isp_details,off_gateway,off_gateway_devices,off_gateway_details,"
+               "off_wifi,off_wifi_devices,off_wifi_details,off_lan_delivery,off_lan_support,"
+               "off_lan_support_devices,off_lan_support_details,off_pc,off_pc_devices,off_pc_details,"
+               "off_other_details) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+               (sof_id, fmt["bgp_peering"] or None, fmt["as_number"] or None,
+                fmt["route_type"] or None, fmt["prefix"] or None, fmt["additional_ip"] or None,
+                fmt["tech_other_details"] or None, fmt["lm_protection_by"] or None,
+                fmt["lm_other_device"] or None, fmt["other_isp"] or None,
+                fmt["other_isp_details"] or None, fmt["more_isp"] or None,
+                fmt["more_isp_details"] or None, fmt["off_gateway"] or None,
+                fmt["off_gateway_devices"] or None, fmt["off_gateway_details"] or None,
+                fmt["off_wifi"] or None, fmt["off_wifi_devices"] or None,
+                fmt["off_wifi_details"] or None, fmt["off_lan_delivery"] or None,
+                fmt["off_lan_support"] or None, fmt["off_lan_support_devices"] or None,
+                fmt["off_lan_support_details"] or None, fmt["off_pc"] or None,
+                fmt["off_pc_devices"] or None, fmt["off_pc_details"] or None,
+                fmt["off_other_details"] or None))
+    for i, r in enumerate(fmt["locations"]):
+        db.execute("INSERT INTO client_sof_locations(sof_id,position,name,address,coordinates) "
+                   "VALUES (?,?,?,?,?)",
+                   (sof_id, i, r["name"] or None, r["address"] or None, r["coordinates"] or None))
+    for i, r in enumerate(fmt["service_locations"]):
+        db.execute("INSERT INTO client_sof_service_locations(sof_id,position,name,bandwidth) "
+                   "VALUES (?,?,?,?)",
+                   (sof_id, i, r["name"] or None, r["bandwidth"] or None))
+    for i, r in enumerate(fmt["last_mile"]):
+        if not any((r["name"], r["fiber"], r["radio"], r["protection"], r["dual_pop"],
+                    r["interface"], r["media"], r["cstm_dvc"])):
+            continue
+        db.execute("INSERT INTO client_sof_last_mile(sof_id,position,name,fiber,radio,protection,dual_pop,"
+                   "interface,media,cstm_dvc) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                   (sof_id, i, r["name"] or None, 1 if r["fiber"] else 0, 1 if r["radio"] else 0,
+                    1 if r["protection"] else 0, 1 if r["dual_pop"] else 0,
+                    r["interface"] or None, r["media"] or None, r["cstm_dvc"] or None))
+
 
 def _blank_contact():
     return {"ctype": "", "department_id": None, "user_id": None, "department_name": "",
@@ -1093,6 +1230,137 @@ def _apply_contacts(db, cid, staged):
     _write_contacts(db, cid, merged)
 
 
+def _read_sof_format(f, i, errors):
+    """Read one service's Internet format from the posted form (build 123).
+    `i` is the service's index — the format fields are named fmt_*_<i>.
+    The Yes/No answers and the route type are radio groups, so each is
+    one value; the two Add tables are parallel lists, one row per entry.
+    The last-mile checkboxes carry their row number as the value, so an
+    unticked box in the first row cannot shift the second row's answer.
+    A row with nothing in it is the blank row and is ignored; a row with
+    some fields filled must have its name. The format needs at least one
+    location and one service location — a SOF with no location to connect
+    and no service to deliver is not a service. Returns the format dict."""
+    fmt = _blank_format()
+
+    def _lst(name):
+        return f.getlist(f"fmt_{name}_{i}")
+
+    def _one(name):
+        return (f.get(f"fmt_{name}_{i}") or "").strip()
+
+    def _txt(name):
+        return _one(name)[:2000]
+
+    def _pick1(name, options, label):
+        v = _one(name)
+        if v and v not in options:
+            errors.append(f"Page 2: the {label} answer does not look right.")
+            return ""
+        return v
+
+    def _checked(name):
+        out = set()
+        for v in _lst(name):
+            if str(v).isdigit():
+                out.add(int(v))
+        return out
+
+    _names = _lst("loc_name")
+    _addrs = _lst("loc_address")
+    _coords = _lst("loc_coords")
+    for j in range(max(len(_names), len(_addrs), len(_coords))):
+        _nm = _clean(_pick(_names, j))
+        _ad = (_pick(_addrs, j) or "").strip()[:2000]
+        _co = _clean(_pick(_coords, j))
+        if not any((_nm, _ad, _co)):
+            continue
+        if not _nm:
+            errors.append(f"Page 2: a location to be connected needs its name.")
+            continue
+        fmt["locations"].append({"name": _nm, "address": _ad, "coordinates": _co})
+    _snames = _lst("svc_name")
+    _bws = _lst("svc_bandwidth")
+    for j in range(max(len(_snames), len(_bws))):
+        _nm = _clean(_pick(_snames, j))
+        _bw = _clean(_pick(_bws, j))
+        if not any((_nm, _bw)):
+            continue
+        if not _nm:
+            errors.append("Page 2: a service location needs its name.")
+            continue
+        if not _bw:
+            errors.append(f"Page 2: service location {_nm} needs its bandwidth.")
+            continue
+        fmt["service_locations"].append({"name": _nm, "bandwidth": _bw})
+    if not fmt["locations"]:
+        errors.append("Page 2: add at least one location to be connected.")
+    if not fmt["service_locations"]:
+        errors.append("Page 2: add at least one service location.")
+    fmt["bgp_peering"] = _pick1("bgp", ("yes", "no"), "BGP peering")
+    fmt["as_number"] = _clean(_one("as_number"))
+    fmt["route_type"] = _pick1("route", ("default", "partial", "full"), "route type")
+    fmt["prefix"] = _clean(_one("prefix"))
+    fmt["additional_ip"] = _clean(_one("additional_ip"))
+    if fmt["additional_ip"] and not fmt["additional_ip"].isdigit():
+        errors.append("Page 2: the total number of IP required must be a number.")
+        fmt["additional_ip"] = ""
+    fmt["tech_other_details"] = _txt("tech_other_details")
+    _lm_names = _lst("lm_name")
+    _lm_iface = _lst("lm_interface")
+    _lm_media = _lst("lm_media")
+    _lm_cstm = _lst("lm_cstm")
+    _fiber = _checked("lm_fiber")
+    _radio = _checked("lm_radio")
+    _prot = _checked("lm_protection")
+    _dual = _checked("lm_dual_pop")
+    _lm_rows = []
+    for j in range(max(len(_lm_names), len(_lm_iface), len(_lm_media), len(_lm_cstm),
+                       len(_fiber), len(_radio), len(_prot), len(_dual))):
+        _nm = _clean(_pick(_lm_names, j))
+        _iface = _clean(_pick(_lm_iface, j))
+        _media = _clean(_pick(_lm_media, j))
+        _cstm = _clean(_pick(_lm_cstm, j))
+        _row = {"name": _nm, "fiber": 1 if j in _fiber else 0, "radio": 1 if j in _radio else 0,
+                "protection": 1 if j in _prot else 0, "dual_pop": 1 if j in _dual else 0,
+                "interface": _iface, "media": _media, "cstm_dvc": _cstm}
+        if not any((_nm, _row["fiber"], _row["radio"], _row["protection"], _row["dual_pop"],
+                    _iface, _media, _cstm)):
+            continue
+        if _iface and _iface not in ("FE", "GE", "OTHER"):
+            errors.append("Page 2: the last-mile interface must be FE, GE or OTHER.")
+            _row["interface"] = ""
+        if _media and _media not in ("OPT", "ETH"):
+            errors.append("Page 2: the last-mile media must be OPT or ETH.")
+            _row["media"] = ""
+        if not _nm:
+            errors.append("Page 2: a last-mile row needs its name.")
+            continue
+        _lm_rows.append(_row)
+    fmt["last_mile"] = _lm_rows if _lm_rows else _blank_format()["last_mile"]
+    fmt["lm_protection_by"] = _pick1("lm_by", ("hrc", "customer"), "last-mile protection")
+    fmt["lm_other_device"] = _txt("lm_other_device")
+    fmt["other_isp"] = _pick1("other_isp", ("yes", "no"), "other ISP")
+    fmt["other_isp_details"] = _txt("other_isp_details")
+    fmt["more_isp"] = _pick1("more_isp", ("yes", "no"), "more ISP at the same gateway")
+    fmt["more_isp_details"] = _txt("more_isp_details")
+    fmt["off_gateway"] = _pick1("off_gateway", ("yes", "no"), "configuring gateway")
+    fmt["off_gateway_devices"] = _clean(_one("off_gateway_devices"))
+    fmt["off_gateway_details"] = _txt("off_gateway_details")
+    fmt["off_wifi"] = _pick1("off_wifi", ("yes", "no"), "configuring WiFi")
+    fmt["off_wifi_devices"] = _clean(_one("off_wifi_devices"))
+    fmt["off_wifi_details"] = _txt("off_wifi_details")
+    fmt["off_lan_delivery"] = _pick1("off_lan_delivery", ("yes", "no"), "configuring LAN during delivery")
+    fmt["off_lan_support"] = _pick1("off_lan_support", ("yes", "no"), "configuring LAN during support")
+    fmt["off_lan_support_devices"] = _clean(_one("off_lan_support_devices"))
+    fmt["off_lan_support_details"] = _txt("off_lan_support_details")
+    fmt["off_pc"] = _pick1("off_pc", ("yes", "no"), "configuring PC / laptop")
+    fmt["off_pc_devices"] = _clean(_one("off_pc_devices"))
+    fmt["off_pc_details"] = _txt("off_pc_details")
+    fmt["off_other_details"] = _txt("off_other_details")
+    return fmt
+
+
 def _blank_form():
     return {"client_name": "", "business_type": "", "address": "", "phone": "", "email": "", "notes": "",
             "bin": "", "bin_address": "", "tin": "",
@@ -1102,7 +1370,8 @@ def _blank_form():
             "contact_partial": {side: [] for side, _l in CONTACT_SIDES},
             "services": [{"id": "", "sof_number": "", "service": "", "service_type": "",
                           "service_description": "", "details": "", "file_name": "",
-                          "activation_date": "", "public_code": "", "custom": {}}]}
+                          "activation_date": "", "public_code": "", "custom": {},
+                          "format": _blank_format()}]}
 
 
 def _form_from_db(db, c):
@@ -1129,7 +1398,8 @@ def _form_from_db(db, c):
                              public_code=r["public_code"] or "",
                              custom={fid: v for (tt, tid, fid), v in custom.items()
                                      if tt == "service" and tid == r["id"]},
-                             file_name=(_file_info(r["sof_file"]) or {}).get("original", ""))
+                             file_name=(_file_info(r["sof_file"]) or {}).get("original", ""),
+                             format=_format_from_db(db, r["id"]))
                         for r in db.execute("SELECT * FROM client_services WHERE client_id=? ORDER BY position, id",
                                             (c["id"],)).fetchall()] or _blank_form()["services"]
     return form
@@ -1146,6 +1416,14 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False, contacts_loc
     `existing` is {service id: row} of the client being edited (empty for a new client).
     The activation date lives on every SOF (page 2, build 93) — never on the
     client page. The admin's fields are read by their id (cf1_/cf2_).
+    Build 123: page 2 starts with a Service Type dropdown, and the
+    contacts and the SOF rows appear only once a type is picked — so
+    with no type at all there is nothing to check here but the type
+    itself, and the contacts are read on page 2, not page 1. The
+    service IS the picked type now (Internet, Data, IPTSP, Mail or
+    Domain Hosting); the old free-text service, description and details
+    boxes are gone with the old SOF block, and an Internet SOF also
+    carries its SERVICE DETAILS format.
     `am_mode` (build 102) is the Add-services save on a finished client:
     page 1 is not changed by the account manager, and the activation date
     of a SOF is the Revenue Assurance department's — so neither is
@@ -1192,7 +1470,30 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False, contacts_loc
             errors.append(err)
     form["custom1"] = custom1
 
-    # ---- the contacts: two tables on the Client page (build 121) —
+    # ---- page 2 starts with the Service Type dropdown (build 123) —
+    # the contacts and the SOF rows appear only once a type is picked,
+    # so with no type at all there is nothing to check here but the
+    # type itself. The contacts the form posts are ignored in that
+    # case too — the tables were hidden, so an empty table is not a
+    # missing account manager. A locked Add-services form still keeps
+    # its rows (build 121), so they are returned as they stand.
+    _types = f.getlist("service_type")
+    _any_type = any(t in SERVICE_TYPES for t in _types)
+    if not _any_type:
+        errors.append("Page 2: pick a Service Type.")
+        contacts = (locked_contacts or _blank_contacts()) if contacts_locked else _blank_contacts()
+        form["contacts"] = contacts
+        form["contact_partial"] = {side: [] for side, _l in CONTACT_SIDES}
+        _hrc_am = next((r for r in contacts.get("hrc", []) if r["ctype"] == "account_manager"), None)
+        form["account_manager_id"] = _hrc_am["user_id"] if _hrc_am else None
+        form["am_full_name"] = _hrc_am["name"] if _hrc_am else ""
+        form["am_designation"] = _hrc_am["designation"] if _hrc_am else ""
+        form["am_phone"] = _hrc_am["phone"] if _hrc_am else ""
+        form["am_email"] = _hrc_am["email"] if _hrc_am else ""
+        form["services"] = _blank_form()["services"]
+        return form, errors, contacts, [], [], []
+
+    # ---- the contacts: two tables on the Services page (build 123) —
     # Client contacts, then HRC Technologies Ltd contacts. Each row is
     # one person: a Type (account manager / technical / billing /
     # others, once per table), then the person's details. The HRC side
@@ -1209,7 +1510,7 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False, contacts_loc
         form["contact_partial"] = {side: [] for side, _l in CONTACT_SIDES}
     else:
         contacts, _edit, _cerr = _read_contact_tables(
-            db, f, "Page 1", CONTACT_REQUIRED_KINDS, allow_am=True)
+            db, f, "Page 2", CONTACT_REQUIRED_KINDS, allow_am=True)
         errors.extend(_cerr)
         form["contact_partial"] = _edit
     form["contacts"] = contacts
@@ -1231,15 +1532,18 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False, contacts_loc
     for i in range(min(len(numbers), MAX_ROWS)):
         sid_raw = _pick(f.getlist("sof_existing"), i)
         sid = int(sid_raw) if str(sid_raw).isdigit() and int(sid_raw) in existing else None
+        _stype = _clean(_pick(f.getlist("service_type"), i))
         row = {"id": sid or "", "sof_number": _clean(numbers[i]),
-               "service": _clean(_pick(f.getlist("sof_service"), i)),
-               # Build 109: there is no Service type box any more — Service
-               # and Service type meant the same thing, so the short name
-               # the tab shows in brackets is the Service itself.
-               "service_type": _clean(_pick(f.getlist("sof_service"), i)),
-               "service_description": (_pick(f.getlist("sof_service_description"), i) or "").strip()[:2000],
-               "details": (_pick(f.getlist("sof_details"), i) or "").strip()[:2000], "file_name": "",
-               "custom": {fid: _clean(_pick(vals, i), 2000) for fid, vals in custom2.items()}}
+               # Build 123: the Service Type dropdown IS the service —
+               # the short name the tab shows in brackets is the type
+               # itself. The old free-text service, description and
+               # details boxes are gone with the old SOF block, so a
+               # SOF made on this form keeps no description; its
+               # details live in the format instead.
+               "service": _stype, "service_type": _stype,
+               "service_description": "", "details": "", "file_name": "",
+               "custom": {fid: _clean(_pick(vals, i), 2000) for fid, vals in custom2.items()},
+               "format": _blank_format()}
         # The activation date of THIS SOF: the Sales user sets it here, and
         # it is required on every SOF — except in Add-services mode, where
         # a new SOF has no date yet and Revenue Assurance sets it once the
@@ -1257,19 +1561,37 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False, contacts_loc
         upload = files[i] if i < len(files) else None
         has_upload = bool(upload and upload.filename)
         old_file = existing[sid]["sof_file"] if sid else None
-        if not (row["sof_number"] or row["service"] or row["service_type"] or row["service_description"]
-                or row["details"] or row["activation_date"]
+        if not (row["sof_number"] or row["service"] or row["service_type"]
+                or row["activation_date"]
                 or has_upload or sid or any(row["custom"].values())):
             continue
         if sid:
             used_old.add(sid)
         n = len(services) + 1
+        # Build 123: the type must be one of the five — or the value
+        # this SOF already carries, so a SOF made on the old form keeps
+        # its free-text service when it is re-saved. A row with no type
+        # at all is not a service.
+        _stored = existing[sid]["service"] if sid and sid in existing else ""
+        if row["service_type"] not in SERVICE_TYPES and not (sid and row["service_type"] == _stored):
+            errors.append(f"Page 2: pick a Service Type for service {n}.")
+            continue
+        # Build 123: an Internet SOF carries its SERVICE DETAILS format;
+        # the other four types have no format yet.
+        if row["service_type"] == "Internet":
+            row["format"] = _read_sof_format(f, i, errors)
         if bad_day:
             errors.append(f"Page 2: the activation date of service {n} does not look right.")
         _skey = {"sof_number": "sof_number", "sof_service": "service",
                  "sof_service_type": "service_type", "sof_service_description": "service_description",
                  "sof_details": "details", "sof_activation_date": "activation_date"}
         for fld in fields2:
+            # Build 123: the service, its type, its description and its
+            # details have no box on the form any more — the type is
+            # checked above, the description and details are gone.
+            if fld["field_key"] in ("sof_service", "sof_service_type",
+                                    "sof_service_description", "sof_details"):
+                continue
             if fld["field_key"] == "sof_activation_date" and (bad_day or am_mode):
                 continue
             val = row.get(_skey.get(fld["field_key"], ""), "")
@@ -1326,7 +1648,7 @@ def _read_form(db, existing, am_mode=False, require_sof_file=False, contacts_loc
             if _sid not in existing and _num.lower() not in _reported:
                 errors.append(f"Page 2: SOF number {_num} is already used on another client.")
                 _reported.add(_num.lower())
-    if not services:
+    if not services and not errors:
         errors.append("Page 2: add at least one service with its SOF number.")
     form["services"] = services or _blank_form()["services"]
     return form, errors, contacts, services, saved_new, delete_old
@@ -1356,6 +1678,9 @@ def _write_children(db, cid, contacts, services, custom1):
                           (old["termination_reason"] if old else None),
                           (old["status"] if old else "pending"), code)).lastrowid
         _save_custom(db, cid, "service", nid, r.get("custom") or {})
+        # Build 123: the SOF's Internet format goes with it — the old
+        # rows are gone with the rebuilt SOF, so only the new ones land.
+        _write_format(db, nid, r.get("format"))
         # Build 112: the SOF's file joins its file history — the first
         # file, and the one each rebuild carries.
         if r.get("file_json"):
@@ -1415,7 +1740,8 @@ def _show_form(db, form, cid=None, c=None, errors=None, am_mode=False, page1_loc
                            contact_sides=CONTACT_SIDES, contact_kinds=CONTACT_KINDS,
                            contact_kind_label=CONTACT_KIND_LABEL,
                            dept_names={d["id"]: d["name"] for d in departments},
-                           contact_depts=contact_depts,
+                           contact_depts=contact_depts, service_types=SERVICE_TYPES,
+                           blank_service=_blank_form()["services"][0],
                            fields=fields, fmap=fmap, am_mode=am_mode, page1_locked=page1_locked,
                            services_blank=services_blank,
                            back=url_for("ddb.index", tab="clients"))
@@ -1574,8 +1900,11 @@ def _edit_services(db, c, roles):
                        "termination_reason": "",
                        # Build 110: the activation date and the SOF file
                        # the account manager set are part of the new SOF.
+                       # Build 123: its Internet format travels with it
+                       # (a staged new SOF is approved from this JSON).
                        "activation_date": row.get("activation_date") or "",
-                       "sof_file": row.get("file_json"), "file_name": row.get("file_name") or ""}
+                       "sof_file": row.get("file_json"), "file_name": row.get("file_name") or "",
+                       "format": row.get("format") or _blank_format()}
                 if portal_admin:
                     pos = db.execute("SELECT COALESCE(MAX(position), -1)+1 FROM client_services WHERE client_id=?",
                                      (cid,)).fetchone()[0]
@@ -1594,6 +1923,8 @@ def _edit_services(db, c, roles):
                     # Build 112: the file joins the SOF's file history.
                     if row.get("file_json"):
                         _record_sof_file(db, _nid, row["file_json"], None, g.user["id"])
+                    # Build 123: the SOF's Internet format goes with it.
+                    _write_format(db, _nid, row.get("format"))
                     _history(db, cid, g.user, f"SOF {new['sof_number']} added by the portal admin",
                              "Activated." if _st == "activated" else "Pending — set its activation date from the Dates form.")
                 else:
@@ -1620,6 +1951,19 @@ def _edit_services(db, c, roles):
             if (row.get("file_json") or None) != (old["sof_file"] or None):
                 diff = (diff + "; SOF file: replaced" if diff != "No fields changed."
                         else "SOF file: replaced")
+            # Build 123: a format filled in (or changed) on an existing
+            # SOF counts as a change too, even when no SOF field moved.
+            # A row whose type is not Internet carries no format on the
+            # form — it is the blank default, not a posted one — so it
+            # keeps the stored format, unless the type moved away from
+            # Internet, which drops it.
+            _fmt = row.get("format")
+            if row["service_type"] != "Internet":
+                _fmt = None if row["service"] != old["service"] else _format_from_db(db, sid)
+            _fmt_changed = _format_norm(_fmt) != _format_norm(_format_from_db(db, sid))
+            if _fmt_changed:
+                diff = (diff + "; Internet format: changed" if diff != "No fields changed."
+                        else "Internet format: changed")
             if diff == "No fields changed.":
                 continue
             # One change at a time per SOF: a SOF that already has a
@@ -1643,6 +1987,8 @@ def _edit_services(db, c, roles):
                 # SOF's file history — the old one stays downloadable.
                 if new.get("sof_file") and new["sof_file"] != (old["sof_file"] or None):
                     _record_sof_file(db, sid, new["sof_file"], None, g.user["id"])
+                # Build 123: the SOF's Internet format goes with the change.
+                _write_format(db, sid, _fmt)
                 _history(db, cid, g.user, f"SOF {old['sof_number']} changed by the portal admin", diff)
             else:
                 db.execute("INSERT INTO client_sof_edits(client_id,service_id,editor_id,old_values,new_values)"
@@ -2367,6 +2713,8 @@ def sof_edit_approve(cid, eid):
         # Build 112: the new SOF's file is the first row of its history.
         if new.get("sof_file"):
             _record_sof_file(db, nid, new["sof_file"], eid, edit["editor_id"])
+        # Build 123: the new SOF's Internet format lands with it.
+        _write_format(db, nid, new.get("format"))
     if new.get("contacts") is not None:
         _apply_contacts(db, cid, new["contacts"])
     db.execute("UPDATE client_sof_edits SET status='approved', decided_by=?, "
@@ -2455,8 +2803,8 @@ def sof_edit_forward(cid, eid):
     _history(db, cid, g.user, f"SOF {num} change forwarded for a new SAN report",
              "Revenue Assurance sent it to Transmission, Core and Technical support.")
     log(db, "client_sof_forward", f"{client_no(c)} {c['client_name']} {num}")
-    text = (f"Revenue Assurance forwarded the SOF {num} change on '{c['client_name']}' to you: {change} "
-            "Upload a new SAN report for this SOF.")
+    text = (f"Revenue Assurance forwarded the SOF {num} change on '{c['client_name']}' to you. "
+            f"Upload a new SAN report for this SOF. {change}")
     notify(db, set(_members(db, "transmission")) | set(_members(db, "core"))
            | set(_members(db, "technical")), text, _link(cid), skip=g.user["id"])
     db.commit()

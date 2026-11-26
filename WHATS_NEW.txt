@@ -1,4 +1,27 @@
 ==============================================================================
+ THE SERVICES PAGE STARTS WITH A SERVICE TYPE, AND THE INTERNET SOF
+ FORMAT IS THE SERVICE (2026-11-26)
+==============================================================================
+ Page 2 of the New client form (Services) starts with a Service Type
+ dropdown — Internet, Data, IPTSP, Mail, Domain Hosting. Picking a type
+ shows the contacts first (the same two tables, Client contacts and HRC
+ Technologies Ltd contacts), then the SOF details under them: the SOF
+ number on the left, the Activation date in the middle and the SOF file
+ on the right, under the SERVICE DETAILS banner. The contacts are no
+ longer on page 1 (the Client page) at all. Only the Internet format is
+ developed now: the list of locations to be connected and the service
+ locations, each with a + Add button on the right so more rows can be
+ added; the technical details (BGP peering, AS number, route type,
+ prefix, additional IP count); the location-wise last mile details; and
+ the offnet support answers. Picking one of the other four types shows
+ the contacts and the SOF row only — their formats come later. A new
+ client form and the account manager's Add services page hold one
+ service section; the portal admin's Add services page shows one section
+ per existing SOF plus a + Add service button. The old Service,
+ description and details boxes are gone: a new SOF's service is its
+ Service Type, and its description is blank.
+
+==============================================================================
  THE FIRST COLUMN IS "TYPE OF CONTACT", AND THE ACCOUNT MANAGER IS
  PICKED, NOT FIXED (2026-11-25)
 ==============================================================================

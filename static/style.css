@@ -219,6 +219,30 @@ details.dt .pop{position:absolute;right:0;top:36px;z-index:15;background:var(--p
    reads as one line of fields, and a saved row shows its values. */
 .ctbl td input,.ctbl td select{width:100%;box-sizing:border-box;min-width:0}
 .ctbl td{vertical-align:middle}
+/* Build 123: the Internet SOF format — the SERVICE DETAILS form on the
+   Services page, in the paper form's own colours (dark banner, blue
+   section bars, pale sub-bars and label cells). The SOF number,
+   activation date and SOF file sit in a row under the banner. The
+   Yes/No and route-type answers are radios drawn as the format's
+   squares: a ticked square fills pale blue with a tick. */
+.fmt-banner{background:#1f497d;color:#fff;font-weight:700;text-align:center;padding:8px 10px;font-size:15px}
+.fmt-bar{background:#4f81bd;color:#fff;font-weight:700;padding:6px 10px;font-size:13px}
+.fmt-sub{background:#95b3d7;font-weight:700;padding:6px 10px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fmt-tbl{width:100%;border-collapse:collapse;margin-bottom:10px}
+.fmt-tbl th,.fmt-tbl td{border:1px solid #000;padding:4px 6px;font-size:12px;vertical-align:middle}
+.fmt-tbl th{background:#dce6f1;text-align:left}
+.fmt-tbl td.fmt-lab{background:#dce6f1;font-weight:700}
+.fmt-tbl td label{white-space:nowrap;margin-right:14px}
+.fmt-in{width:100%;border:1px solid #b9c9d4;border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;background:#fff;box-sizing:border-box}
+.fmt-ta{width:100%;border:1px solid #b9c9d4;border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;background:#fff;box-sizing:border-box;min-height:34px}
+.fmtpick{appearance:none;-webkit-appearance:none;width:15px;height:15px;border:1.2px solid #000;background:#fff;vertical-align:middle;cursor:pointer;margin:0 4px 0 0;position:relative;flex:none}
+.fmtpick:checked{background:#dce6f1}
+.fmtpick:checked::after{content:"✓";position:absolute;inset:0;text-align:center;line-height:13px;font-size:12px}
+.sofrow{display:flex;gap:18px;margin:10px 0}
+.soffield{flex:1;min-width:0}
+.soffield label{font-weight:700;font-size:13px;display:block;margin-bottom:4px}
+.soffield .fmt-in{font-size:13px;padding:5px 7px}
+.soffield .sub{margin-top:4px}
 .stcol .s{white-space:nowrap}
 /* ---------- Design 6: KPI row + split layout + vertical bar chart.
    KPI cards reuse .kp/.k1; the split layout reuses .tw (1fr 340px) with the
