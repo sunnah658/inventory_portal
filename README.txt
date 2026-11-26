@@ -7426,3 +7426,11 @@ After the Sales admin approves the client the contacts are locked on the client 
 Tested: 366/366 client checks and 752/752 suite checks on the work copy and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors, 151 defined classes. One file added (templates/_contacts_tables.html, 132 zip entries).
 
 OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.
+
+141. Build 122 — the first column is "Type of Contact", and the account manager is picked, not fixed (25 November 2026)
+==============================================================================================
+The first column of the contact tables is now headed "Type of Contact" instead of "Type" — in both tables on the New client form, on the SOF edit tables, and on the client page's contact tables. And the account manager is no longer fixed: the HRC table on the New client form starts empty, like the Client table, with no pre-filled row for the person creating the client. The creator picks the account manager themselves — Type: Account manager, the Department offers only Sales & Marketing, then the Name list shows the Sales & Marketing users, and picking one fills their designation, phone and email from the portal. The creator can pick themselves or another Sales user. The account manager picked is still the client's portal account manager, as before. Nothing else changes: a Type can still be used once per table, Account manager / Technical contact / Billing contact must still all be filled in both tables, and after approval the contacts still change only from a SOF edit, where the account manager still cannot change.
+
+Tested: 366/366 client checks and 752/752 suite checks on the work copy and on a fresh extract, against real MySQL 8.0. CSS audit 0 errors, 151 defined classes. No files added or removed (132 zip entries).
+
+OPEN: (h) DeptDB All-rows column picker, narrow centred forms, one-by-one delete password question, 07:00 reminder + accounts_user confirmations still unanswered. BIN/TIN on the SOF PDF: unanswered. Notes on the client page and the SOF PDF: unanswered — build 119 takes Notes off the form only.

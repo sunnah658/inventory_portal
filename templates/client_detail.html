@@ -82,7 +82,7 @@
   {% for side, side_label in contact_sides %}
   <h3>{{ side_label }}</h3>
   {% set rows = contacts | selectattr('side', 'equalto', side) | selectattr('ctype') | list %}
-  {% if rows %}<div class="tb"><table class="ctbl"><thead><tr><th>Type</th><th>Name</th><th>Department</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
+  {% if rows %}<div class="tb"><table class="ctbl"><thead><tr><th>Type of Contact</th><th>Name</th><th>Department</th><th>Designation</th><th>Phone</th><th>Email</th></tr></thead><tbody>
     {% for r in rows %}<tr><td>{{ contact_kind_label[r['ctype']] }}</td><td>{{ r['name'] }}</td><td>{{ r['department_name'] or '—' }}</td><td>{{ r['designation'] or '—' }}</td><td>{{ r['phone'] or '—' }}</td><td>{{ r['email'] or '—' }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% else %}<p class="hint">No contacts.</p>{% endif %}

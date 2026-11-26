@@ -1,4 +1,19 @@
 ==============================================================================
+ THE FIRST COLUMN IS "TYPE OF CONTACT", AND THE ACCOUNT MANAGER IS
+ PICKED, NOT FIXED (2026-11-25)
+==============================================================================
+ The first column of the contact tables is now headed "Type of Contact"
+ instead of "Type" — in both tables on the New client form, on the SOF
+ edit tables, and on the client page's contact tables. And the account
+ manager is no longer fixed: the HRC table on the New client form starts
+ empty, like the Client table, with no pre-filled row for the person
+ creating the client. The creator picks the account manager themselves —
+ Type: Account manager, the Department offers only Sales & Marketing,
+ then the Name list shows the Sales & Marketing users. The creator can
+ pick themselves or another Sales user. The account manager picked is
+ still the client's portal account manager, as before.
+
+==============================================================================
  THE CONTACTS ARE TWO TABLES, AND A SOF EDIT CAN CHANGE THEM (2026-11-25)
 ==============================================================================
  The side-by-side contact blocks are now two tables, one under the other:

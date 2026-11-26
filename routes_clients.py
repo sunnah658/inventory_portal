@@ -1446,18 +1446,10 @@ def new():
         abort(403)
     if request.method == "GET":
         form = _blank_form()
-        # Build 118: the HRC account manager starts as the Sales user
-        # himself when he is in the Sales department, as the account
-        # manager dropdown did before. Build 121: he is the first row
-        # of the HRC table, already saved.
-        if any(m["id"] == g.user["id"] for m in _account_managers(db)):
-            form["contacts"]["hrc"] = [{"ctype": "account_manager",
-                                        "department_id": g.user["department_id"],
-                                        "user_id": g.user["id"], "department_name": "",
-                                        "name": g.user["full_name"] or "",
-                                        "designation": g.user["designation"] or "",
-                                        "phone": g.user["phone"] or "",
-                                        "email": g.user["email"] or ""}]
+        # Build 122: the HRC table starts empty, like the Client table —
+        # the account manager is no longer fixed as the Sales user
+        # himself. The creator picks the account manager from the HRC
+        # table (Type: Account manager, Department: Sales & Marketing).
         return _show_form(db, form)
     form, errors, contacts, services, saved_new, delete_old = _read_form(db, {})
     if errors:
